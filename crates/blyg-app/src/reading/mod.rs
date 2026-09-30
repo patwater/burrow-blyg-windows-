@@ -584,7 +584,7 @@ impl MainView {
             RSheet::Site { .. } => (540., self.render_site_sheet(sheet, cx)),
             RSheet::Quote { .. } => (520., self.render_quote_sheet(sheet, cx)),
         };
-        Some(self.sheet_frame(width, content))
+        Some(self.sheet_frame(width, content, cx))
     }
 
     pub(super) fn close_reading_sheet(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -606,7 +606,7 @@ impl MainView {
     // ------------------------------------------------------------ shared UI
 
     /// The same drop-from-the-title-bar frame the main sheets use.
-    fn sheet_frame(&self, width: f32, content: AnyElement) -> AnyElement {
+    fn sheet_frame(&self, width: f32, content: AnyElement, cx: &mut Context<Self>) -> AnyElement {
         let p = self.palette;
         let gen_ = self.reading.sheet_gen;
         div()
@@ -638,6 +638,17 @@ impl MainView {
                     .py(px(16.))
                     .font_family("Inter")
                     .text_size(px(13.))
+                    // Windows: Esc closes the sheet from anywhere inside it,
+                    // not only from its text field (which loses focus after
+                    // a click or an error).
+                    .when(cfg!(target_os = "windows"), |d| {
+                        d.on_key_down(cx.listener(|this, ev: &KeyDownEvent, window, cx| {
+                            if ev.keystroke.key == "escape" {
+                                cx.stop_propagation();
+                                this.close_reading_sheet(window, cx);
+                            }
+                        }))
+                    })
                     .child(content)
                     .with_animation(
                         ("reading-sheet-in", gen_),

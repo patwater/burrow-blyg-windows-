@@ -20,7 +20,8 @@ The first launch walks you through **Connect your blyg**: your blyg's address an
 - **Menu.** Windows has no global menu bar, so a **Menu** button at the top left of the window lists every menu item, including the ones without a key (Subscribe…, Site Settings…, Open Config File).
 - **Title bar.** The window uses the normal Windows title bar with its minimise, maximise, and close buttons.
 - **Where things live.** The config file is `%APPDATA%\Blygger\config` (Menu › Open Config File opens it in Notepad). The local database, caches, and media are in `%LOCALAPPDATA%\Blygger\`. Your token and AI keys are stored in Windows Credential Manager under `org.blygger.desktop`, and the app's text says so wherever the macOS app says Keychain.
-- **Settings › AI.** Each key field has a **Save** button and the sheet has a **Done** button, alongside the ⏎ and Esc keys that macOS relies on.
+- **Settings › AI.** Each key field has a **Save** button and the sheet has a **Done** button, alongside the ⏎ and Esc keys that macOS relies on. The Subscribe sheet's keys are buttons too, and Esc closes any reading sheet from anywhere inside it.
+- **A refused token.** When your blyg starts refusing the owner token (401), the app says so once, instead of showing only "sync error".
 - **Fonts.** The macOS system fonts in the font list become their nearest Windows equivalents: New York becomes Georgia, Charter becomes Cambria, SF Pro becomes Segoe UI, and Menlo becomes Consolas. The bundled fonts, including the defaults, are the same on both.
 - **Updates.** The macOS app updates itself; the Windows build does not yet. Download new versions from the release page.
 - **AI helpers.** The "local Claude Code" and "Codex" providers find `claude` and `codex` on your `PATH`, in `%USERPROFILE%\.local\bin`, and in npm's global folder (`%APPDATA%\npm`).

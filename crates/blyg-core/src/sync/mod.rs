@@ -242,9 +242,22 @@ impl Engine {
             e if is_transient(e) => Health::Error,
             _ => return,
         };
+        // Windows: say why, once, when the blyg starts refusing the token;
+        // the status bar alone only says "sync error".
+        let newly_refused = cfg!(target_os = "windows")
+            && matches!(e, CoreError::Unauthorized)
+            && st.health != Health::Error;
         st.health = health;
         st.retry_at = Some(Instant::now() + st.backoff);
         st.backoff = (st.backoff * 2).min(self.opts.backoff_max);
+        drop(st);
+        if newly_refused {
+            self.emit(CoreEvent::Error(
+                "Your blyg refused the owner token (401). If the token changed, use \
+                 Disconnect… from the Menu and connect again with the new one."
+                    .into(),
+            ));
+        }
     }
 
     pub fn retry_at(&self) -> Option<Instant> {
