@@ -127,8 +127,9 @@ pub enum Failure {
 /// Never includes secrets (provider messages are passed through [`redact`]).
 pub fn failure_toast(f: &Failure, provider: Option<ProviderKind>) -> (String, String) {
     let who = provider.map(|k| k.label()).unwrap_or("The AI provider");
-    let fix_in_settings =
-        "Open Settings › AI (⌘,) to set one up, or add ai-enable to the config file";
+    let fix_in_settings = crate::keymap::hint(
+        "Open Settings › AI (⌘,) to set one up, or add ai-enable to the config file",
+    );
     match f {
         Failure::TimedOut(d) => (
             format!("{who} took longer than {} s; nothing was written", d.as_secs()),

@@ -22,6 +22,14 @@ impl Render for Host {
     }
 }
 
+/// gpui-base's editing keys follow each platform's conventions:
+/// end of text, start of text, undo, redo.
+const EDIT_KEYS: [&str; 4] = if cfg!(target_os = "macos") {
+    ["cmd-down", "cmd-up", "cmd-z", "cmd-shift-z"]
+} else {
+    ["ctrl-end", "ctrl-home", "ctrl-z", "ctrl-y"]
+};
+
 #[gpui_kit::test]
 fn long_text_editing(cx: &mut TestAppContext) {
     cx.update(gpui_kit::init);
@@ -40,7 +48,7 @@ fn long_text_editing(cx: &mut TestAppContext) {
     cx.run_until_parked();
 
     // ⌘↓ goes to the end; typing appends.
-    cx.simulate_keystrokes("cmd-down");
+    cx.simulate_keystrokes(EDIT_KEYS[0]);
     let t = Instant::now();
     cx.simulate_input("END");
     cx.run_until_parked();
@@ -49,15 +57,15 @@ fn long_text_editing(cx: &mut TestAppContext) {
     assert!(input.read_with(cx, |s, _| s.value().ends_with("END")));
 
     // ⌘↑ goes to the start; typing prepends.
-    cx.simulate_keystrokes("cmd-up");
+    cx.simulate_keystrokes(EDIT_KEYS[1]);
     cx.simulate_input("A");
     assert!(input.read_with(cx, |s, _| s.value().starts_with("ALorem")));
 
     // Undo / redo.
-    cx.simulate_keystrokes("cmd-z");
+    cx.simulate_keystrokes(EDIT_KEYS[2]);
     cx.run_until_parked();
     assert!(input.read_with(cx, |s, _| s.value().starts_with("Lorem")));
-    cx.simulate_keystrokes("cmd-shift-z");
+    cx.simulate_keystrokes(EDIT_KEYS[3]);
     cx.run_until_parked();
     assert!(input.read_with(cx, |s, _| s.value().starts_with("ALorem")));
 

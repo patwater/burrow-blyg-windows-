@@ -472,7 +472,7 @@ impl MainView {
             .border_color(p.muted.opacity(0.6))
             .hover(|s| s.text_color(p.accent).border_color(p.accent))
             .tooltip(|_, cx| {
-                cx.new(|_| crate::app::reading::Tip("Profile · ⌘I".into()))
+                cx.new(|_| crate::app::reading::Tip(crate::keymap::hint("Profile · ⌘I").into()))
                     .into()
             })
             .on_click(

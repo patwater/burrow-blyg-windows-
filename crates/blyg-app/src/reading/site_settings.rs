@@ -191,11 +191,9 @@ impl MainView {
                 this.close_reading_sheet(window, cx);
             }))
             .child(self.sheet_heading("Site settings"))
-            .child(
-                div()
-                    .text_color(p.muted)
-                    .child("What your blyg shows about itself. Saved to the blyg, not this Mac."),
-            );
+            .child(div().text_color(p.muted).child(crate::keymap::hint(
+                "What your blyg shows about itself. Saved to the blyg, not this Mac.",
+            )));
         match load {
             Load::Unavailable => {
                 return frame

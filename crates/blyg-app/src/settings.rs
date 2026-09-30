@@ -111,9 +111,17 @@ pub fn open_config_file(cx: &App) -> Result<PathBuf, String> {
         .store
         .ensure_primary_exists()
         .map_err(|e| format!("Couldn't create the config file: {e}"))?;
-    std::process::Command::new("/usr/bin/open")
-        .arg("-t")
-        .arg(&path)
+    // The file has no extension, so Windows has no default app for it:
+    // Notepad is always there.
+    #[cfg(windows)]
+    let mut cmd = std::process::Command::new("notepad.exe");
+    #[cfg(not(windows))]
+    let mut cmd = {
+        let mut c = std::process::Command::new("/usr/bin/open");
+        c.arg("-t");
+        c
+    };
+    cmd.arg(&path)
         .spawn()
         .map_err(|e| format!("Couldn't open the config file: {e}"))?;
     Ok(path)
@@ -180,9 +188,15 @@ mod tests {
 
     #[test]
     fn app_checks_fonts_and_hotkeys() {
-        let s = ConfigStore::in_memory(
-            "font-family-writing = Comic Sans\nfont-family-ui = sf pro\ncapture-hotkey = ctrl+alt+nope\nbogus = 1\n",
-        );
+        // A system font, as this platform names it (any case).
+        let ui = if cfg!(target_os = "windows") {
+            "segoe ui"
+        } else {
+            "sf pro"
+        };
+        let s = ConfigStore::in_memory(&format!(
+            "font-family-writing = Comic Sans\nfont-family-ui = {ui}\ncapture-hotkey = ctrl+alt+nope\nbogus = 1\n",
+        ));
         let d = diagnostics(s.loaded());
         let lines: Vec<(usize, Severity)> = d.iter().map(|d| (d.line, d.severity)).collect();
         assert_eq!(

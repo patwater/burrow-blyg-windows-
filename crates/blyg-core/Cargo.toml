@@ -6,7 +6,8 @@ license.workspace = true
 
 [features]
 default = ["keychain"]
-# Real macOS Keychain token storage. Tests never construct `KeychainTokenStore`.
+# Real OS token storage: the macOS Keychain, or Windows Credential Manager.
+# Tests never construct `KeychainTokenStore`.
 keychain = ["dep:keyring"]
 
 [dependencies]
@@ -18,7 +19,7 @@ ureq = { version = "2.12", default-features = false, features = ["tls", "json"] 
 rusqlite = { version = "0.40", features = ["bundled"] }
 toml = "1"
 url = "2"
-keyring = { version = "3.6", features = ["apple-native"], optional = true }
+keyring = { version = "3.6", features = ["apple-native", "windows-native"], optional = true }
 
 [dev-dependencies]
 tempfile = "3"

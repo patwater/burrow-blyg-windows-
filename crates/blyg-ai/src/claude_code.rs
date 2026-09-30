@@ -78,6 +78,23 @@ impl LocalClaudeCode {
     }
 }
 
+/// npm's `claude.cmd` shim runs through cmd.exe, which can't pass the
+/// multi-line system prompt as an argument: hand it over as a file.
+pub(crate) fn system_prompt_as_file(
+    mut args: Vec<String>,
+    dir: &std::path::Path,
+) -> Result<Vec<String>> {
+    if let Some(i) = args.iter().position(|a| a == "--system-prompt")
+        && i + 1 < args.len()
+    {
+        let path = dir.join(".system-prompt.md");
+        std::fs::write(&path, &args[i + 1]).map_err(|e| AiError::Storage(e.to_string()))?;
+        args[i] = "--system-prompt-file".into();
+        args[i + 1] = path.display().to_string();
+    }
+    Ok(args)
+}
+
 impl Provider for LocalClaudeCode {
     fn kind(&self) -> ProviderKind {
         ProviderKind::LocalClaudeCode
@@ -89,8 +106,12 @@ impl Provider for LocalClaudeCode {
             .binary()
             .ok_or_else(|| AiError::CliNotFound("Claude Code (`claude`)".into()))?;
         let dir = ScratchDir::new()?;
+        let mut args = self.args(&req);
+        if cli::is_batch_shim(&bin) {
+            args = system_prompt_as_file(args, dir.path())?;
+        }
         let mut cmd = Command::new(&bin);
-        cmd.args(self.args(&req))
+        cmd.args(args)
             .current_dir(dir.path())
             .env("PATH", self.locator.child_path(&bin));
 
@@ -195,5 +216,33 @@ impl Provider for LocalClaudeCode {
                 },
             }),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn batch_shims_get_the_system_prompt_as_a_file() {
+        assert!(cli::is_batch_shim(std::path::Path::new(
+            r"C:\npm\claude.cmd"
+        )));
+        assert!(cli::is_batch_shim(std::path::Path::new("claude.BAT")));
+        assert!(!cli::is_batch_shim(std::path::Path::new("claude.exe")));
+        assert!(!cli::is_batch_shim(std::path::Path::new("claude")));
+
+        let dir = tempfile::tempdir().unwrap();
+        let args = vec![
+            "-p".to_string(),
+            "--system-prompt".to_string(),
+            "line one\nline two".to_string(),
+        ];
+        let out = system_prompt_as_file(args, dir.path()).unwrap();
+        assert_eq!(out[1], "--system-prompt-file");
+        assert_eq!(
+            std::fs::read_to_string(&out[2]).unwrap(),
+            "line one\nline two"
+        );
     }
 }

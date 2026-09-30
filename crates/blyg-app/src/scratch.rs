@@ -67,9 +67,12 @@ pub(crate) fn create_note(
         NewNote::Draft => backend
             .create_draft(Kind::Fragment, seed)
             .map(|id| (id, "New draft created")),
-        NewNote::Scratch => backend
-            .create_scratch(Kind::Fragment, seed)
-            .map(|id| (id, "New scratch note · only on this Mac")),
+        NewNote::Scratch => backend.create_scratch(Kind::Fragment, seed).map(|id| {
+            (
+                id,
+                crate::keymap::hint("New scratch note · only on this Mac"),
+            )
+        }),
     }
 }
 
@@ -127,7 +130,7 @@ impl MainView {
                 let (new_text, caret) = insert_image(&text, cursor, &url);
                 self.splice_editor(&text, &new_text, Some(caret), window, cx);
                 self.show_toast(
-                    "Image kept on this Mac",
+                    crate::keymap::hint("Image kept on this Mac"),
                     Some("It's uploaded when the note becomes a draft or is published".into()),
                     cx,
                 );
@@ -199,7 +202,10 @@ impl MainView {
                     // Nothing changed: it's still a scratch note.
                     Err(e) => v.show_toast(
                         format!("Couldn't make a draft: {e}"),
-                        images.then(|| "It's still a scratch note, only on this Mac".into()),
+                        images.then(|| {
+                            crate::keymap::hint("It's still a scratch note, only on this Mac")
+                                .into()
+                        }),
                         cx,
                     ),
                 }
@@ -307,7 +313,10 @@ mod tests {
             assert_eq!(vm::pill(row), ("scratch".to_string(), false));
             assert!(!vm::has_unpublished_edits(row));
             let cur = v.current.as_ref().unwrap();
-            assert_eq!(vm::version_label(cur), "scratch · only on this Mac");
+            assert_eq!(
+                vm::version_label(cur),
+                crate::keymap::hint("scratch · only on this Mac")
+            );
         });
         // Editing it saves locally and never queues a push.
         cx.simulate_input(", green as a pond.");
@@ -324,7 +333,7 @@ mod tests {
         let id = open_scratch(&view, &fake, "Kettle whistles in B flat", cx);
         let before = fake.items().len();
 
-        cx.simulate_keystrokes("cmd-d");
+        cx.simulate_keystrokes(&crate::keymap::keys("cmd-d"));
         cx.run_until_parked();
         let it = fake.item(&id).expect("same id");
         assert_eq!(it.status, Status::Draft);
@@ -337,7 +346,7 @@ mod tests {
         });
 
         // Again: nothing to do, and no demotion.
-        cx.simulate_keystrokes("cmd-d");
+        cx.simulate_keystrokes(&crate::keymap::keys("cmd-d"));
         cx.run_until_parked();
         assert_eq!(toast(&view, cx), "Already a draft");
         assert_eq!(fake.item(&id).unwrap().status, Status::Draft);
@@ -349,7 +358,7 @@ mod tests {
         // Too long for a fragment: promotion makes it a thread, so no shake.
         let long = format!("Tide tables. {}", "Low water at noon. ".repeat(60));
         let id = open_scratch(&view, &fake, &long, cx);
-        cx.simulate_keystrokes("cmd-enter");
+        cx.simulate_keystrokes(&crate::keymap::keys("cmd-enter"));
         cx.run_until_parked();
         view.read_with(cx, |v, _| {
             assert!(matches!(v.sheet, Some(Sheet::Publish { .. })));
@@ -376,7 +385,10 @@ mod tests {
         let first = fake.items().remove(0);
         assert_eq!(first.content_md, "rain on tin roofs");
         assert_eq!(first.status, Status::Scratch);
-        assert_eq!(toast(&view, cx), "New scratch note · only on this Mac");
+        assert_eq!(
+            toast(&view, cx),
+            crate::keymap::hint("New scratch note · only on this Mac")
+        );
     }
 
     #[gpui_kit::test]
@@ -429,7 +441,10 @@ mod tests {
             .scratch_media_file(&format!("blyg-local:{}", refs[0]))
             .expect("the image is in the scratch media folder");
         assert_eq!(std::fs::read(file).unwrap(), PNG);
-        assert_eq!(toast(&view, cx), "Image kept on this Mac");
+        assert_eq!(
+            toast(&view, cx),
+            crate::keymap::hint("Image kept on this Mac")
+        );
 
         // The studio preview shows it (inline bytes; nothing is fetched).
         let item = fake.item(&id).unwrap();
@@ -443,7 +458,7 @@ mod tests {
         let (view, fake, cx) = setup(cx, CONNECTED);
         let id = open_scratch(&view, &fake, "Low tide mudflats at noon", cx);
         paste(&view, cx);
-        cx.simulate_keystrokes("cmd-d");
+        cx.simulate_keystrokes(&crate::keymap::keys("cmd-d"));
         settle(cx);
 
         assert_eq!(fake.upload_count(), 1);
@@ -468,7 +483,7 @@ mod tests {
         let before = editor_text(&view, cx);
         fake.set_fail_uploads(true);
 
-        cx.simulate_keystrokes("cmd-d");
+        cx.simulate_keystrokes(&crate::keymap::keys("cmd-d"));
         settle(cx);
         let it = fake.item(&id).unwrap();
         assert_eq!(it.status, Status::Scratch, "no half-promoted state");
@@ -482,7 +497,7 @@ mod tests {
         assert!(t.contains("still a scratch note"), "{t}");
 
         // ⌘⏎ the same: it stays scratch and says why.
-        cx.simulate_keystrokes("cmd-enter");
+        cx.simulate_keystrokes(&crate::keymap::keys("cmd-enter"));
         cx.run_until_parked();
         cx.simulate_keystrokes("enter");
         settle(cx);
@@ -514,7 +529,7 @@ mod tests {
                 window.focus(&gpui_kit::Focusable::focus_handle(&v.editor, cx), cx);
             });
             cx.write_to_clipboard(gpui_kit::ClipboardItem::new_string(clip.to_string()));
-            cx.simulate_keystrokes("cmd-v");
+            cx.simulate_keystrokes(&crate::keymap::keys("cmd-v"));
             cx.run_until_parked();
         };
         paste_over(10..21, "https://example.org/tides", cx);

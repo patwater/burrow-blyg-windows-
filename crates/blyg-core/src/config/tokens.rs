@@ -58,7 +58,7 @@ impl TokenStore for MemoryTokenStore {
 #[derive(Debug, Default, Clone, Copy)]
 pub struct KeychainTokenStore;
 
-#[cfg(feature = "keychain")]
+#[cfg(all(feature = "keychain", not(windows)))]
 impl KeychainTokenStore {
     fn entry(base_url: &str) -> Result<keyring::Entry> {
         keyring::Entry::new(KEYCHAIN_SERVICE, &token_account(base_url))
@@ -66,7 +66,7 @@ impl KeychainTokenStore {
     }
 }
 
-#[cfg(feature = "keychain")]
+#[cfg(all(feature = "keychain", not(windows)))]
 impl TokenStore for KeychainTokenStore {
     fn get(&self, base_url: &str) -> Result<Option<String>> {
         match Self::entry(base_url)?.get_password() {
@@ -88,9 +88,169 @@ impl TokenStore for KeychainTokenStore {
     }
 }
 
+/// Windows Credential Manager (`keyring`'s `windows-native`), which holds
+/// at most 2,560 bytes (1,280 UTF-16 units) per secret: less than a ChatGPT
+/// sign-in. Longer secrets are split, see `chunked`.
+#[cfg(all(feature = "keychain", windows))]
+impl TokenStore for KeychainTokenStore {
+    fn get(&self, base_url: &str) -> Result<Option<String>> {
+        chunked::get(&CredentialManager, &token_account(base_url))
+    }
+    fn set(&self, base_url: &str, token: &str) -> Result<()> {
+        chunked::set(&CredentialManager, &token_account(base_url), token)
+    }
+    fn delete(&self, base_url: &str) -> Result<()> {
+        chunked::delete(&CredentialManager, &token_account(base_url))
+    }
+}
+
+/// One Credential Manager entry per account name, no splitting.
+#[cfg(all(feature = "keychain", windows))]
+struct CredentialManager;
+
+#[cfg(all(feature = "keychain", windows))]
+impl chunked::Raw for CredentialManager {
+    fn get(&self, account: &str) -> Result<Option<String>> {
+        let entry = keyring::Entry::new(KEYCHAIN_SERVICE, account)
+            .map_err(|e| CoreError::Other(format!("keychain: {e}")))?;
+        match entry.get_password() {
+            Ok(t) => Ok(Some(t)),
+            Err(keyring::Error::NoEntry) => Ok(None),
+            Err(e) => Err(CoreError::Other(format!("keychain: {e}"))),
+        }
+    }
+    fn set(&self, account: &str, value: &str) -> Result<()> {
+        keyring::Entry::new(KEYCHAIN_SERVICE, account)
+            .and_then(|e| e.set_password(value))
+            .map_err(|e| CoreError::Other(format!("keychain: {e}")))
+    }
+    fn delete(&self, account: &str) -> Result<()> {
+        let entry = keyring::Entry::new(KEYCHAIN_SERVICE, account)
+            .map_err(|e| CoreError::Other(format!("keychain: {e}")))?;
+        match entry.delete_credential() {
+            Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+            Err(e) => Err(CoreError::Other(format!("keychain: {e}"))),
+        }
+    }
+}
+
+/// Secrets too long for one Credential Manager entry: the parts go in
+/// `account#1`, `account#2`…, and `account` itself holds a marker with
+/// the count. Short secrets are stored as they are.
+#[cfg_attr(not(all(feature = "keychain", windows)), allow(dead_code))]
+mod chunked {
+    use crate::backend::{CoreError, Result};
+
+    /// 600 chars is at most 1,200 UTF-16 units, under the 1,280 limit.
+    pub const PART_CHARS: usize = 600;
+    const MARKER: &str = "\u{1}blygger-parts:";
+
+    pub trait Raw {
+        fn get(&self, account: &str) -> Result<Option<String>>;
+        fn set(&self, account: &str, value: &str) -> Result<()>;
+        fn delete(&self, account: &str) -> Result<()>;
+    }
+
+    fn part(account: &str, i: usize) -> String {
+        format!("{account}#{i}")
+    }
+
+    fn parts_in(head: &str) -> Option<usize> {
+        head.strip_prefix(MARKER)?.parse().ok()
+    }
+
+    pub fn get(raw: &dyn Raw, account: &str) -> Result<Option<String>> {
+        let Some(head) = raw.get(account)? else {
+            return Ok(None);
+        };
+        let Some(n) = parts_in(&head) else {
+            return Ok(Some(head));
+        };
+        let mut secret = String::new();
+        for i in 1..=n {
+            match raw.get(&part(account, i))? {
+                Some(p) => secret.push_str(&p),
+                None => {
+                    return Err(CoreError::Other(format!(
+                        "keychain: part {i} of {n} for {account} is missing"
+                    )));
+                }
+            }
+        }
+        Ok(Some(secret))
+    }
+
+    pub fn set(raw: &dyn Raw, account: &str, secret: &str) -> Result<()> {
+        delete(raw, account)?;
+        let chars: Vec<char> = secret.chars().collect();
+        if chars.len() <= PART_CHARS {
+            return raw.set(account, secret);
+        }
+        let parts: Vec<String> = chars
+            .chunks(PART_CHARS)
+            .map(|c| c.iter().collect())
+            .collect();
+        for (i, p) in parts.iter().enumerate() {
+            raw.set(&part(account, i + 1), p)?;
+        }
+        raw.set(account, &format!("{MARKER}{}", parts.len()))
+    }
+
+    pub fn delete(raw: &dyn Raw, account: &str) -> Result<()> {
+        if let Some(n) = raw.get(account)?.as_deref().and_then(parts_in) {
+            for i in 1..=n {
+                raw.delete(&part(account, i))?;
+            }
+        }
+        raw.delete(account)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A raw store that refuses what Credential Manager would.
+    #[derive(Default)]
+    struct Limited(Mutex<HashMap<String, String>>);
+
+    impl chunked::Raw for Limited {
+        fn get(&self, account: &str) -> Result<Option<String>> {
+            Ok(self.0.lock().unwrap().get(account).cloned())
+        }
+        fn set(&self, account: &str, value: &str) -> Result<()> {
+            if value.encode_utf16().count() > 1280 {
+                return Err(CoreError::Other("too long".into()));
+            }
+            self.0.lock().unwrap().insert(account.into(), value.into());
+            Ok(())
+        }
+        fn delete(&self, account: &str) -> Result<()> {
+            self.0.lock().unwrap().remove(account);
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn long_secrets_are_split_and_joined() {
+        let raw = Limited::default();
+        let long: String = "a😀bc".repeat(1000);
+        chunked::set(&raw, "chatgpt", &long).unwrap();
+        assert_eq!(chunked::get(&raw, "chatgpt").unwrap(), Some(long));
+        assert!(raw.0.lock().unwrap().len() > 2, "stored in parts");
+
+        // Shorter again: the old parts go.
+        chunked::set(&raw, "chatgpt", "short").unwrap();
+        assert_eq!(
+            chunked::get(&raw, "chatgpt").unwrap().as_deref(),
+            Some("short")
+        );
+        assert_eq!(raw.0.lock().unwrap().len(), 1);
+
+        chunked::delete(&raw, "chatgpt").unwrap();
+        assert_eq!(chunked::get(&raw, "chatgpt").unwrap(), None);
+        assert!(raw.0.lock().unwrap().is_empty());
+    }
 
     #[test]
     fn token_account_is_host() {

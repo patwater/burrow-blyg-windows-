@@ -54,10 +54,12 @@ pub fn how(kind: ProviderKind) -> &'static str {
             "Runs your installed `codex` CLI, signed in to your own account"
         }
         ProviderKind::ChatgptAccount => "Sign in with ChatGPT in the browser (unofficial)",
-        ProviderKind::AnthropicApi => "An Anthropic API key, kept in the Keychain",
-        ProviderKind::OpenaiApi => "An OpenAI API key, kept in the Keychain",
+        ProviderKind::AnthropicApi => {
+            crate::keymap::hint("An Anthropic API key, kept in the Keychain")
+        }
+        ProviderKind::OpenaiApi => crate::keymap::hint("An OpenAI API key, kept in the Keychain"),
         ProviderKind::CloudflareWorkersAi => {
-            "Account ID + API token (the token goes in the Keychain)"
+            crate::keymap::hint("Account ID + API token (the token goes in the Keychain)")
         }
         ProviderKind::BlygServer => "Your blyg's own /generate endpoint (the Worker needs a key)",
     }

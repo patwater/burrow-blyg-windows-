@@ -1,0 +1,9 @@
+# Keep LF endings on Windows checkouts too: tests embed fixtures with
+# include_str! and compare text and hashes byte for byte.
+* text=auto eol=lf
+*.ico binary
+*.icns binary
+*.png binary
+*.ttf binary
+*.otf binary
+*.woff2 binary

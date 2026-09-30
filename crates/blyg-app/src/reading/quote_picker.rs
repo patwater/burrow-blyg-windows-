@@ -41,7 +41,7 @@ impl MainView {
         if !vm::can_quote_into(Some(&item)) {
             self.show_toast(
                 "Quotes go in threads",
-                Some("⌘T makes this a thread".into()),
+                Some(crate::keymap::hint("⌘T makes this a thread").into()),
                 cx,
             );
             return None;

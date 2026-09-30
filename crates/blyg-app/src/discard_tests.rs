@@ -78,7 +78,7 @@ fn current(view: &Entity<MainView>, cx: &mut VisualTestContext) -> Option<LocalI
 fn delete_asks_then_deletes_and_the_list_moves_on(cx: &mut TestAppContext) {
     let (view, fake, cx) = setup(cx);
     assert_eq!(current(&view, cx), Some(id(DRAFT)));
-    cx.simulate_keystrokes("cmd-shift-backspace");
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-shift-backspace"));
     cx.run_until_parked();
     view.read_with(cx, |v, _| match &v.sheet {
         Some(Sheet::DeleteDraft {
@@ -115,7 +115,7 @@ fn delete_asks_then_deletes_and_the_list_moves_on(cx: &mut TestAppContext) {
 #[gpui_kit::test]
 fn esc_cancels_and_keeps_the_draft(cx: &mut TestAppContext) {
     let (view, fake, cx) = setup(cx);
-    cx.simulate_keystrokes("cmd-shift-backspace");
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-shift-backspace"));
     cx.run_until_parked();
     assert!(view.read_with(cx, |v, _| matches!(
         v.sheet,
@@ -134,11 +134,11 @@ fn delete_from_the_editor_with_text_selected(cx: &mut TestAppContext) {
     cx.simulate_keystrokes("enter"); // open the draft: focus in the editor
     cx.run_until_parked();
     assert_eq!(view.read_with(cx, |v, _| v.mode), Mode::Edit);
-    cx.simulate_keystrokes("cmd-a");
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-a"));
     cx.run_until_parked();
     let before = fake.item(&id(DRAFT)).unwrap().content_md;
     // ⇧⌘⌫ isn't a text-editing key: it asks, and the text is untouched.
-    cx.simulate_keystrokes("cmd-shift-backspace");
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-shift-backspace"));
     cx.run_until_parked();
     assert!(view.read_with(cx, |v, _| matches!(
         v.sheet,
@@ -148,7 +148,7 @@ fn delete_from_the_editor_with_text_selected(cx: &mut TestAppContext) {
     cx.simulate_keystrokes("escape");
     cx.run_until_parked();
     // ⌘⌫ keeps its text meaning (delete to line start) and asks nothing.
-    cx.simulate_keystrokes("cmd-backspace");
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-backspace"));
     cx.run_until_parked();
     assert!(view.read_with(cx, |v, _| v.sheet.is_none()));
     assert!(fake.item(&id(DRAFT)).is_some());
@@ -166,7 +166,7 @@ fn a_scratch_note_is_deleted_too(cx: &mut TestAppContext) {
         v.load_selected(window, cx);
     });
     cx.run_until_parked();
-    cx.simulate_keystrokes("cmd-shift-backspace");
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-shift-backspace"));
     cx.run_until_parked();
     assert!(view.read_with(cx, |v, _| matches!(
         v.sheet,
@@ -187,7 +187,7 @@ fn published_posts_are_never_deleted(cx: &mut TestAppContext) {
     cx.simulate_keystrokes("down"); // the public post
     cx.run_until_parked();
     assert_eq!(current(&view, cx), Some(id(PUBLIC)));
-    cx.simulate_keystrokes("cmd-shift-backspace");
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-shift-backspace"));
     cx.run_until_parked();
     assert!(view.read_with(cx, |v, _| v.sheet.is_none()), "no sheet");
     assert_eq!(toast(&view, cx), "Published posts can't be deleted");

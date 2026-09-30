@@ -51,7 +51,7 @@ fn publish_on_an_over_limit_fragment_says_thread() {
     assert!(long.over_limit());
     assert_eq!(
         reason("Publish", &facts(Some(&long))).as_deref(),
-        Some(TOO_LONG)
+        Some(crate::keymap::hint(TOO_LONG))
     );
     // The same text as a thread publishes.
     long.kind = Kind::Thread;
@@ -191,7 +191,11 @@ fn screens_sheets_views_and_capture() {
         ..facts(Some(&draft))
     };
     for a in ["NewDraft", "Publish", "ViewWrite", "AiGenerate"] {
-        assert_eq!(reason(a, &reading).as_deref(), Some(NEED_POSTS), "{a}");
+        assert_eq!(
+            reason(a, &reading).as_deref(),
+            Some(crate::keymap::hint(NEED_POSTS)),
+            "{a}"
+        );
     }
     assert_eq!(
         reason("ShowCapture", &reading),
@@ -235,19 +239,40 @@ fn buttons_come_from_the_keymap_with_keys_in_tooltips() {
         ]
     );
     let tip = |a: &str| b.iter().find(|b| b.action == a).unwrap().tooltip.clone();
-    assert_eq!(tip("Publish"), "Publish  ⌘⏎");
-    assert_eq!(tip("NewDraft"), "New draft  ⌘N");
-    assert_eq!(tip("ViewStudio"), "Full editor: editor + preview  ⌘3");
-    assert_eq!(tip("ShowCapture"), "Quick capture  ⌃⌥B");
-    assert_eq!(tip("DeleteDraft"), "Delete draft or scratch note…  ⇧⌘⌫");
+    // The key as this platform shows it (⌘⏎ on macOS, Ctrl+Enter on Windows).
+    let key = |k: &str| crate::keymap::glyphs(&crate::keymap::keys(k));
+    assert_eq!(tip("Publish"), format!("Publish  {}", key("cmd-enter")));
+    assert_eq!(tip("NewDraft"), format!("New draft  {}", key("cmd-n")));
+    assert_eq!(
+        tip("ViewStudio"),
+        format!("Full editor: editor + preview  {}", key("cmd-3"))
+    );
+    let hotkey = crate::prefs::hotkey_glyphs;
+    assert_eq!(
+        tip("ShowCapture"),
+        format!("Quick capture  {}", hotkey("ctrl+alt+b"))
+    );
+    assert_eq!(
+        tip("DeleteDraft"),
+        format!(
+            "Delete draft or scratch note…  {}",
+            key("cmd-shift-backspace")
+        )
+    );
     let scratchy = Facts {
         new_note: NewNote::Scratch,
         ..facts(Some(&draft))
     };
     let b = buttons(&scratchy, "cmd+shift+space");
     let tip = |a: &str| b.iter().find(|b| b.action == a).unwrap().tooltip.clone();
-    assert_eq!(tip("NewDraft"), "New scratch note  ⌘N");
-    assert_eq!(tip("ShowCapture"), "Quick capture  ⇧⌘Space");
+    assert_eq!(
+        tip("NewDraft"),
+        format!("New scratch note  {}", key("cmd-n"))
+    );
+    assert_eq!(
+        tip("ShowCapture"),
+        format!("Quick capture  {}", hotkey("cmd+shift+space"))
+    );
 }
 
 #[test]
@@ -387,7 +412,7 @@ fn disabled_reasons_in_the_window(cx: &mut TestAppContext) {
     cx.run_until_parked();
     assert_eq!(
         button(&view, "Publish", cx).reason.as_deref(),
-        Some(TOO_LONG)
+        Some(crate::keymap::hint(TOO_LONG))
     );
     assert!(
         button(&view, "MakeDraft", cx)
@@ -421,14 +446,22 @@ fn the_toolbar_stays_in_the_title_bar(cx: &mut TestAppContext) {
 #[gpui_kit::test]
 fn settings_toggle_writes_show_buttons_and_reload_reads_it(cx: &mut TestAppContext) {
     let (view, _fake, cx) = setup(cx, CONNECTED);
-    cx.simulate_keystrokes("cmd-,");
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-,"));
     cx.run_until_parked();
-    // Let the sheet finish dropping in, so the chip is where it'll be clicked.
-    for _ in 0..3 {
+    // Let the sheet finish dropping in, so the chip is where it'll be
+    // clicked: step the animation until the chip stops moving. (A fixed
+    // three steps was sometimes short, and always on Windows.)
+    let mut last = None;
+    for _ in 0..40 {
         cx.executor()
             .advance_clock(std::time::Duration::from_millis(150));
         cx.update(|window, _| window.refresh());
         cx.run_until_parked();
+        let now = cx.debug_bounds("show-buttons-off");
+        if now.is_some() && now == last {
+            break;
+        }
+        last = now;
     }
     click(cx, "show-buttons-off");
     assert!(view.read_with(cx, |v, _| !v.prefs.show_buttons));
@@ -455,7 +488,7 @@ fn settings_toggle_writes_show_buttons_and_reload_reads_it(cx: &mut TestAppConte
         )
         .unwrap();
     });
-    cx.simulate_keystrokes("cmd-shift-,");
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-shift-,"));
     cx.run_until_parked();
     assert!(view.read_with(cx, |v, _| v.prefs.show_buttons));
     assert!(cx.debug_bounds("toolbar").is_some());

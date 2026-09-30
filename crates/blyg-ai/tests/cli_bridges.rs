@@ -1,3 +1,5 @@
+#![cfg(unix)] // Fake CLIs here are POSIX shell scripts on a `:`-separated PATH.
+
 //! The local Claude Code / Codex bridges against fake `claude` / `codex`
 //! shell scripts on a custom PATH. No real CLI is ever run.
 

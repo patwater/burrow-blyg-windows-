@@ -18,7 +18,6 @@ chrono = { version = "0.4", default-features = false, features = ["clock", "std"
 async-channel = "2"
 global-hotkey = "0.8"
 raw-window-handle = "0.6"
-objc2 = "0.6"
 # --- full editor ---
 blyg-render = { path = "../blyg-render" }
 wry = { version = "0.57", default-features = false }
@@ -32,6 +31,14 @@ base64 = "0.22"
 semver = "1"
 url = "2"
 ed25519-dalek = { version = "2", default-features = false, features = ["std", "fast", "zeroize"] }
+
+[build-dependencies]
+# Windows resources (icon, manifest); build.rs does nothing on other targets.
+embed-resource = "3.0"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+# AppKit calls for the Dock icon, window ordering and webview focus.
+objc2 = "0.6"
 
 [dev-dependencies]
 # --- full editor ---

@@ -485,10 +485,10 @@ impl Render for CaptureView {
                         .flex()
                         .items_center()
                         .gap(px(5.))
-                        .child(kbd("⌘⏎"))
+                        .child(kbd(crate::keymap::hint("⌘⏎")))
                         .child("publish")
                         .child(div().w(px(8.)))
-                        .child(kbd("⌘D"))
+                        .child(kbd(crate::keymap::hint("⌘D")))
                         .child("draft")
                         .child(div().w(px(8.)))
                         .child(kbd("esc"))
@@ -664,7 +664,7 @@ mod tests {
     fn cmd_s_keeps_a_scratch_note(cx: &mut TestAppContext) {
         let (fake, cx) = open_panel(cx, "");
         cx.simulate_input("the owl again, 3am");
-        cx.simulate_keystrokes("cmd-s");
+        cx.simulate_keystrokes(&crate::keymap::keys("cmd-s"));
         cx.run_until_parked();
         assert_eq!(kept(&fake).expect("kept").status, Status::Scratch);
     }
@@ -698,7 +698,7 @@ mod tests {
     fn cmd_d_saves_a_draft(cx: &mut TestAppContext) {
         let (fake, cx) = open_panel(cx, "");
         cx.simulate_input("draft me");
-        cx.simulate_keystrokes("cmd-d");
+        cx.simulate_keystrokes(&crate::keymap::keys("cmd-d"));
         cx.run_until_parked();
         assert_eq!(kept(&fake).expect("kept").status, Status::Draft);
     }
@@ -707,7 +707,7 @@ mod tests {
     fn cmd_enter_publishes(cx: &mut TestAppContext) {
         let (fake, cx) = open_panel(cx, "");
         cx.simulate_input("published from the panel");
-        cx.simulate_keystrokes("cmd-enter");
+        cx.simulate_keystrokes(&crate::keymap::keys("cmd-enter"));
         cx.run_until_parked();
         let it = kept(&fake).expect("kept");
         assert_eq!((it.status, it.version), (Status::Public, 1));
@@ -741,12 +741,20 @@ mod tests {
             .iter()
             .map(|b| (b.label, b.key.as_str(), b.tooltip.as_str()))
             .collect();
+        // The keys as this platform shows them (⌘S on macOS, Ctrl+S on Windows).
+        let key = |k: &str| crate::keymap::glyphs(&crate::keymap::keys(k));
+        let (s, d, p) = (key("cmd-s"), key("cmd-d"), key("cmd-enter"));
+        let (ts, td, tp) = (
+            format!("Scratch  {s} · esc"),
+            format!("Draft  {d}"),
+            format!("Publish  {p}"),
+        );
         assert_eq!(
             got,
             [
-                ("Scratch", "⌘S", "Scratch  ⌘S · esc"),
-                ("Draft", "⌘D", "Draft  ⌘D"),
-                ("Publish", "⌘⏎", "Publish  ⌘⏎"),
+                ("Scratch", s.as_str(), ts.as_str()),
+                ("Draft", d.as_str(), td.as_str()),
+                ("Publish", p.as_str(), tp.as_str()),
             ]
         );
         assert!(row.iter().all(|b| b.reason.is_none()));

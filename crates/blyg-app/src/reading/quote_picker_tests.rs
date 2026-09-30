@@ -139,7 +139,7 @@ fn pasting_bang_brackets_doesnt_open_the_picker(cx: &mut TestAppContext) {
     let (view, cx) = setup(cx);
     let before = open_at_end(&view, DRAFT_THREAD, cx);
     cx.write_to_clipboard(ClipboardItem::new_string("![[".into()));
-    cx.simulate_keystrokes("cmd-v");
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-v"));
     cx.run_until_parked();
     assert!(!picker_open(&view, cx));
     assert_eq!(editor_text(&view, cx), format!("{before}![["));

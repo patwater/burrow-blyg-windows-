@@ -1,5 +1,6 @@
 //! The native preview surface: a WKWebView (through `wry`) attached as a
-//! child of GPUI's NSView and positioned over the preview pane.
+//! child of GPUI's NSView and positioned over the preview pane. On Windows
+//! it is a WebView2 child window of GPUI's HWND instead (`wry_surface_windows`).
 //!
 //! The rest of the app sees only [`PreviewSurface`], so headless tests run on
 //! a stub and a machine without a usable WebView falls back to a message.
@@ -79,8 +80,8 @@ pub type Factory = std::rc::Rc<
 pub struct FactoryGlobal(pub Factory);
 impl gpui_kit::Global for FactoryGlobal {}
 
-/// The default factory: a real WKWebView, except in unit tests (no
-/// surface at all, so no test ever needs a WebView).
+/// The default factory: a real WKWebView (WebView2 on Windows), except in
+/// unit tests (no surface at all, so no test ever needs a WebView).
 pub fn default_factory() -> Factory {
     #[cfg(all(target_os = "macos", not(test)))]
     {
@@ -88,7 +89,14 @@ pub fn default_factory() -> Factory {
             wry_surface::WrySurface::new(window, tx).map(|s| Box::new(s) as Box<dyn PreviewSurface>)
         })
     }
-    #[cfg(any(not(target_os = "macos"), test))]
+    #[cfg(all(target_os = "windows", not(test)))]
+    {
+        std::rc::Rc::new(|window, tx| {
+            wry_surface_windows::WrySurface::new(window, tx)
+                .map(|s| Box::new(s) as Box<dyn PreviewSurface>)
+        })
+    }
+    #[cfg(any(not(any(target_os = "macos", target_os = "windows")), test))]
     {
         std::rc::Rc::new(|_, _| Err("The preview isn't available here.".to_string()))
     }
@@ -388,6 +396,131 @@ mod wry_surface {
         let c = std::ffi::CString::new(s).unwrap_or_default();
         // SAFETY: stringWithUTF8String: copies the bytes; `c` outlives the call.
         unsafe { objc2::msg_send![objc2::class!(NSString), stringWithUTF8String: c.as_ptr()] }
+    }
+}
+
+/// The Windows surface: a WebView2 child window over GPUI's HWND.
+///
+/// GPUI normally draws through a topmost DirectComposition visual, which
+/// would cover any child window; `main` turns that off on Windows
+/// (`GPUI_DISABLE_DIRECT_COMPOSITION`) so this view shows above the app.
+#[cfg(all(target_os = "windows", not(test)))]
+mod wry_surface_windows {
+    use super::*;
+    use std::cell::Cell;
+    use std::rc::Rc;
+    use wry::dpi::{LogicalPosition, LogicalSize};
+    use wry::{NewWindowResponse, Rect, Theme, WebView, WebViewBuilder, WebViewExtWindows};
+
+    pub struct WrySurface {
+        view: WebView,
+        /// Set by `load`: the next top-level navigation is our own
+        /// `NavigateToString`, whatever URI WebView2 reports for it.
+        own_load: Rc<Cell<bool>>,
+    }
+
+    fn rect(b: Bounds<Pixels>) -> Rect {
+        Rect {
+            position: LogicalPosition::new(f64::from(b.origin.x), f64::from(b.origin.y)).into(),
+            size: LogicalSize::new(
+                f64::from(b.size.width).max(1.0),
+                f64::from(b.size.height).max(1.0),
+            )
+            .into(),
+        }
+    }
+
+    impl WrySurface {
+        pub fn new(window: &mut Window, tx: Sender<SurfaceEvent>) -> Result<Self, String> {
+            let (ipc_tx, nav_tx, new_tx) = (tx.clone(), tx.clone(), tx);
+            let own_load = Rc::new(Cell::new(true));
+            let nav_own = own_load.clone();
+            let view = WebViewBuilder::new()
+                .with_bounds(rect(Bounds::default()))
+                .with_visible(false)
+                .with_focused(false)
+                .with_initialization_script_for_main_only(HOST_SCRIPT, true)
+                .with_ipc_handler(move |req| {
+                    if let Some(ev) = parse_ipc(req.body()) {
+                        let _ = ipc_tx.try_send(ev);
+                    }
+                })
+                .with_navigation_handler(move |url| {
+                    if nav_own.replace(false) {
+                        return true;
+                    }
+                    match navigation(&url) {
+                        Nav::Allow => true,
+                        Nav::OpenExternally(u) => {
+                            let _ = nav_tx.try_send(SurfaceEvent::OpenUrl(u));
+                            false
+                        }
+                        Nav::Deny => false,
+                    }
+                })
+                .with_new_window_req_handler(move |url, _| {
+                    if let Nav::OpenExternally(u) = navigation(&url) {
+                        let _ = new_tx.try_send(SurfaceEvent::OpenUrl(u));
+                    }
+                    NewWindowResponse::Deny
+                })
+                .with_html("<!doctype html><html><body></body></html>")
+                .build_as_child(&*window)
+                .map_err(|e| {
+                    format!(
+                        "The preview couldn't start ({e}). It needs the Microsoft Edge \
+                         WebView2 Runtime, which Windows 11 includes."
+                    )
+                })?;
+            Ok(WrySurface { view, own_load })
+        }
+    }
+
+    impl PreviewSurface for WrySurface {
+        fn set_frame(&mut self, bounds: Bounds<Pixels>) {
+            let _ = self.view.set_bounds(rect(bounds));
+        }
+
+        fn set_visible(&mut self, visible: bool) {
+            // A hidden WebView2 can keep keyboard focus; hand it back first.
+            if !visible {
+                let _ = self.view.focus_parent();
+            }
+            let _ = self.view.set_visible(visible);
+        }
+
+        fn reclaim_keyboard(&mut self) {
+            // WebView2 has no cheap "who has focus" query through wry, and
+            // giving focus to GPUI's window when it already has it is harmless.
+            let _ = self.view.focus_parent();
+        }
+
+        fn load(&mut self, html: &str) {
+            self.own_load.set(true);
+            if self.view.load_html(html).is_err() {
+                self.own_load.set(false);
+            }
+        }
+
+        fn eval(&mut self, js: &str) {
+            let _ = self.view.evaluate_script(js);
+        }
+
+        fn focus_parent(&mut self) {
+            let _ = self.view.focus_parent();
+        }
+
+        fn probe(&mut self) {
+            let _ = self
+                .view
+                .evaluate_script_with_callback(PROBE_JS, |json| println!("preview-probe {json}"));
+        }
+
+        fn set_dark(&mut self, dark: bool) {
+            let _ = self
+                .view
+                .set_theme(if dark { Theme::Dark } else { Theme::Light });
+        }
     }
 }
 

@@ -10,6 +10,9 @@
 //! App state (the SQLite db, caches, media) is not config: it lives in
 //! `~/Library/Application Support/org.blygger.desktop/` (`BLYGGER_DATA_DIR`
 //! overrides it).
+//!
+//! On Windows the second config location is `%APPDATA%\Blygger\config`, and
+//! app state lives in `%LOCALAPPDATA%\Blygger\` (not roamed).
 
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
@@ -64,8 +67,21 @@ impl ConfigFiles {
 fn home(env: &dyn Fn(&str) -> Option<OsString>) -> PathBuf {
     env("HOME")
         .filter(|h| !h.is_empty())
+        // Windows has no HOME, as a rule.
+        .or_else(|| env("USERPROFILE").filter(|h| cfg!(windows) && !h.is_empty()))
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("."))
+}
+
+/// Where this platform keeps an app's files: `var` (`APPDATA` for config,
+/// `LOCALAPPDATA` for state) on Windows, else `~/Library/Application Support`.
+fn app_dir(env: &dyn Fn(&str) -> Option<OsString>, var: &str) -> PathBuf {
+    if cfg!(windows)
+        && let Some(d) = env(var).filter(|d| !d.is_empty())
+    {
+        return PathBuf::from(d).join("Blygger");
+    }
+    app_support(&home(env))
 }
 
 /// The two default config locations, in load order.
@@ -73,11 +89,12 @@ pub fn default_locations(env: &dyn Fn(&str) -> Option<OsString>) -> Vec<PathBuf>
     let home = home(env);
     let xdg = env("XDG_CONFIG_HOME")
         .map(PathBuf::from)
-        .filter(|p| p.is_absolute())
+        // Rooted, so `/xdg` counts on Windows too (where it has no drive).
+        .filter(|p| p.has_root())
         .unwrap_or_else(|| home.join(".config"));
     vec![
         xdg.join("blygger").join(CONFIG_FILE_NAME),
-        app_support(&home).join(CONFIG_FILE_NAME),
+        app_dir(env, "APPDATA").join(CONFIG_FILE_NAME),
     ]
 }
 
@@ -96,7 +113,7 @@ pub fn data_dir_with(env: &dyn Fn(&str) -> Option<OsString>) -> PathBuf {
     if let Some(p) = env("BLYGGER_DATA_DIR").filter(|p| !p.is_empty()) {
         return PathBuf::from(p);
     }
-    app_support(&home(env))
+    app_dir(env, "LOCALAPPDATA")
 }
 
 /// `~/Library/Application Support/Blygger/` (before the rename).
@@ -130,9 +147,16 @@ pub fn migrate_data_dir(old: &Path, new: &Path) -> std::io::Result<Vec<PathBuf>>
     Ok(moved)
 }
 
+/// `$HOME`, or `%USERPROFILE%` on Windows (which has no HOME, as a rule).
+pub fn home_var() -> Option<OsString> {
+    std::env::var_os("HOME")
+        .filter(|h| !h.is_empty())
+        .or_else(|| std::env::var_os("USERPROFILE").filter(|h| cfg!(windows) && !h.is_empty()))
+}
+
 /// Replace a leading `$HOME` with `~` for display.
 pub fn tilde(p: &Path) -> String {
-    if let Some(home) = std::env::var_os("HOME").filter(|h| !h.is_empty())
+    if let Some(home) = home_var()
         && let Ok(rest) = p.strip_prefix(&home)
     {
         return format!("~/{}", rest.display());

@@ -73,7 +73,7 @@ fn open_post(view: &Entity<MainView>, id: &str, cx: &mut VisualTestContext) {
 #[gpui_kit::test]
 fn cmd_r_shows_reading_edited_on_top_tombstones_hidden(cx: &mut TestAppContext) {
     let (view, _, cx) = setup(cx);
-    cx.simulate_keystrokes("cmd-r");
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-r"));
     cx.run_until_parked();
     view.read_with(cx, |v, _| {
         assert_eq!(v.reading.view, View::Reading);
@@ -95,11 +95,11 @@ fn cmd_r_shows_reading_edited_on_top_tombstones_hidden(cx: &mut TestAppContext) 
         );
     });
     // Again: back to posts.
-    cx.simulate_keystrokes("cmd-r");
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-r"));
     cx.run_until_parked();
     assert_eq!(view.read_with(cx, |v, _| v.reading.view), View::Posts);
     // ⌘⇧M / ⌘⇧S switch too, and esc returns.
-    cx.simulate_keystrokes("cmd-shift-s");
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-shift-s"));
     cx.run_until_parked();
     assert_eq!(
         view.read_with(cx, |v, _| v.reading.view),
@@ -113,7 +113,7 @@ fn cmd_r_shows_reading_edited_on_top_tombstones_hidden(cx: &mut TestAppContext) 
 #[gpui_kit::test]
 fn opening_marks_read_and_arrows_move(cx: &mut TestAppContext) {
     let (view, fake, cx) = setup(cx);
-    cx.simulate_keystrokes("cmd-r");
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-r"));
     cx.run_until_parked();
     cx.simulate_keystrokes("down");
     settle(cx);
@@ -145,7 +145,7 @@ fn opening_marks_read_and_arrows_move(cx: &mut TestAppContext) {
 #[gpui_kit::test]
 fn others_posts_show_only_current_and_pinned_versions(cx: &mut TestAppContext) {
     let (view, _, cx) = setup(cx);
-    cx.simulate_keystrokes("cmd-r");
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-r"));
     open_row(&view, RUE_TRUST, cx);
     let strings = |view: &Entity<MainView>, cx: &mut VisualTestContext| {
         view.read_with(cx, |v, _| {
@@ -193,7 +193,7 @@ fn others_posts_show_only_current_and_pinned_versions(cx: &mut TestAppContext) {
         );
     });
     // ⌘Y opens the dropdown here; picking the current version goes back.
-    cx.simulate_keystrokes("cmd-y");
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-y"));
     cx.run_until_parked();
     assert!(view.read_with(cx, |v, _| v.reading.opened.as_ref().unwrap().dropdown));
     view.update_in(cx, |v, window, cx| {
@@ -208,7 +208,7 @@ fn others_posts_show_only_current_and_pinned_versions(cx: &mut TestAppContext) {
 #[gpui_kit::test]
 fn diff_only_when_the_read_version_was_pinned(cx: &mut TestAppContext) {
     let (view, _, cx) = setup(cx);
-    cx.simulate_keystrokes("cmd-r");
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-r"));
     // Read at v3, which is pinned → a real diff.
     open_row(&view, RUE_TRUST, cx);
     match view.read_with(cx, |v, _| v.edited_block()) {
@@ -238,7 +238,7 @@ fn diff_only_when_the_read_version_was_pinned(cx: &mut TestAppContext) {
 fn pinning_needs_the_typed_word(cx: &mut TestAppContext) {
     let (view, fake, cx) = setup(cx);
     open_post(&view, "01J9M2A", cx);
-    cx.simulate_keystrokes("cmd-y");
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-y"));
     settle(cx);
     view.read_with(cx, |v, _| {
         let own = v.reading.own.as_ref().expect("history open");
@@ -280,7 +280,7 @@ fn pinning_needs_the_typed_word(cx: &mut TestAppContext) {
 fn restore_loads_a_version_into_the_editor(cx: &mut TestAppContext) {
     let (view, fake, cx) = setup(cx);
     open_post(&view, "01J9M2A", cx);
-    cx.simulate_keystrokes("cmd-y");
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-y"));
     settle(cx);
     view.update_in(cx, |v, window, cx| {
         v.reading.own.as_mut().unwrap().sel = Some(1);
@@ -307,7 +307,7 @@ fn restore_loads_a_version_into_the_editor(cx: &mut TestAppContext) {
 #[gpui_kit::test]
 fn mentions_are_a_list_without_counts(cx: &mut TestAppContext) {
     let (view, _, cx) = setup(cx);
-    cx.simulate_keystrokes("cmd-shift-m");
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-shift-m"));
     settle(cx);
     let strings = view.read_with(cx, |v, _| {
         assert_eq!(v.reading.view, View::Mentions);
@@ -362,7 +362,7 @@ fn quote_picker_offers_only_held_items_and_only_in_threads(cx: &mut TestAppConte
     let (view, _, cx) = setup(cx);
     // A fragment can't take a quote.
     open_post(&view, "01J9QK3", cx);
-    cx.simulate_keystrokes("cmd-k");
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-k"));
     cx.run_until_parked();
     view.read_with(cx, |v, _| {
         assert!(v.reading.sheet.is_none());
@@ -370,7 +370,7 @@ fn quote_picker_offers_only_held_items_and_only_in_threads(cx: &mut TestAppConte
     });
     // A draft thread can.
     open_post(&view, "01J9H4C", cx);
-    cx.simulate_keystrokes("cmd-k");
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-k"));
     cx.run_until_parked();
     let ids: Vec<String> = view.read_with(cx, |v, cx| {
         assert!(matches!(v.reading.sheet, Some(RSheet::Quote { .. })));
@@ -409,7 +409,7 @@ fn quote_picker_offers_only_held_items_and_only_in_threads(cx: &mut TestAppConte
 #[gpui_kit::test]
 fn reply_makes_a_stub_and_fork_needs_a_pin(cx: &mut TestAppContext) {
     let (view, fake, cx) = setup(cx);
-    cx.simulate_keystrokes("cmd-r");
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-r"));
     open_row(&view, RUE_TRUST, cx);
     view.update_in(cx, |v, window, cx| {
         v.reading_action_for_test("Reply", window, cx)
@@ -426,7 +426,7 @@ fn reply_makes_a_stub_and_fork_needs_a_pin(cx: &mut TestAppContext) {
     assert_eq!(view.read_with(cx, |v, _| v.reading.view), View::Posts);
 
     // Fork is offered on pins only.
-    cx.simulate_keystrokes("cmd-r");
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-r"));
     open_row(&view, RUE_TRUST, cx);
     assert!(!view.read_with(cx, |v, _| {
         v.pill_model().unwrap().actions.contains(&"Fork this pin")
@@ -450,7 +450,7 @@ fn reply_makes_a_stub_and_fork_needs_a_pin(cx: &mut TestAppContext) {
 fn subscribe_previews_first(cx: &mut TestAppContext) {
     let (view, fake, cx) = setup(cx);
     let before = fake.subscriptions().len();
-    cx.simulate_keystrokes("cmd-shift-s");
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-shift-s"));
     cx.dispatch_action(super::SubscribeTo);
     cx.run_until_parked();
     cx.simulate_input("https://kit.blyg.example.com/");
@@ -524,10 +524,10 @@ fn without_read_extensions_screens_say_not_available(cx: &mut TestAppContext) {
     let (view, fake, cx) = setup(cx);
     fake.set_read_extensions(false);
     cx.run_until_parked();
-    cx.simulate_keystrokes("cmd-r");
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-r"));
     cx.run_until_parked();
     assert!(!view.read_with(cx, |v, _| v.reading.available));
-    cx.simulate_keystrokes("cmd-shift-m");
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-shift-m"));
     settle(cx);
     assert_eq!(
         view.read_with(cx, |v, _| v.reading.mentions.clone()),
@@ -569,10 +569,10 @@ fn opened(view: &Entity<MainView>, cx: &mut VisualTestContext) -> Option<String>
 #[gpui_kit::test]
 fn cmd_f_searches_titles_authors_and_text_held_locally(cx: &mut TestAppContext) {
     let (view, _, cx) = setup(cx);
-    cx.simulate_keystrokes("cmd-r");
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-r"));
     cx.run_until_parked();
     assert!(shown(&view, cx).len() > 3);
-    cx.simulate_keystrokes("cmd-f");
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-f"));
     cx.run_until_parked();
     assert!(search_focused(&view, cx), "⌘F focuses the search field");
 
@@ -628,7 +628,7 @@ fn cmd_f_searches_titles_authors_and_text_held_locally(cx: &mut TestAppContext) 
 #[gpui_kit::test]
 fn slash_focuses_search_and_esc_clears_it(cx: &mut TestAppContext) {
     let (view, _, cx) = setup(cx);
-    cx.simulate_keystrokes("cmd-r");
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-r"));
     cx.run_until_parked();
     let all = shown(&view, cx);
     cx.simulate_keystrokes("/");
@@ -667,7 +667,7 @@ fn slash_focuses_search_and_esc_clears_it(cx: &mut TestAppContext) {
 #[gpui_kit::test]
 fn search_keeps_a_matching_post_open_and_says_when_nothing_matches(cx: &mut TestAppContext) {
     let (view, _, cx) = setup(cx);
-    cx.simulate_keystrokes("cmd-r");
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-r"));
     open_row(&view, RUE_TRUST, cx);
     // Still a match: the open post and the selection stay.
     view.update_in(cx, |v, window, cx| {
@@ -695,8 +695,8 @@ fn search_keeps_a_matching_post_open_and_says_when_nothing_matches(cx: &mut Test
     view.update_in(cx, |v, window, cx| v.move_reading(1, window, cx));
     assert_eq!(opened(&view, cx), None);
     // The search stays when you leave and come back (it's in the field).
-    cx.simulate_keystrokes("cmd-r");
-    cx.simulate_keystrokes("cmd-r");
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-r"));
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-r"));
     cx.run_until_parked();
     assert_eq!(query(&view, cx), "  Zeppelin ");
     assert!(shown(&view, cx).is_empty());
@@ -715,7 +715,7 @@ fn tip(row: &[super::vm::ActionChip], id: &str) -> String {
 #[gpui_kit::test]
 fn actions_name_the_primitive_and_fork_waits_for_a_pin(cx: &mut TestAppContext) {
     let (view, fake, cx) = setup(cx);
-    cx.simulate_keystrokes("cmd-r");
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-r"));
     // Rue's post has 📌 v1 and 📌 v3; the current version is v5.
     open_row(&view, RUE_TRUST, cx);
     let row = chips(&view, cx);

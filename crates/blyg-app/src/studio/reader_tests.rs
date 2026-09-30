@@ -182,7 +182,7 @@ fn open_row(view: &Entity<MainView>, id: &str, cx: &mut VisualTestContext) {
 }
 
 fn reading(view: &Entity<MainView>, cx: &mut VisualTestContext) {
-    cx.simulate_keystrokes("cmd-r");
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-r"));
     settle(cx);
     assert_eq!(view.read_with(cx, |v, _| v.reading.view), View::Reading);
 }
@@ -336,13 +336,13 @@ fn one_webview_on_screen_at_a_time(cx: &mut TestAppContext) {
     view.update_in(cx, |v, window, cx| {
         v.open(&LocalId("01J9M2A".into()), window, cx)
     });
-    cx.simulate_keystrokes("cmd-2");
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-2"));
     settle(cx);
     assert!(log.borrow().visible(Which::Studio));
     assert!(!log.borrow().visible(Which::Reader));
 
     // ⌘Y: the history's current version is in the reader; the studio hides.
-    cx.simulate_keystrokes("cmd-y");
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-y"));
     settle(cx);
     assert!(view.read_with(cx, |v, _| v.reading.own.is_some()));
     assert!(log.borrow().visible(Which::Reader));
@@ -361,7 +361,7 @@ fn one_webview_on_screen_at_a_time(cx: &mut TestAppContext) {
     assert!(!log.borrow().visible(Which::Studio));
 
     // ⌘Y again closes the history: the studio comes back, the reader hides.
-    cx.simulate_keystrokes("cmd-y");
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-y"));
     settle(cx);
     assert!(view.read_with(cx, |v, _| v.reading.own.is_none()));
     assert!(log.borrow().visible(Which::Studio));
@@ -374,15 +374,15 @@ fn one_webview_on_screen_at_a_time(cx: &mut TestAppContext) {
     assert!(!log.borrow().visible(Which::Studio));
 
     // The version dropdown and sheets are GPUI: the WebView hides under them.
-    cx.simulate_keystrokes("cmd-y");
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-y"));
     settle(cx);
     assert!(view.read_with(cx, |v, _| v.reading.opened.as_ref().unwrap().dropdown));
     assert!(!log.borrow().visible(Which::Reader));
-    cx.simulate_keystrokes("cmd-y");
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-y"));
     settle(cx);
     assert!(log.borrow().visible(Which::Reader));
     // The profile sheet (⌘I) slides over the body: the WebView hides.
-    cx.simulate_keystrokes("cmd-i");
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-i"));
     settle(cx);
     assert!(view.read_with(cx, |v, _| v.profile_sheet_open()));
     assert!(
@@ -392,7 +392,7 @@ fn one_webview_on_screen_at_a_time(cx: &mut TestAppContext) {
     cx.simulate_keystrokes("escape");
     settle(cx);
     assert!(log.borrow().visible(Which::Reader));
-    cx.simulate_keystrokes("cmd-,");
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-,"));
     settle(cx);
     assert!(view.read_with(cx, |v, _| v.sheet.is_some()));
     assert!(!log.borrow().visible(Which::Reader));

@@ -188,8 +188,9 @@ pub fn counter(kind: Kind, chars: usize) -> (String, Level) {
 }
 
 pub fn banner(kind: Kind, chars: usize) -> Option<&'static str> {
-    (kind == Kind::Fragment && chars > FRAGMENT_LIMIT)
-        .then_some("Too long for a fragment · ⌘T makes it a thread")
+    (kind == Kind::Fragment && chars > FRAGMENT_LIMIT).then_some(crate::keymap::hint(
+        "Too long for a fragment · ⌘T makes it a thread",
+    ))
 }
 
 pub fn group_thousands(n: usize) -> String {
@@ -222,7 +223,7 @@ pub fn version_label(item: &Item) -> String {
         }
         Status::Withdrawn => format!("withdrawn · v{}", item.version),
         Status::Draft => "draft".into(),
-        Status::Scratch => "scratch · only on this Mac".into(),
+        Status::Scratch => crate::keymap::hint("scratch · only on this Mac").into(),
     }
 }
 
@@ -253,7 +254,10 @@ pub fn sync_label(status: SyncStatus, publishing: bool) -> (String, SyncDot) {
     }
     match status {
         SyncStatus::Synced => ("synced".into(), SyncDot::Green),
-        SyncStatus::Saving => ("saved on this Mac".into(), SyncDot::Amber),
+        SyncStatus::Saving => (
+            crate::keymap::hint("saved on this Mac").into(),
+            SyncDot::Amber,
+        ),
         SyncStatus::Syncing => ("syncing…".into(), SyncDot::Busy),
         SyncStatus::Offline { pending } => (
             format!(

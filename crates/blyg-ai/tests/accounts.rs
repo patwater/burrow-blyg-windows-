@@ -30,7 +30,15 @@ impl Env {
     fn endpoints(&self) -> Endpoints {
         Endpoints {
             cli: CliLocator {
-                path_var: Some(format!("{}:/bin:/usr/bin", self.bin.path().display()).into()),
+                // join_paths: `:` on Unix, `;` on Windows.
+                path_var: Some(
+                    std::env::join_paths([
+                        self.bin.path(),
+                        std::path::Path::new("/bin"),
+                        std::path::Path::new("/usr/bin"),
+                    ])
+                    .unwrap(),
+                ),
                 home: None,
                 skip_common_dirs: true,
             },

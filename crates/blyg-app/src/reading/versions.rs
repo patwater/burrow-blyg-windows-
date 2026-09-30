@@ -303,8 +303,10 @@ impl MainView {
                     v.show_toast(
                         format!("v{version} is in the editor"),
                         Some(
-                            format!("⌘⏎ publishes it as v{next} · versions never go backwards")
-                                .into(),
+                            crate::keymap::hint_owned(format!(
+                                "⌘⏎ publishes it as v{next} · versions never go backwards"
+                            ))
+                            .into(),
                         ),
                         cx,
                     );
@@ -520,10 +522,10 @@ impl MainView {
             div()
                 .flex_1()
                 .px(px(32.))
-                .child(self.muted_note(format!(
+                .child(self.muted_note(crate::keymap::hint_owned(format!(
                     "Restore v{sel} to read its text: it goes into the editor, and nothing \
                      is published until you press ⌘⏎."
-                )))
+                ))))
                 .into_any_element()
         };
 
@@ -583,7 +585,7 @@ impl MainView {
                                 .font_weight(FontWeight::SEMIBOLD)
                                 .text_color(p.muted)
                                 .child("VERSIONS")
-                                .child("⌘Y / esc closes"),
+                                .child(crate::keymap::hint("⌘Y / esc closes")),
                         )
                         .child(side),
                 )
@@ -662,10 +664,10 @@ impl MainView {
                     div()
                         .line_height(relative(1.45))
                         .text_color(p.muted)
-                        .child(format!(
+                        .child(crate::keymap::hint_owned(format!(
                             "Its text goes back into the editor. Nothing is published until you \
                              press ⌘⏎, and then it publishes as v{next}. Versions never go backwards."
-                        )),
+                        ))),
                 )
                 .when(*dirty, |d| {
                     d.child(

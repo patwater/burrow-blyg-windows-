@@ -107,6 +107,24 @@ pub struct FontChoice {
     pub bundled: Option<crate::fonts::Bundle>,
 }
 
+/// A system font: the macOS one, or on Windows the nearest one Windows
+/// ships (the macOS fonts aren't there).
+const fn system(
+    mac: (&'static str, &'static str),
+    win: (&'static str, &'static str),
+) -> FontChoice {
+    let (label, family) = if cfg!(target_os = "windows") {
+        win
+    } else {
+        mac
+    };
+    FontChoice {
+        label,
+        family,
+        bundled: None,
+    }
+}
+
 pub const WRITING_FONTS: &[FontChoice] = &[
     FontChoice {
         label: "Literata",
@@ -123,36 +141,20 @@ pub const WRITING_FONTS: &[FontChoice] = &[
         family: "iA Writer Quattro S",
         bundled: Some(crate::fonts::Bundle::Quattro),
     },
-    FontChoice {
-        label: "New York",
-        family: "New York",
-        bundled: None,
-    },
-    FontChoice {
-        label: "Charter",
-        family: "Charter",
-        bundled: None,
-    },
+    system(("New York", "New York"), ("Georgia", "Georgia")),
+    system(("Charter", "Charter"), ("Cambria", "Cambria")),
     FontChoice {
         label: "ET Book",
         family: "ETBembo",
         bundled: Some(crate::fonts::Bundle::EtBook),
     },
-    FontChoice {
-        label: "SF Pro",
-        family: ".SystemUIFont",
-        bundled: None,
-    },
+    system(("SF Pro", ".SystemUIFont"), ("Segoe UI", "Segoe UI")),
     FontChoice {
         label: "Inter",
         family: "Inter",
         bundled: Some(crate::fonts::Bundle::Inter),
     },
-    FontChoice {
-        label: "Menlo",
-        family: "Menlo",
-        bundled: None,
-    },
+    system(("Menlo", "Menlo"), ("Consolas", "Consolas")),
 ];
 
 pub const UI_FONTS: &[FontChoice] = &[
@@ -161,11 +163,7 @@ pub const UI_FONTS: &[FontChoice] = &[
         family: "Inter",
         bundled: Some(crate::fonts::Bundle::Inter),
     },
-    FontChoice {
-        label: "SF Pro",
-        family: ".SystemUIFont",
-        bundled: None,
-    },
+    system(("SF Pro", ".SystemUIFont"), ("Segoe UI", "Segoe UI")),
     FontChoice {
         label: "Literata",
         family: "Literata",
@@ -181,26 +179,14 @@ pub const UI_FONTS: &[FontChoice] = &[
         family: "iA Writer Quattro S",
         bundled: Some(crate::fonts::Bundle::Quattro),
     },
-    FontChoice {
-        label: "New York",
-        family: "New York",
-        bundled: None,
-    },
-    FontChoice {
-        label: "Charter",
-        family: "Charter",
-        bundled: None,
-    },
+    system(("New York", "New York"), ("Georgia", "Georgia")),
+    system(("Charter", "Charter"), ("Cambria", "Cambria")),
     FontChoice {
         label: "ET Book",
         family: "ETBembo",
         bundled: Some(crate::fonts::Bundle::EtBook),
     },
-    FontChoice {
-        label: "Menlo",
-        family: "Menlo",
-        bundled: None,
-    },
+    system(("Menlo", "Menlo"), ("Consolas", "Consolas")),
 ];
 
 pub const DEFAULT_SIZE: f32 = 19.0;
@@ -331,7 +317,14 @@ pub fn parse_hotkey(s: &str) -> Option<global_hotkey::hotkey::HotKey> {
     s.trim().parse().ok()
 }
 
+/// Pretty form for display: `Ctrl+Alt+B` on Windows.
+#[cfg(target_os = "windows")]
+pub fn hotkey_glyphs(s: &str) -> String {
+    crate::keymap::windows_label(s)
+}
+
 /// Pretty form for display: `⌃⌥B`.
+#[cfg(not(target_os = "windows"))]
 pub fn hotkey_glyphs(s: &str) -> String {
     let mut mods = String::new();
     let mut key = String::new();
@@ -370,11 +363,16 @@ mod tests {
         let s = ConfigStore::in_memory(
             "font-size = 99\ntheme = dark\nlayout = stacked\nfont-family-ui = menlo\n",
         );
+        let menlo = if cfg!(target_os = "windows") {
+            "Inter" // no Menlo on Windows: the default
+        } else {
+            "Menlo"
+        };
         let p = Prefs::from_config(s.config());
         assert_eq!(p.font_size, MAX_SIZE);
         assert_eq!(p.theme, ThemePref::Dark);
         assert_eq!(p.layout, LayoutPref::Stacked);
-        assert_eq!(p.ui().family, "Menlo", "fonts match by label, any case");
+        assert_eq!(p.ui().family, menlo, "fonts match by label, any case");
     }
 
     #[test]
@@ -451,7 +449,15 @@ mod tests {
         assert!(parse_hotkey("ctrl+alt+B").is_some());
         assert!(parse_hotkey("cmd+shift+space").is_some());
         assert!(parse_hotkey("nonsense+").is_none());
-        assert_eq!(hotkey_glyphs("ctrl+alt+b"), "⌃⌥B");
-        assert_eq!(hotkey_glyphs("cmd+alt+ctrl+KeyK"), "⌃⌥⌘K");
+        #[cfg(not(target_os = "windows"))]
+        {
+            assert_eq!(hotkey_glyphs("ctrl+alt+b"), "⌃⌥B");
+            assert_eq!(hotkey_glyphs("cmd+alt+ctrl+KeyK"), "⌃⌥⌘K");
+        }
+        #[cfg(target_os = "windows")]
+        {
+            assert_eq!(hotkey_glyphs("ctrl+alt+b"), "Ctrl+Alt+B");
+            assert_eq!(hotkey_glyphs("cmd+alt+ctrl+KeyK"), "Ctrl+Alt+Win+K");
+        }
     }
 }

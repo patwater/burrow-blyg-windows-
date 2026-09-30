@@ -164,7 +164,7 @@ fn view_mode(view: &Entity<MainView>, cx: &mut VisualTestContext) -> ViewMode {
 fn reactivating_the_window_reclaims_the_keyboard(cx: &mut TestAppContext) {
     let (view, fake, log, cx) = setup(cx, true);
     open_sample(&view, &fake, cx);
-    cx.simulate_keystrokes("cmd-2");
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-2"));
     frame(cx);
     let reclaims = |log: &Rc<RefCell<Log>>| {
         log.borrow()
@@ -187,7 +187,7 @@ fn mode_keys_switch_panes(cx: &mut TestAppContext) {
     assert_eq!(view_mode(&view, cx), ViewMode::Write);
     assert!(log.borrow().0.is_empty(), "no WebView until it's needed");
 
-    cx.simulate_keystrokes("cmd-3");
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-3"));
     frame(cx);
     assert_eq!(view_mode(&view, cx), ViewMode::Studio);
     {
@@ -204,27 +204,27 @@ fn mode_keys_switch_panes(cx: &mut TestAppContext) {
     }
 
     // ⌘E in the full editor: the editor alone; again: back.
-    cx.simulate_keystrokes("cmd-e");
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-e"));
     frame(cx);
     assert_eq!(view_mode(&view, cx), ViewMode::Focus);
     assert_eq!(log.borrow().visible(), Some(false), "hidden with its pane");
-    cx.simulate_keystrokes("cmd-e");
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-e"));
     frame(cx);
     assert_eq!(view_mode(&view, cx), ViewMode::Studio);
     assert_eq!(log.borrow().visible(), Some(true));
 
-    cx.simulate_keystrokes("cmd-2");
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-2"));
     frame(cx);
     assert_eq!(view_mode(&view, cx), ViewMode::Split);
     assert_eq!(log.borrow().visible(), Some(true));
 
-    cx.simulate_keystrokes("cmd-1");
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-1"));
     frame(cx);
     assert_eq!(view_mode(&view, cx), ViewMode::Write);
     assert_eq!(log.borrow().visible(), Some(false));
 
     // ⌘E from write mode is ⌘2.
-    cx.simulate_keystrokes("cmd-e");
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-e"));
     frame(cx);
     assert_eq!(view_mode(&view, cx), ViewMode::Split);
 }
@@ -235,7 +235,7 @@ fn mode_keys_work_from_the_editor(cx: &mut TestAppContext) {
     cx.simulate_keystrokes("enter");
     cx.run_until_parked();
     assert_eq!(view.read_with(cx, |v, _| v.mode), Mode::Edit);
-    cx.simulate_keystrokes("cmd-3");
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-3"));
     cx.run_until_parked();
     assert_eq!(view_mode(&view, cx), ViewMode::Studio);
     // Typing still goes to the editor.
@@ -249,7 +249,7 @@ fn mode_keys_work_from_the_editor(cx: &mut TestAppContext) {
 fn renders_the_thread_and_patches_after_a_pause(cx: &mut TestAppContext) {
     let (view, fake, log, cx) = setup(cx, true);
     open_sample(&view, &fake, cx);
-    cx.simulate_keystrokes("cmd-3");
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-3"));
     frame(cx);
     let page = log.borrow().loads().last().unwrap().to_string();
     assert!(
@@ -307,7 +307,7 @@ fn renders_the_thread_and_patches_after_a_pause(cx: &mut TestAppContext) {
 #[gpui_kit::test]
 fn another_item_or_kind_reloads_the_page(cx: &mut TestAppContext) {
     let (view, fake, log, cx) = setup(cx, true);
-    cx.simulate_keystrokes("cmd-2");
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-2"));
     frame(cx);
     send(&view, SurfaceEvent::Ready, cx);
     assert_eq!(log.borrow().loads().len(), 1);
@@ -315,7 +315,7 @@ fn another_item_or_kind_reloads_the_page(cx: &mut TestAppContext) {
     frame(cx);
     assert_eq!(log.borrow().loads().len(), 2, "another item: a new page");
     send(&view, SurfaceEvent::Ready, cx);
-    cx.simulate_keystrokes("cmd-t");
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-t"));
     cx.run_until_parked();
     cx.executor().advance_clock(Duration::from_millis(150));
     cx.run_until_parked();
@@ -330,7 +330,7 @@ fn another_item_or_kind_reloads_the_page(cx: &mut TestAppContext) {
 fn clicking_a_block_moves_the_caret_and_the_caret_scrolls_the_preview(cx: &mut TestAppContext) {
     let (view, fake, log, cx) = setup(cx, true);
     open_sample(&view, &fake, cx);
-    cx.simulate_keystrokes("cmd-3");
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-3"));
     frame(cx);
     send(&view, SurfaceEvent::Ready, cx);
 
@@ -380,10 +380,10 @@ fn clicking_a_block_moves_the_caret_and_the_caret_scrolls_the_preview(cx: &mut T
 fn a_sheet_hides_the_native_view(cx: &mut TestAppContext) {
     let (view, _, log, cx) = setup(cx, true);
     cx.simulate_keystrokes("enter");
-    cx.simulate_keystrokes("cmd-2");
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-2"));
     frame(cx);
     assert_eq!(log.borrow().visible(), Some(true));
-    cx.simulate_keystrokes("cmd-enter");
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-enter"));
     frame(cx);
     assert!(view.read_with(cx, |v, _| matches!(v.sheet, Some(Sheet::Publish { .. }))));
     assert_eq!(log.borrow().visible(), Some(false));
@@ -395,7 +395,7 @@ fn a_sheet_hides_the_native_view(cx: &mut TestAppContext) {
 #[gpui_kit::test]
 fn links_open_in_the_browser_not_the_view(cx: &mut TestAppContext) {
     let (view, _, _, cx) = setup(cx, true);
-    cx.simulate_keystrokes("cmd-2");
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-2"));
     frame(cx);
     send(
         &view,
@@ -412,7 +412,7 @@ fn links_open_in_the_browser_not_the_view(cx: &mut TestAppContext) {
 fn falls_back_to_a_message_without_a_webview(cx: &mut TestAppContext) {
     let (view, fake, _, cx) = setup(cx, false);
     open_sample(&view, &fake, cx);
-    cx.simulate_keystrokes("cmd-3");
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-3"));
     frame(cx);
     view.read_with(cx, |v, _| {
         assert_eq!(

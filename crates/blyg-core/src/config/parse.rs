@@ -315,7 +315,7 @@ fn load_one(
 /// `~/x` → `$HOME/x`; relative → relative to `dir`.
 pub fn resolve_path(p: &str, dir: &Path) -> PathBuf {
     if let Some(rest) = p.strip_prefix("~/")
-        && let Some(home) = std::env::var_os("HOME")
+        && let Some(home) = super::paths::home_var()
     {
         return PathBuf::from(home).join(rest);
     }

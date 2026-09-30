@@ -144,7 +144,7 @@ fn cmd_i_opens_the_profile_of_the_reading_items_origin(cx: &mut TestAppContext) 
         fake.profile_fetches().is_empty(),
         "nothing fetched before an open"
     );
-    cx.simulate_keystrokes("cmd-i");
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-i"));
     settle(cx);
     let (url, depth, name) = top(&view, cx).expect("open");
     assert_eq!((url.as_str(), depth), (LIN, 1));
@@ -167,7 +167,7 @@ fn cmd_i_opens_the_profile_of_the_reading_items_origin(cx: &mut TestAppContext) 
         View::Reading,
         "esc only closed the sheet"
     );
-    cx.simulate_keystrokes("cmd-i");
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-i"));
     settle(cx);
     assert_eq!(
         fake.profile_fetches().len(),
@@ -175,7 +175,7 @@ fn cmd_i_opens_the_profile_of_the_reading_items_origin(cx: &mut TestAppContext) 
         "fresh: served from the cache"
     );
     // ⌘I again closes.
-    cx.simulate_keystrokes("cmd-i");
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-i"));
     settle(cx);
     assert!(top(&view, cx).is_none());
 }
@@ -309,7 +309,7 @@ fn the_lineage_line_comes_from_the_item_document(cx: &mut TestAppContext) {
 fn own_profile_shows_the_blogroll_toggles(cx: &mut TestAppContext) {
     let (view, fake, _, cx) = setup(cx);
     // On the posts list, ⌘I is your own blyg.
-    cx.simulate_keystrokes("cmd-i");
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-i"));
     settle(cx);
     let (url, _, name) = top(&view, cx).unwrap();
     assert_eq!(url, ORIGIN);
@@ -343,10 +343,10 @@ fn own_profile_shows_the_blogroll_toggles(cx: &mut TestAppContext) {
 #[gpui_kit::test]
 fn the_sheet_hides_the_native_preview(cx: &mut TestAppContext) {
     let (view, _, visible, cx) = setup(cx);
-    cx.simulate_keystrokes("cmd-2");
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-2"));
     settle(cx);
     assert_eq!(visible.borrow().last(), Some(&true), "preview showing");
-    cx.simulate_keystrokes("cmd-i");
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-i"));
     settle(cx);
     assert!(top(&view, cx).is_some());
     assert_eq!(
@@ -358,7 +358,7 @@ fn the_sheet_hides_the_native_preview(cx: &mut TestAppContext) {
     settle(cx);
     assert_eq!(visible.borrow().last(), Some(&true), "back when it closes");
     // ⇧⌘O's sheet too.
-    cx.simulate_keystrokes("cmd-shift-o");
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-shift-o"));
     settle(cx);
     assert_eq!(visible.borrow().last(), Some(&false));
 }
@@ -366,7 +366,7 @@ fn the_sheet_hides_the_native_preview(cx: &mut TestAppContext) {
 #[gpui_kit::test]
 fn open_profile_by_url(cx: &mut TestAppContext) {
     let (view, fake, _, cx) = setup(cx);
-    cx.simulate_keystrokes("cmd-shift-o");
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-shift-o"));
     settle(cx);
     assert!(cx.debug_bounds("pf-ask").is_some());
     cx.simulate_input("tides.example.org");

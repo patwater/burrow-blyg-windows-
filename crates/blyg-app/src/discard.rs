@@ -45,7 +45,7 @@ impl MainView {
             return None;
         }
         if self.reading.view != reading::View::Posts {
-            self.show_toast(toolbar::NEED_POSTS, None, cx);
+            self.show_toast(crate::keymap::hint(toolbar::NEED_POSTS), None, cx);
             return None;
         }
         if self.current.is_none() {
@@ -109,7 +109,13 @@ impl MainView {
             }
             vm::Discard::Delete => self.show_toast(
                 "Not published, so there's nothing to withdraw",
-                Some(format!("⇧⌘⌫ deletes the {}", vm::discard_noun(&item)).into()),
+                Some(
+                    crate::keymap::hint_owned(format!(
+                        "⇧⌘⌫ deletes the {}",
+                        vm::discard_noun(&item)
+                    ))
+                    .into(),
+                ),
                 cx,
             ),
             vm::Discard::AlreadyWithdrawn => self.show_toast(toolbar::ALREADY_WITHDRAWN, None, cx),

@@ -221,7 +221,11 @@ impl MainView {
             return;
         }
         let Some(item) = self.current.clone() else {
-            self.show_toast("Open a post first, then ⌘G inside [TK]…[/TK]", None, cx);
+            self.show_toast(
+                crate::keymap::hint("Open a post first, then ⌘G inside [TK]…[/TK]"),
+                None,
+                cx,
+            );
             return;
         };
         let text = self.editor.read(cx).value().to_string();
@@ -230,7 +234,7 @@ impl MainView {
             Under::Scope(index) => self.ai_fill(item, text, index, window, cx),
             Under::Malformed => self.show_toast(
                 "This TK isn't closed yet",
-                Some("End it with [/TK], then ⌘G again".into()),
+                Some(crate::keymap::hint("End it with [/TK], then ⌘G again").into()),
                 cx,
             ),
             Under::Nothing => self.ai_open_palette(&item, &text, window, cx),
@@ -544,7 +548,7 @@ impl MainView {
         let Some(sid) = item.server_id.clone().filter(|_| !item.pending_sync) else {
             self.show_toast(
                 "The blyg doesn't have this version yet",
-                Some("Wait for it to sync, then ⌘G again".into()),
+                Some(crate::keymap::hint("Wait for it to sync, then ⌘G again").into()),
                 cx,
             );
             return;
@@ -833,7 +837,7 @@ impl MainView {
                 let end = new.len();
                 self.ai_write(&item, &old, new, scopes, Some(end), window, cx);
                 self.show_toast(
-                    "Reply drafted · review it, then ⌘⏎ publishes",
+                    crate::keymap::hint("Reply drafted · review it, then ⌘⏎ publishes"),
                     Some("Generated text is disclosed when published".into()),
                     cx,
                 );
@@ -1170,7 +1174,11 @@ impl MainView {
         input.update(cx, |s, cx| s.set_value("", window, cx));
         let r = ais::save_api_key(kind, &key, cx);
         drop(key);
-        self.ai_settings_result(r, format!("{} saved in your Keychain", kind.label()), cx);
+        self.ai_settings_result(
+            r,
+            crate::keymap::hint_owned(format!("{} saved in your Keychain", kind.label())),
+            cx,
+        );
     }
 
     fn ai_save_cloudflare(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -1196,7 +1204,7 @@ impl MainView {
         }
         self.ai_settings_result(
             r,
-            "Cloudflare Workers AI saved (token in your Keychain)".into(),
+            crate::keymap::hint("Cloudflare Workers AI saved (token in your Keychain)").into(),
             cx,
         );
     }
@@ -1231,7 +1239,7 @@ impl MainView {
 
     fn ai_use(&mut self, kind: ProviderKind, window: &mut Window, cx: &mut Context<Self>) {
         let r = ais::set_default(kind, cx);
-        let ok = format!("⌘G now uses {}", kind.label());
+        let ok = crate::keymap::hint_owned(format!("⌘G now uses {}", kind.label()));
         self.ai_settings_result(r, ok, cx);
         let model = crate::ai::with_accounts(cx, |a| blyg_ai::accounts::model_in(a.config(), kind))
             .unwrap_or_default();
@@ -1569,7 +1577,7 @@ impl MainView {
             .child(heading("AI helpers".into()))
             .child(div().flex().flex_col().children(rows))
             .child(div().mt(px(8.)).text_size(px(11.5)).text_color(p.muted).child(
-                "Inside [TK]instruction[/TK], ⌘G fills it. Generated text is disclosed when published.",
+                crate::keymap::hint("Inside [TK]instruction[/TK], ⌘G fills it. Generated text is disclosed when published."),
             ))
             .child(keys(p, &[("↑↓", "choose"), ("⏎", "run"), ("esc", "close")]))
             .into_any_element()
@@ -1676,15 +1684,28 @@ impl MainView {
                     );
             } else {
                 controls = match kind {
-                    ProviderKind::AnthropicApi => {
-                        controls.child(input_box("ai-key-anthropic", &s.anthropic_key))
-                    }
-                    ProviderKind::OpenaiApi => {
-                        controls.child(input_box("ai-key-openai", &s.openai_key))
-                    }
+                    ProviderKind::AnthropicApi => controls
+                        .child(input_box("ai-key-anthropic", &s.anthropic_key))
+                        .children(save_chip(p, "ai-save-anthropic").map(|c| {
+                            c.on_click(cx.listener(|this, _, window, cx| {
+                                this.ai_save_key(ProviderKind::AnthropicApi, window, cx)
+                            }))
+                        })),
+                    ProviderKind::OpenaiApi => controls
+                        .child(input_box("ai-key-openai", &s.openai_key))
+                        .children(save_chip(p, "ai-save-openai").map(|c| {
+                            c.on_click(cx.listener(|this, _, window, cx| {
+                                this.ai_save_key(ProviderKind::OpenaiApi, window, cx)
+                            }))
+                        })),
                     ProviderKind::CloudflareWorkersAi => controls
                         .child(input_box("ai-cf-account", &s.cf_account))
-                        .child(input_box("ai-cf-token", &s.cf_token)),
+                        .child(input_box("ai-cf-token", &s.cf_token))
+                        .children(save_chip(p, "ai-save-cloudflare").map(|c| {
+                            c.on_click(cx.listener(|this, _, window, cx| {
+                                this.ai_save_cloudflare(window, cx)
+                            }))
+                        })),
                     ProviderKind::ChatgptAccount => {
                         if s.chatgpt_running.is_some() {
                             controls
@@ -1727,7 +1748,13 @@ impl MainView {
             }
             if ready && !row.is_default {
                 controls = controls.child(
-                    chip(p, format!("ai-use-{name}"), "Use for ⌘G", false).on_click(
+                    chip(
+                        p,
+                        format!("ai-use-{name}"),
+                        crate::keymap::hint("Use for ⌘G"),
+                        false,
+                    )
+                    .on_click(
                         cx.listener(move |this, _, window, cx| this.ai_use(kind, window, cx)),
                     ),
                 );
@@ -1753,7 +1780,7 @@ impl MainView {
                                     .border_1()
                                     .border_color(p.accent)
                                     .text_color(p.accent)
-                                    .child("⌘G uses this"),
+                                    .child(crate::keymap::hint("⌘G uses this")),
                             )
                         }),
                 )
@@ -1796,10 +1823,10 @@ impl MainView {
             }))
             .child(heading("Settings › AI".into()))
             .child(div().text_color(p.muted).text_size(px(12.)).line_height(relative(1.45)).child(
-                "AI stays off until you switch a provider on or sign in to one. Then ⌘G inside \
+                crate::keymap::hint("AI stays off until you switch a provider on or sign in to one. Then ⌘G inside \
                  [TK]instruction[/TK] writes the gap, and the text is disclosed as generated when \
                  you publish. Keys go straight to your macOS Keychain and are never shown again. \
-                 There's no claude.ai login: to use a Claude plan, switch on Claude Code.",
+                 There's no claude.ai login: to use a Claude plan, switch on Claude Code."),
             ))
             .child(div().flex().flex_col().mt(px(6.)).children(rows))
             .child(
@@ -1820,7 +1847,12 @@ impl MainView {
                                 None => "MODEL".to_string(),
                             }),
                     )
-                    .child(input_box("ai-model", &s.model)),
+                    .child(input_box("ai-model", &s.model))
+                    .children(save_chip(p, "ai-save-model").map(|c| {
+                        c.on_click(
+                            cx.listener(|this, _, window, cx| this.ai_save_model(window, cx)),
+                        )
+                    })),
             )
             .when_some(s.message.clone(), |d, (m, is_err)| {
                 d.child(
@@ -1833,8 +1865,23 @@ impl MainView {
                 )
             })
             .child(keys(p, &[("⏎", "save a field"), ("esc", "close")]))
+            // Windows: a way out for the mouse, too.
+            .when(cfg!(target_os = "windows"), |d| {
+                d.child(
+                    div().mt(px(10.)).flex().justify_end().child(
+                        chip(p, "ai-settings-done", "Done", true).on_click(
+                            cx.listener(|this, _, window, cx| this.ai_close(window, cx)),
+                        ),
+                    ),
+                )
+            })
             .into_any_element()
     }
+}
+
+/// Windows: a Save button beside a field, which macOS saves with ⏎ alone.
+fn save_chip(p: crate::theme::Palette, id: &'static str) -> Option<Stateful<Div>> {
+    cfg!(target_os = "windows").then(|| chip(p, id, "Save", false))
 }
 
 /// `BLYGGER_TIMING`: print what AI did (automation; never any secret).

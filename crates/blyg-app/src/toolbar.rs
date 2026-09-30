@@ -134,7 +134,7 @@ pub fn rule(action: &str, f: &Facts) -> (Option<String>, bool) {
         if f.sheet_open {
             Some(CLOSE_SHEET.into())
         } else if !posts {
-            Some(NEED_POSTS.into())
+            Some(crate::keymap::hint(NEED_POSTS).into())
         } else {
             r
         }
@@ -160,7 +160,7 @@ pub fn rule(action: &str, f: &Facts) -> (Option<String>, bool) {
                     return Some("Publishing…".into());
                 }
                 match vm::publish_decision(i) {
-                    PublishDecision::Shake => Some(TOO_LONG.into()),
+                    PublishDecision::Shake => Some(crate::keymap::hint(TOO_LONG).into()),
                     PublishDecision::Empty => Some("Nothing to publish yet".into()),
                     PublishDecision::AlreadyPublished(v) => {
                         Some(format!("Already published as v{v}, with no edits since"))

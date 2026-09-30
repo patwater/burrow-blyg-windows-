@@ -48,7 +48,13 @@ impl CliLocator {
             let home = self
                 .home
                 .clone()
-                .or_else(|| std::env::var_os("HOME").map(PathBuf::from));
+                .or_else(|| std::env::var_os("HOME").map(PathBuf::from))
+                .or_else(|| {
+                    // Windows has no HOME, as a rule.
+                    std::env::var_os("USERPROFILE")
+                        .filter(|_| cfg!(windows))
+                        .map(PathBuf::from)
+                });
             if let Some(h) = home {
                 for d in [
                     ".claude/local",
@@ -61,6 +67,12 @@ impl CliLocator {
                     dirs.push(h.join(d));
                 }
             }
+            #[cfg(windows)]
+            if let Some(appdata) = std::env::var_os("APPDATA") {
+                // Where `npm install -g` puts its shims on Windows.
+                dirs.push(PathBuf::from(appdata).join("npm"));
+            }
+            #[cfg(not(windows))]
             for d in ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin"] {
                 dirs.push(PathBuf::from(d));
             }
@@ -71,9 +83,20 @@ impl CliLocator {
     }
 
     pub fn find(&self, name: &str) -> Option<PathBuf> {
+        // Windows spells executables with an extension (npm's shims are
+        // `.cmd`); a bare name is tried last there.
+        let names: Vec<String> = if cfg!(windows) {
+            [".exe", ".cmd", ".bat", ""]
+                .iter()
+                .map(|ext| format!("{name}{ext}"))
+                .collect()
+        } else {
+            vec![name.to_string()]
+        };
+        let names = &names;
         self.search_dirs()
             .into_iter()
-            .map(|d| d.join(name))
+            .flat_map(|d| names.iter().map(move |n| d.join(n)))
             .find(|p| is_executable(p))
     }
 
@@ -87,6 +110,15 @@ impl CliLocator {
         dirs.extend(self.search_dirs());
         std::env::join_paths(dirs).unwrap_or_default()
     }
+}
+
+/// A `.cmd`/`.bat` shim (how npm installs CLIs on Windows). These run
+/// through cmd.exe, which can't carry a multi-line argument.
+#[cfg_attr(not(any(windows, test)), allow(dead_code))]
+pub(crate) fn is_batch_shim(p: &Path) -> bool {
+    p.extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| e.eq_ignore_ascii_case("cmd") || e.eq_ignore_ascii_case("bat"))
 }
 
 fn is_executable(p: &Path) -> bool {
@@ -147,6 +179,13 @@ pub(crate) fn run_streaming(
     cmd.stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    // The app has no console on Windows; don't flash one up for the CLI.
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
     let mut child: Child = cmd.spawn().map_err(|e| match e.kind() {
         std::io::ErrorKind::NotFound => AiError::CliNotFound(name.to_string()),
         _ => AiError::CliFailed {

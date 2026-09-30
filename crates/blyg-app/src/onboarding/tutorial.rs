@@ -182,7 +182,7 @@ impl MainView {
         }
         self.show_toast(
             "Tour finished",
-            Some("Back to your own posts · ⌘, › Help replays it".into()),
+            Some(crate::keymap::hint("Back to your own posts · ⌘, › Help replays it").into()),
             cx,
         );
         cx.notify();
@@ -557,7 +557,7 @@ impl MainView {
         let last = index + 1 == STEPS.len();
         let buttons = super::show_buttons(cx);
         let hotkey = crate::prefs::hotkey_glyphs(&self.prefs.hotkey);
-        let caption = step.caption.replace("{hotkey}", &hotkey);
+        let caption = crate::keymap::hint(step.caption).replace("{hotkey}", &hotkey);
 
         let ring = |(x, y, w, h): (f32, f32, f32, f32), id: &'static str, strong: bool| {
             div()
@@ -626,123 +626,128 @@ impl MainView {
                 .gap(px(7.))
                 .text_color(p.muted)
                 .child("Press")
-                .child(kbd(step.key_label.to_string()))
+                .child(kbd(crate::keymap::hint(step.key_label).to_string()))
                 .into_any_element()
         };
 
-        let card =
-            div()
-                .id("tutorial-card")
-                .occlude()
-                .absolute()
-                .left(px(14.))
-                .bottom(px(STATUS_H + 14.))
-                .w(px(380.))
-                .max_w(relative(0.9))
-                .bg(p.bg)
-                .border_1()
-                .border_color(p.line)
-                .rounded(px(12.))
-                .shadow(vec![BoxShadow {
-                    color: p.shadow,
-                    offset: point(px(0.), px(14.)),
-                    blur_radius: px(36.),
-                    spread_radius: px(-8.),
-                    inset: false,
-                }])
-                .px(px(16.))
-                .py(px(13.))
-                .font_family(SharedString::from(self.prefs.ui().family))
-                .text_size(px(12.5))
-                .child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .text_size(px(10.5))
-                        .font_weight(FontWeight::SEMIBOLD)
-                        .text_color(p.muted)
-                        .child(format!(
-                            "TOUR · {} OF {} · SAMPLE DATA",
-                            index + 1,
-                            STEPS.len()
-                        ))
-                        .child(div().flex_1())
-                        .child(
-                            div()
-                                .id("tutorial-end")
-                                .cursor_pointer()
-                                .hover(|s| s.text_color(p.ink))
-                                .child("End tour ✕")
-                                .on_click(cx.listener(|this, _, window, cx| {
-                                    this.finish_tutorial(window, cx)
-                                })),
-                        ),
-                )
-                .child(
+        let card = div()
+            .id("tutorial-card")
+            .occlude()
+            .absolute()
+            .left(px(14.))
+            .bottom(px(STATUS_H + 14.))
+            .w(px(380.))
+            .max_w(relative(0.9))
+            .bg(p.bg)
+            .border_1()
+            .border_color(p.line)
+            .rounded(px(12.))
+            .shadow(vec![BoxShadow {
+                color: p.shadow,
+                offset: point(px(0.), px(14.)),
+                blur_radius: px(36.),
+                spread_radius: px(-8.),
+                inset: false,
+            }])
+            .px(px(16.))
+            .py(px(13.))
+            .font_family(SharedString::from(self.prefs.ui().family))
+            .text_size(px(12.5))
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .text_size(px(10.5))
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .text_color(p.muted)
+                    .child(format!(
+                        "TOUR · {} OF {} · SAMPLE DATA",
+                        index + 1,
+                        STEPS.len()
+                    ))
+                    .child(div().flex_1())
+                    .child(
+                        div()
+                            .id("tutorial-end")
+                            .cursor_pointer()
+                            .hover(|s| s.text_color(p.ink))
+                            .child("End tour ✕")
+                            .on_click(
+                                cx.listener(|this, _, window, cx| this.finish_tutorial(window, cx)),
+                            ),
+                    ),
+            )
+            .child(
+                div()
+                    .mt(px(5.))
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .text_size(px(15.))
+                    .child(crate::keymap::hint(step.title)),
+            )
+            .child(
+                div()
+                    .mt(px(4.))
+                    .text_color(p.ink.opacity(0.8))
+                    .line_height(relative(1.45))
+                    .child(caption),
+            )
+            .child(div().mt(px(9.)).child(key_row))
+            .when_some(step.button.filter(|_| buttons), |d, b| {
+                d.child(
                     div()
                         .mt(px(5.))
-                        .font_weight(FontWeight::SEMIBOLD)
-                        .text_size(px(15.))
-                        .child(step.title),
+                        .text_size(px(11.5))
+                        .text_color(p.muted)
+                        .child(format!("or click “{b}” in the toolbar ↑")),
                 )
-                .child(
-                    div()
-                        .mt(px(4.))
-                        .text_color(p.ink.opacity(0.8))
-                        .line_height(relative(1.45))
-                        .child(caption),
-                )
-                .child(div().mt(px(9.)).child(key_row))
-                .when_some(step.button.filter(|_| buttons), |d, b| {
-                    d.child(
+            })
+            .child(
+                div()
+                    .mt(px(12.))
+                    .pt(px(9.))
+                    .border_t_1()
+                    .border_color(p.line)
+                    .flex()
+                    .flex_col()
+                    .gap(px(8.))
+                    .child(self.render_tutorial_checkbox("tutorial-on-launch", cx))
+                    .child(
                         div()
-                            .mt(px(5.))
+                            .flex()
+                            .items_center()
+                            .gap(px(6.))
                             .text_size(px(11.5))
                             .text_color(p.muted)
-                            .child(format!("or click “{b}” in the toolbar ↑")),
-                    )
-                })
-                .child(
-                    div()
-                        .mt(px(12.))
-                        .pt(px(9.))
-                        .border_t_1()
-                        .border_color(p.line)
-                        .flex()
-                        .flex_col()
-                        .gap(px(8.))
-                        .child(self.render_tutorial_checkbox("tutorial-on-launch", cx))
-                        .child(
-                            div()
-                                .flex()
-                                .items_center()
-                                .gap(px(6.))
-                                .text_size(px(11.5))
-                                .text_color(p.muted)
-                                .child(div().flex_1())
-                                .when(index > 0, |d| {
-                                    d.child(link("tutorial-back", "‹ Back  ⌥⌘←".into()).on_click(
-                                        cx.listener(|this, _, window, cx| {
-                                            this.tutorial_back(window, cx)
-                                        }),
-                                    ))
-                                })
-                                .child(
+                            .child(div().flex_1())
+                            .when(index > 0, |d| {
+                                d.child(
                                     link(
-                                        "tutorial-next",
-                                        if last {
-                                            "Finish  ⌥⌘→".into()
-                                        } else {
-                                            "Next ›  ⌥⌘→".into()
-                                        },
+                                        "tutorial-back",
+                                        crate::keymap::hint("‹ Back  ⌥⌘←").into(),
                                     )
-                                    .when(last, |d| d.border_color(p.accent).text_color(p.accent))
                                     .on_click(cx.listener(
-                                        |this, _, window, cx| this.tutorial_next(window, cx),
+                                        |this, _, window, cx| this.tutorial_back(window, cx),
                                     )),
+                                )
+                            })
+                            .child(
+                                link(
+                                    "tutorial-next",
+                                    if last {
+                                        crate::keymap::hint("Finish  ⌥⌘→").into()
+                                    } else {
+                                        crate::keymap::hint("Next ›  ⌥⌘→").into()
+                                    },
+                                )
+                                .when(last, |d| d.border_color(p.accent).text_color(p.accent))
+                                .on_click(
+                                    cx.listener(|this, _, window, cx| {
+                                        this.tutorial_next(window, cx)
+                                    }),
                                 ),
-                        ),
-                );
+                            ),
+                    ),
+            );
 
         let rect = self.tutorial_ring(step.region, window);
         let toolbar = (buttons && step.button.is_some()).then(|| {

@@ -20,7 +20,9 @@ pub mod install;
 pub mod net;
 pub mod verify;
 
-#[cfg(test)]
+// The tests drive the real `ditto`, `plutil` and `codesign`: macOS only,
+// like in-place updates themselves.
+#[cfg(all(test, target_os = "macos"))]
 mod tests;
 
 use std::path::{Path, PathBuf};
@@ -194,6 +196,11 @@ pub fn disabled_reason() -> Option<&'static str> {
     }
     if std::env::var_os("BLYGGER_NO_UPDATE").is_some() {
         return Some("BLYGGER_NO_UPDATE is set");
+    }
+    // Releases, signing and the bundle swap are macOS-only so far. Windows
+    // builds are downloaded from GitHub by hand (desktop/WINDOWS.md).
+    if cfg!(target_os = "windows") {
+        return Some("not yet on Windows; download new builds from GitHub");
     }
     None
 }

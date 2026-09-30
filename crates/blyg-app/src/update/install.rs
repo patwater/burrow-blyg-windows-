@@ -8,7 +8,9 @@
 //! bundle the app is running from is ever touched.
 
 use std::io;
+#[cfg(unix)]
 use std::os::unix::fs::MetadataExt as _;
+#[cfg(unix)]
 use std::os::unix::process::CommandExt as _;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -135,7 +137,12 @@ pub fn can_update_in_place(bundle: &Path, tools: &dyn Tools) -> Result<(), Strin
 /// folder next to the bundle.
 pub fn staging_dir(target: &Path, tmp_root: &Path) -> PathBuf {
     let parent = target.parent().unwrap_or(Path::new("/"));
+    #[cfg(unix)]
     let dev = |p: &Path| std::fs::metadata(p).map(|m| m.dev()).ok();
+    // No device ids off Unix: stage next to the bundle, which is always the
+    // same volume. (In-place updates are macOS-only; see `disabled_reason`.)
+    #[cfg(not(unix))]
+    let dev = |_: &Path| None::<u64>;
     match (dev(parent), dev(tmp_root)) {
         (Some(a), Some(b)) if a == b => tmp_root.join(STAGING_NAME),
         _ => parent.join(format!(".{STAGING_NAME}")),
@@ -288,8 +295,9 @@ exec "$@""#;
         .arg(bundle)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .process_group(0);
+        .stderr(Stdio::null());
+    #[cfg(unix)]
+    c.process_group(0);
     c
 }
 

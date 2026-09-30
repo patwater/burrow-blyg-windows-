@@ -32,10 +32,18 @@ pub use provider::{
     CancelFlag, GenRequest, GenResult, ModelInfo, Provider, ProviderKind, ServerScope,
 };
 
-/// Open a URL in the default browser (macOS `open`).
+/// Open a URL in the default browser (macOS `open`; on Windows the shell's
+/// URL handler, which takes the URL as one argument, `&` and all).
 pub fn open_in_browser(url: &str) -> Result<()> {
-    std::process::Command::new("/usr/bin/open")
-        .arg(url)
+    #[cfg(windows)]
+    let mut cmd = {
+        let mut c = std::process::Command::new("rundll32.exe");
+        c.arg("url.dll,FileProtocolHandler");
+        c
+    };
+    #[cfg(not(windows))]
+    let mut cmd = std::process::Command::new("/usr/bin/open");
+    cmd.arg(url)
         .status()
         .map_err(|e| AiError::Provider(format!("couldn't open the browser: {e}")))
         .and_then(|s| {

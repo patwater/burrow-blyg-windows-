@@ -148,7 +148,7 @@ fn cmd_g_fills_the_scope_and_records_provenance(cx: &mut TestAppContext) {
         v.editor
             .update(cx, |s, cx| s.set_selected_range(20..20, cx));
     });
-    e.cx.simulate_keystrokes("cmd-g");
+    e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-g"));
     e.wait_idle();
     assert_eq!(
         e.text(),
@@ -170,7 +170,7 @@ fn cmd_g_fills_the_scope_and_records_provenance(cx: &mut TestAppContext) {
         let end = new.len();
         v.splice_editor(&old, &new, Some(end), window, cx);
     });
-    e.cx.simulate_keystrokes("cmd-g");
+    e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-g"));
     e.wait_idle();
     assert_eq!(e.fake.provenance_saves().last().unwrap().1, 2);
     let (_, scopes) = e.tracked().unwrap();
@@ -194,7 +194,7 @@ fn cmd_g_fills_the_scope_and_records_provenance(cx: &mut TestAppContext) {
 fn esc_cancels_a_running_generation(cx: &mut TestAppContext) {
     let mut e = setup(cx, Some(FakeProvider::hanging()));
     e.open_with("[TK]write something[/TK]");
-    e.cx.simulate_keystrokes("cmd-g");
+    e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-g"));
     e.view.read_with(e.cx, |v, _| {
         let job = v.ai.job.as_ref().expect("running");
         assert_eq!(job.verb, "generating");
@@ -223,7 +223,7 @@ fn esc_cancels_a_running_generation(cx: &mut TestAppContext) {
 fn a_hung_provider_times_out(cx: &mut TestAppContext) {
     let mut e = setup(cx, Some(FakeProvider::hanging()));
     e.open_with("[TK]write something[/TK]");
-    e.cx.simulate_keystrokes("cmd-g");
+    e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-g"));
     e.cx.executor().advance_clock(Duration::from_secs(61));
     e.cx.run_until_parked();
     assert!(e.view.read_with(e.cx, |v, _| v.ai.job.is_none()));
@@ -235,7 +235,7 @@ fn shorten_proposes_then_accepts_or_rejects(cx: &mut TestAppContext) {
     let mut e = setup(cx, Some(FakeProvider::replying(&["Short and sweet."])));
     let long = "word ".repeat(260);
     e.open_with(long.trim_end());
-    e.cx.simulate_keystrokes("cmd-shift-g");
+    e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-shift-g"));
     e.wait("the proposal", |v| {
         matches!(v.ai.overlay, Some(Overlay::Shorten { .. }))
     });
@@ -246,7 +246,7 @@ fn shorten_proposes_then_accepts_or_rejects(cx: &mut TestAppContext) {
     assert!(e.view.read_with(e.cx, |v, _| v.ai.overlay.is_none()));
     assert_eq!(e.text(), long.trim_end());
 
-    e.cx.simulate_keystrokes("cmd-shift-g");
+    e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-shift-g"));
     e.wait("the proposal", |v| {
         matches!(v.ai.overlay, Some(Overlay::Shorten { .. }))
     });
@@ -268,7 +268,7 @@ fn proofread_is_applied_without_disclosure(cx: &mut TestAppContext) {
     let mut e = setup(cx, Some(FakeProvider::replying(&[reply])));
     e.open_with("Teh cat sat on the mat.");
     // No TK under the caret: ⌘G opens the helper palette.
-    e.cx.simulate_keystrokes("cmd-g");
+    e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-g"));
     e.cx.run_until_parked();
     assert!(e.view.read_with(e.cx, |v, _| matches!(
         v.ai.overlay,
@@ -295,7 +295,7 @@ fn palette_inserts_a_gap_and_continues(cx: &mut TestAppContext) {
         Some(FakeProvider::replying(&["And then the fog lifted."])),
     );
     e.open_with("The harbour was quiet.");
-    e.cx.simulate_keystrokes("cmd-g");
+    e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-g"));
     e.cx.run_until_parked();
     e.cx.simulate_keystrokes("enter"); // first row: fill a gap here
     e.cx.run_until_parked();
@@ -305,7 +305,7 @@ fn palette_inserts_a_gap_and_continues(cx: &mut TestAppContext) {
         let old = v.editor.read(cx).value().to_string();
         v.splice_editor(&old, "The harbour was quiet.", Some(22), window, cx);
     });
-    e.cx.simulate_keystrokes("cmd-g");
+    e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-g"));
     e.cx.run_until_parked();
     e.cx.simulate_keystrokes("3"); // continue this thought
     e.wait_idle();
@@ -323,11 +323,11 @@ fn publishing_undisclosed_generated_text_warns_first(cx: &mut TestAppContext) {
     let mut e = setup(cx, Some(FakeProvider::replying(&["Out."])));
     e.fake.set_provenance_available(false);
     e.open_with("Hi. [TK]go on[/TK]");
-    e.cx.simulate_keystrokes("cmd-g");
+    e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-g"));
     e.wait_idle();
     assert!(e.text().contains("[=]Out.[/TK]"));
 
-    e.cx.simulate_keystrokes("cmd-enter");
+    e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-enter"));
     e.cx.run_until_parked();
     e.view.read_with(e.cx, |v, _| {
         assert!(matches!(v.ai.overlay, Some(Overlay::PublishWarning { .. })));
@@ -342,7 +342,7 @@ fn publishing_undisclosed_generated_text_warns_first(cx: &mut TestAppContext) {
     assert_eq!(e.fake.item(&LocalId(DRAFT.into())).unwrap().version, 0);
 
     // P publishes anyway: on to the normal publish sheet.
-    e.cx.simulate_keystrokes("cmd-enter");
+    e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-enter"));
     e.cx.run_until_parked();
     e.cx.simulate_keystrokes("p");
     e.cx.run_until_parked();
@@ -356,9 +356,9 @@ fn publishing_undisclosed_generated_text_warns_first(cx: &mut TestAppContext) {
 fn publishing_with_the_extension_does_not_warn(cx: &mut TestAppContext) {
     let mut e = setup(cx, Some(FakeProvider::replying(&["Out."])));
     e.open_with("Hi. [TK]go on[/TK]");
-    e.cx.simulate_keystrokes("cmd-g");
+    e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-g"));
     e.wait_idle();
-    e.cx.simulate_keystrokes("cmd-enter");
+    e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-enter"));
     e.cx.run_until_parked();
     e.view.read_with(e.cx, |v, _| {
         assert!(v.ai.overlay.is_none());
@@ -370,7 +370,7 @@ fn publishing_with_the_extension_does_not_warn(cx: &mut TestAppContext) {
 fn no_provider_says_how_to_set_one_up(cx: &mut TestAppContext) {
     let mut e = setup(cx, None);
     e.open_with("[TK]x[/TK]");
-    e.cx.simulate_keystrokes("cmd-g");
+    e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-g"));
     e.cx.run_until_parked();
     let t = e.toast();
     assert!(
@@ -383,7 +383,7 @@ fn no_provider_says_how_to_set_one_up(cx: &mut TestAppContext) {
 fn an_enabled_cli_that_isnt_installed_says_so(cx: &mut TestAppContext) {
     let mut e = setup_with(cx, &format!("{CONFIG}ai-enable = codex\n"), None);
     e.open_with("[TK]x[/TK]");
-    e.cx.simulate_keystrokes("cmd-g");
+    e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-g"));
     e.cx.run_until_parked();
     let t = e.toast();
     assert!(t.contains("isn't installed") && t.contains("codex"), "{t}");
@@ -398,7 +398,7 @@ fn a_failing_cli_says_what_to_do(cx: &mut TestAppContext) {
     });
     let mut e = setup(cx, Some(p));
     e.open_with("[TK]x[/TK]");
-    e.cx.simulate_keystrokes("cmd-g");
+    e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-g"));
     e.wait_idle();
     let t = e.toast();
     assert!(t.contains("exit code 1") && t.contains("signed in"), "{t}");
@@ -526,7 +526,7 @@ const RUE_TRUST: &str = crate::fake::reading_seed::RUE_TRUST;
 impl Env<'_> {
     /// ⌘R, then open a reading row (its current version).
     fn open_reading(&mut self, remote_id: &str) {
-        self.cx.simulate_keystrokes("cmd-r");
+        self.cx.simulate_keystrokes(&crate::keymap::keys("cmd-r"));
         self.cx.run_until_parked();
         let key = self.view.read_with(self.cx, |v, _| {
             v.reading_rows()
@@ -627,7 +627,7 @@ fn ai_reply_is_never_offered_on_a_pinned_version(cx: &mut TestAppContext) {
 fn the_palette_reply_row_follows_the_open_reading_item(cx: &mut TestAppContext) {
     let mut e = setup(cx, Some(FakeProvider::replying(&["Agreed, mostly."])));
     e.open_with("Notes on trust.");
-    e.cx.simulate_keystrokes("cmd-g");
+    e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-g"));
     e.cx.run_until_parked();
     let reply_enabled = |e: &mut Env| {
         e.view.read_with(e.cx, |v, _| match &v.ai.overlay {
@@ -650,7 +650,7 @@ fn the_palette_reply_row_follows_the_open_reading_item(cx: &mut TestAppContext) 
         v.open(&LocalId(DRAFT.into()), window, cx);
     });
     e.cx.run_until_parked();
-    e.cx.simulate_keystrokes("cmd-g");
+    e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-g"));
     e.cx.run_until_parked();
     assert!(reply_enabled(&mut e));
     e.cx.simulate_keystrokes("6"); // Reply to a reading item

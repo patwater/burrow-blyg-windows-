@@ -31,10 +31,27 @@ pub fn run(args: &[String]) -> Option<ExitCode> {
         .skip(1)
         .map(String::as_str)
         .collect();
+    attach_parent_console();
     let out = exec(first, &rest, &mut ConfigStore::discover);
-    print!("{}", out.stdout);
-    eprint!("{}", out.stderr);
+    // The docs name keys and places as macOS does; Windows respells them.
+    print!("{}", crate::keymap::hint_owned(out.stdout));
+    eprint!("{}", crate::keymap::hint_owned(out.stderr));
     Some(ExitCode::from(out.code))
+}
+
+/// A release build on Windows is a GUI program with no console of its own;
+/// print to the terminal that ran `blygger +action`, if there is one.
+fn attach_parent_console() {
+    #[cfg(target_os = "windows")]
+    {
+        const ATTACH_PARENT_PROCESS: u32 = u32::MAX;
+        unsafe extern "system" {
+            fn AttachConsole(process_id: u32) -> i32;
+        }
+        // SAFETY: a plain Win32 call; failure (no parent console, or one
+        // already attached in a debug build) just leaves output unseen.
+        unsafe { AttachConsole(ATTACH_PARENT_PROCESS) };
+    }
 }
 
 const HELP: &str = "\
@@ -108,6 +125,8 @@ pub fn exec(action: &str, args: &[&str], load: &mut dyn FnMut() -> ConfigStore) 
                 for f in fonts {
                     let note = if f.bundled.is_some() {
                         "bundled"
+                    } else if cfg!(target_os = "windows") {
+                        "Windows"
                     } else {
                         "macOS"
                     };

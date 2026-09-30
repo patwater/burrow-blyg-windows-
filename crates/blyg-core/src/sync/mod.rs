@@ -147,7 +147,8 @@ impl Engine {
                 return (
                     done,
                     Some(CoreError::Other(format!(
-                        "an image in this note ({name}) is missing from this Mac"
+                        "an image in this note ({name}) is missing from this {}",
+                        if cfg!(windows) { "PC" } else { "Mac" }
                     ))),
                 );
             };

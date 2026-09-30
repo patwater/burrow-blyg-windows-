@@ -495,9 +495,16 @@ impl MainView {
         // ⌘F searches the reading list. Handled here, not in the keymap
         // table: gpui-base's inputs bind ⌘F themselves, and this is the
         // reading list's own key like `/`, ↑/↓ and ←/→.
+        // `secondary` is ⌘ on macOS and Ctrl on Windows; nothing else held.
+        let m = &k.modifiers;
+        let other = if cfg!(target_os = "macos") {
+            m.control
+        } else {
+            m.platform
+        };
         if self.reading.view == View::Reading
-            && k.modifiers.platform
-            && !(k.modifiers.control || k.modifiers.alt || k.modifiers.shift)
+            && m.secondary()
+            && !(other || m.alt || m.shift)
             && k.key == "f"
         {
             self.focus_reading_search(window, cx);

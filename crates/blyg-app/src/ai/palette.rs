@@ -44,7 +44,7 @@ pub fn entries(kind: Kind, empty: bool, reading_open: bool) -> Vec<Entry> {
         Entry {
             action: Action::NewGap,
             label: "Fill a gap here",
-            detail: "Inserts [TK][/TK]: type an instruction, then ⌘G",
+            detail: crate::keymap::hint("Inserts [TK][/TK]: type an instruction, then ⌘G"),
             key: None,
             disabled: None,
         },
@@ -52,7 +52,7 @@ pub fn entries(kind: Kind, empty: bool, reading_open: bool) -> Vec<Entry> {
             action: Action::Shorten,
             label: "Shorten to fit 1000",
             detail: "Proposes a shorter version; you accept or reject it",
-            key: Some("⇧⌘G"),
+            key: Some(crate::keymap::hint("⇧⌘G")),
             disabled: (!fragment)
                 .then_some("Threads have no length limit")
                 .or(empty.then_some("Nothing to shorten yet")),
