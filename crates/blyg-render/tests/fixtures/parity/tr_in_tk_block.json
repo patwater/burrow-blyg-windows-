@@ -1,0 +1,21 @@
+{
+  "name": "tr_in_tk_block",
+  "kind": "thread",
+  "md": "[TK]quote-like summary of ![[01j9zq3k4m5n6p7q8r9s0t1v2w]][=]A summary.\n\n![[01j9zq3k4m5n6p7q8r9s0t1v2w]][/TK]\n\nAfter.",
+  "html": "<div class=\"blyg-tk-gen\"><p>A summary.</p>\n<p>![[01j9zq3k4m5n6p7q8r9s0t1v2w]]</p>\n</div>\n<p>After.</p>\n",
+  "tk": {
+    "scopes": [
+      {
+        "instruction": "quote-like summary of ![[01j9zq3k4m5n6p7q8r9s0t1v2w]]",
+        "generated": true,
+        "block": true,
+        "source_ids": [
+          "01j9zq3k4m5n6p7q8r9s0t1v2w"
+        ]
+      }
+    ],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

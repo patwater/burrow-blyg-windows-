@@ -1,0 +1,12 @@
+{
+  "name": "tables_edge",
+  "kind": "fragment",
+  "md": "a | b\n--- | ---\n`x \\| y` | 2\n\n| one |\n| --- |\n| two |\n\n|x|y|\n|-|-|\n|1|",
+  "html": "<table>\n<thead>\n<tr>\n<th>a</th>\n<th>b</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><code>x | y</code></td>\n<td>2</td>\n</tr>\n</tbody>\n</table>\n<table>\n<thead>\n<tr>\n<th>one</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>two</td>\n</tr>\n</tbody>\n</table>\n<table>\n<thead>\n<tr>\n<th>x</th>\n<th>y</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>1</td>\n<td></td>\n</tr>\n</tbody>\n</table>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

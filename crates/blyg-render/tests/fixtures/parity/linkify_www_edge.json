@@ -1,0 +1,12 @@
+{
+  "name": "linkify_www_edge",
+  "kind": "fragment",
+  "md": "www.example.org. and www.example and www.example.org/a) and WWW.EXAMPLE.ORG",
+  "html": "<p><a href=\"http://www.example.org\">www.example.org</a>. and www.example and <a href=\"http://www.example.org/a\">www.example.org/a</a>) and <a href=\"http://WWW.EXAMPLE.ORG\">WWW.EXAMPLE.ORG</a></p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

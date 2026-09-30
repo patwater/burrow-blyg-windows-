@@ -1,0 +1,12 @@
+{
+  "name": "null_char",
+  "kind": "fragment",
+  "md": "a\u0000b and &#0; and &#x0;",
+  "html": "<p>a�b and � and �</p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

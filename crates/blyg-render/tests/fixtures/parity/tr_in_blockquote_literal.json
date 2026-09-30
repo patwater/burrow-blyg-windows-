@@ -1,0 +1,12 @@
+{
+  "name": "tr_in_blockquote_literal",
+  "kind": "thread",
+  "md": "> ![[01j9zq3k4m5n6p7q8r9s0t1v2w]]",
+  "html": "<blockquote>\n<p>![[01j9zq3k4m5n6p7q8r9s0t1v2w]]</p>\n</blockquote>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

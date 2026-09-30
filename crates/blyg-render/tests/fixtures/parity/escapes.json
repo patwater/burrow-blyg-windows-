@@ -1,0 +1,12 @@
+{
+  "name": "escapes",
+  "kind": "fragment",
+  "md": "\\*not em\\* \\# not heading \\[x\\] and a & b < c > d \"q\" 'a'",
+  "html": "<p>*not em* # not heading [x] and a &amp; b &lt; c &gt; d &quot;q&quot; 'a'</p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

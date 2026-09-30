@@ -1,0 +1,22 @@
+[workspace]
+resolver = "3"
+members = ["crates/blyg-core", "crates/blyg-ai", "crates/blyg-render", "crates/blyg-app"]
+
+[workspace.package]
+edition = "2024"
+version = "0.3.0"
+license = "MIT"
+description = "A fast, local-first macOS studio for Blygger blogs"
+# Placeholder repo; set it with scripts/set-repo.sh (see packaging/config.env).
+repository = "https://github.com/aneeshsathe/blygger-desktop"
+homepage = "https://github.com/aneeshsathe/blygger-desktop"
+authors = ["Blygger Desktop contributors"]
+keywords = ["blygger", "blog", "gpui", "macos", "writing"]
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true
+
+[profile.dev.package."*"]
+opt-level = 2   # GPUI + sqlite are painfully slow unoptimised; our own code stays debuggable

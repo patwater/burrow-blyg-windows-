@@ -1,0 +1,19 @@
+{
+  "name": "tk_inline_dollar",
+  "kind": "fragment",
+  "md": "Price [TK]p[=]$& and $$ and $' and $`[/TK] end.",
+  "html": "<p>Price <span class=\"blyg-tk-gen\">$&amp; and $$ and $' and $`</span> end.</p>\n",
+  "tk": {
+    "scopes": [
+      {
+        "instruction": "p",
+        "generated": true,
+        "block": false,
+        "source_ids": []
+      }
+    ],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

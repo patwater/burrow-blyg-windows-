@@ -1,0 +1,12 @@
+{
+  "name": "linkify_fuzzy_domain",
+  "kind": "fragment",
+  "md": "Bare example.com and blyg.example.com/notes and example.org, but not file.txt or v1.2.3 or a.b",
+  "html": "<p>Bare <a href=\"http://example.com\">example.com</a> and <a href=\"http://blyg.example.com/notes\">blyg.example.com/notes</a> and <a href=\"http://example.org\">example.org</a>, but not file.txt or v1.2.3 or a.b</p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

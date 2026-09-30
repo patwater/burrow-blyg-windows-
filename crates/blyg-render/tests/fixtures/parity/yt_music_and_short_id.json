@@ -1,0 +1,12 @@
+{
+  "name": "yt_music_and_short_id",
+  "kind": "fragment",
+  "md": "https://music.youtube.com/watch?v=Ab3De6\n\nhttps://youtu.be/short",
+  "html": "<figure class=\"blyg-yt\" data-ytid=\"Ab3De6\"><a class=\"blyg-yt-poster\" href=\"https://music.youtube.com/watch?v=Ab3De6\" aria-label=\"Play video\"><img src=\"https://i.ytimg.com/vi/Ab3De6/hqdefault.jpg\" alt=\"\" width=\"480\" height=\"360\" loading=\"lazy\" referrerpolicy=\"no-referrer\"></a><figcaption><a href=\"https://music.youtube.com/watch?v=Ab3De6\">https://music.youtube.com/watch?v=Ab3De6</a></figcaption></figure>\n<p><a href=\"https://youtu.be/short\">https://youtu.be/short</a></p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

@@ -1,0 +1,21 @@
+{
+  "name": "tr_inline_tk_multiline_directive",
+  "kind": "thread",
+  "md": "Start [TK]x[=]one\n![[01j9zq3k4m5n6p7q8r9s0t1v2w]]\ntwo[/TK] end",
+  "html": "<p>Start <span class=\"blyg-tk-gen\">one\n![[01j9zq3k4m5n6p7q8r9s0t1v2w]]\ntwo</span> end</p>\n",
+  "tk": {
+    "scopes": [
+      {
+        "instruction": "x",
+        "generated": true,
+        "block": false,
+        "source_ids": [
+          "01j9zq3k4m5n6p7q8r9s0t1v2w"
+        ]
+      }
+    ],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

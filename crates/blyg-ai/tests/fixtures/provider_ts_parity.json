@@ -1,0 +1,42 @@
+[
+  {
+    "name": "first generation, no sources, no style",
+    "content_md": "On friction: every step is a place the thought can die. [TK]say why, briefly[/TK] So the tool should disappear.",
+    "scope": 0,
+    "sources": {},
+    "style": null,
+    "expected_system": "You are the generation engine behind a TK (\"to come\") instructed-generation feature in a writing tool. The author has marked a span of their draft with an instruction; you write the prose that replaces it. Output ONLY the replacement text: no preamble, no meta-commentary, no code fences, no explanation of what you did. The output becomes the literal body of the author's document, so match the voice, register, and formatting conventions of the surrounding context.",
+    "expected_user": "Instruction: say why, briefly\n\nFull document for context, with the active span marked between <<<TK-SCOPE>>> and <<<END-TK-SCOPE>>> (the markers are for your orientation only — never reproduce them):\nOn friction: every step is a place the thought can die. <<<TK-SCOPE>>>[TK]say why, briefly[/TK]<<<END-TK-SCOPE>>> So the tool should disappear.",
+    "expected_source_ids": []
+  },
+  {
+    "name": "regenerate with sources and a style prompt, block scope",
+    "content_md": "Why I built this\n\n[TK] open with the idea from ![[0123456789abcdefghjkmnpqrs]] and ![[zyxwvtsrqpnmkjhgfedcba9876]] [=]An old draft.[/TK]\n\nMore text, and a second [TK]later[/TK].",
+    "scope": 0,
+    "sources": {
+      "0123456789abcdefghjkmnpqrs": "Every step between a thought and a post is a place it can die.",
+      "zyxwvtsrqpnmkjhgfedcba9876": "Tools should disappear."
+    },
+    "style": "Plain words. Short sentences. No hype.",
+    "expected_system": "You are the generation engine behind a TK (\"to come\") instructed-generation feature in a writing tool. The author has marked a span of their draft with an instruction; you write the prose that replaces it. Output ONLY the replacement text: no preamble, no meta-commentary, no code fences, no explanation of what you did. The output becomes the literal body of the author's document, so match the voice, register, and formatting conventions of the surrounding context.\n\nPlain words. Short sentences. No hype.",
+    "expected_user": "Instruction: open with the idea from ![[0123456789abcdefghjkmnpqrs]] and ![[zyxwvtsrqpnmkjhgfedcba9876]]\n\nSource material the instruction may draw on (weave into the generated prose; do not reproduce verbatim unless the instruction asks for a quote):\n\n--- source 0123456789abcdefghjkmnpqrs ---\nEvery step between a thought and a post is a place it can die.\n\n--- source zyxwvtsrqpnmkjhgfedcba9876 ---\nTools should disappear.\n\nCurrent draft of this span, to revise per the instruction above:\nAn old draft.\n\nFull document for context, with the active span marked between <<<TK-SCOPE>>> and <<<END-TK-SCOPE>>> (the markers are for your orientation only — never reproduce them):\nWhy I built this\n\n<<<TK-SCOPE>>>[TK] open with the idea from ![[0123456789abcdefghjkmnpqrs]] and ![[zyxwvtsrqpnmkjhgfedcba9876]] [=]An old draft.[/TK]<<<END-TK-SCOPE>>>\n\nMore text, and a second [TK]later[/TK].",
+    "expected_source_ids": [
+      "0123456789abcdefghjkmnpqrs",
+      "zyxwvtsrqpnmkjhgfedcba9876"
+    ]
+  },
+  {
+    "name": "second scope, multibyte text",
+    "content_md": "Café ☕ notes — naïve 🙂 [TK]a[=]x[/TK] then [TK]sum it up ![[0123456789abcdefghjkmnpqrs]][/TK] fin ✓",
+    "scope": 1,
+    "sources": {
+      "0123456789abcdefghjkmnpqrs": "Ünïcode source — 日本語 🙂"
+    },
+    "style": "",
+    "expected_system": "You are the generation engine behind a TK (\"to come\") instructed-generation feature in a writing tool. The author has marked a span of their draft with an instruction; you write the prose that replaces it. Output ONLY the replacement text: no preamble, no meta-commentary, no code fences, no explanation of what you did. The output becomes the literal body of the author's document, so match the voice, register, and formatting conventions of the surrounding context.",
+    "expected_user": "Instruction: sum it up ![[0123456789abcdefghjkmnpqrs]]\n\nSource material the instruction may draw on (weave into the generated prose; do not reproduce verbatim unless the instruction asks for a quote):\n\n--- source 0123456789abcdefghjkmnpqrs ---\nÜnïcode source — 日本語 🙂\n\nFull document for context, with the active span marked between <<<TK-SCOPE>>> and <<<END-TK-SCOPE>>> (the markers are for your orientation only — never reproduce them):\nCafé ☕ notes — naïve 🙂 [TK]a[=]x[/TK] then <<<TK-SCOPE>>>[TK]sum it up ![[0123456789abcdefghjkmnpqrs]][/TK]<<<END-TK-SCOPE>>> fin ✓",
+    "expected_source_ids": [
+      "0123456789abcdefghjkmnpqrs"
+    ]
+  }
+]

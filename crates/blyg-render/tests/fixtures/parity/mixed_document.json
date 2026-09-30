@@ -1,0 +1,29 @@
+{
+  "name": "mixed_document",
+  "kind": "thread",
+  "md": "# Notes on tools\n\nSmall tools matter. See https://blyg.example.com/notes for more.\n\n![[01j9zq3k4m5n6p7q8r9s0t1v2w]]\n\n[TK]a bridging sentence[=]Which brings us to the *real* point.[/TK]\n\n![a sunset](https://images.example.org/sunset.jpg)\n\nhttps://www.youtube.com/watch?v=Zx9_abc-123\n\n![[03zzzzzzzzzzzzzzzzzzzzzzzz]]\n\n- first\n- second\n\n> A plain quote.\n",
+  "html": "<h1>Notes on tools</h1>\n<p>Small tools matter. See <a href=\"https://blyg.example.com/notes\">https://blyg.example.com/notes</a> for more.</p>\n\n<blockquote class=\"blyg-transclusion\" data-blyg-id=\"01j9zq3k4m5n6p7q8r9s0t1v2w\" data-blyg-version=\"3\">\n<p>Small tools, used daily, beat big tools used rarely.</p>\n\n\n<p class=\"provenance\"><a href=\"/blyg/f/01j9zq3k4m5n6p7q8r9s0t1v2w/\">fragment ↗</a> · snapshot of v3</p></blockquote>\n<div class=\"blyg-tk-gen\"><p>Which brings us to the <em>real</em> point.</p>\n</div>\n<p><img src=\"https://images.example.org/sunset.jpg\" alt=\"a sunset\" referrerpolicy=\"no-referrer\"></p>\n<figure class=\"blyg-yt\" data-ytid=\"Zx9_abc-123\"><a class=\"blyg-yt-poster\" href=\"https://www.youtube.com/watch?v=Zx9_abc-123\" aria-label=\"Play video\"><img src=\"https://i.ytimg.com/vi/Zx9_abc-123/hqdefault.jpg\" alt=\"\" width=\"480\" height=\"360\" loading=\"lazy\" referrerpolicy=\"no-referrer\"></a><figcaption><a href=\"https://www.youtube.com/watch?v=Zx9_abc-123\">https://www.youtube.com/watch?v=Zx9_abc-123</a></figcaption></figure>\n\n<blockquote class=\"blyg-transclusion unresolved\"><p>⚠ unresolvable: unknown item</p></blockquote>\n<ul>\n<li>first</li>\n<li>second</li>\n</ul>\n<blockquote>\n<p>A plain quote.</p>\n</blockquote>\n",
+  "tk": {
+    "scopes": [
+      {
+        "instruction": "a bridging sentence",
+        "generated": true,
+        "block": true,
+        "source_ids": []
+      }
+    ],
+    "errors": []
+  },
+  "transclusions": [
+    {
+      "id": "01j9zq3k4m5n6p7q8r9s0t1v2w",
+      "version": 3
+    }
+  ],
+  "errors": [
+    {
+      "directive": "![[03zzzzzzzzzzzzzzzzzzzzzzzz]]",
+      "reason": "unknown item"
+    }
+  ]
+}

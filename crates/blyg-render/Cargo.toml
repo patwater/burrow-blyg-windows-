@@ -1,0 +1,17 @@
+[package]
+name = "blyg-render"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+description = "Studio preview renderer: Markdown, TK and transclusion to HTML, as a blyg publishes it"
+
+[dependencies]
+markdown-it = { version = "0.6.1", default-features = false }
+mdurl = "0.3.1"
+fancy-regex = "0.19"
+regex = "1"
+unicode-general-category = "0.6"
+
+[dev-dependencies]
+serde_json = "1"
+regex = "1"

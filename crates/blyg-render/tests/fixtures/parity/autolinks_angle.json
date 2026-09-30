@@ -1,0 +1,12 @@
+{
+  "name": "autolinks_angle",
+  "kind": "fragment",
+  "md": "<https://example.org/x> <mailto:someone@example.com> <someone@example.com> <ftp://files.example.org/f>",
+  "html": "<p><a href=\"https://example.org/x\">https://example.org/x</a> <a href=\"mailto:someone@example.com\">mailto:someone@example.com</a> <a href=\"mailto:someone@example.com\">someone@example.com</a> <a href=\"ftp://files.example.org/f\">ftp://files.example.org/f</a></p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

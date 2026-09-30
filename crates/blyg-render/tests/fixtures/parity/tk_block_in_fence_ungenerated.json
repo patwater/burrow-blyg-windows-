@@ -1,0 +1,19 @@
+{
+  "name": "tk_block_in_fence_ungenerated",
+  "kind": "fragment",
+  "md": "```\n\n[TK]write <code>[/TK]\n\n```",
+  "html": "<pre><code>\n<span class=\"blyg-tk-gen\">⚠ ungenerated — write &lt;code&gt;</span>\n\n</code></pre>\n",
+  "tk": {
+    "scopes": [
+      {
+        "instruction": "write <code>",
+        "generated": false,
+        "block": true,
+        "source_ids": []
+      }
+    ],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

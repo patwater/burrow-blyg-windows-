@@ -1,0 +1,12 @@
+{
+  "name": "linkify_trailing_combos",
+  "kind": "fragment",
+  "md": "(see https://example.org/a)) and https://example.org/a_b_ and https://example.org/foo. and https://example.org/foo...bar and https://example.org/?q=a,b,c, and https://example.org/a'b and https://example.org/a- end",
+  "html": "<p>(see <a href=\"https://example.org/a\">https://example.org/a</a>)) and <a href=\"https://example.org/a_b_\">https://example.org/a_b_</a> and <a href=\"https://example.org/foo\">https://example.org/foo</a>. and <a href=\"https://example.org/foo...bar\">https://example.org/foo...bar</a> and <a href=\"https://example.org/?q=a,b,c\">https://example.org/?q=a,b,c</a>, and <a href=\"https://example.org/a'b\">https://example.org/a'b</a> and <a href=\"https://example.org/a-\">https://example.org/a-</a> end</p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

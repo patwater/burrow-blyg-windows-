@@ -1,0 +1,12 @@
+{
+  "name": "links_nested_brackets",
+  "kind": "fragment",
+  "md": "[a [b] c](/u) and [a](</my url>) and [t](/u (paren title)) and [e](/u \"a \\\" q\")",
+  "html": "<p><a href=\"/u\">a [b] c</a> and <a href=\"/my%20url\">a</a> and <a href=\"/u\" title=\"paren title\">t</a> and <a href=\"/u\" title=\"a &quot; q\">e</a></p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

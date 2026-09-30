@@ -1,0 +1,12 @@
+{
+  "name": "links_inline",
+  "kind": "fragment",
+  "md": "[text](https://blyg.example.com/a \"A title\") and [rel](/local/path) and [empty]() and [spaces](<a b.html>)",
+  "html": "<p><a href=\"https://blyg.example.com/a\" title=\"A title\">text</a> and <a href=\"/local/path\">rel</a> and <a href=\"\">empty</a> and <a href=\"a%20b.html\">spaces</a></p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

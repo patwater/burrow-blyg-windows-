@@ -1,0 +1,12 @@
+{
+  "name": "yt_live",
+  "kind": "fragment",
+  "md": "  https://www.youtube.com/live/Lm3No4Pq5Rs  ",
+  "html": "<figure class=\"blyg-yt\" data-ytid=\"Lm3No4Pq5Rs\"><a class=\"blyg-yt-poster\" href=\"https://www.youtube.com/live/Lm3No4Pq5Rs\" aria-label=\"Play video\"><img src=\"https://i.ytimg.com/vi/Lm3No4Pq5Rs/hqdefault.jpg\" alt=\"\" width=\"480\" height=\"360\" loading=\"lazy\" referrerpolicy=\"no-referrer\"></a><figcaption><a href=\"https://www.youtube.com/live/Lm3No4Pq5Rs\">https://www.youtube.com/live/Lm3No4Pq5Rs</a></figcaption></figure>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

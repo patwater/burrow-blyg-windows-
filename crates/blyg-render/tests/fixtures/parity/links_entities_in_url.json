@@ -1,0 +1,12 @@
+{
+  "name": "links_entities_in_url",
+  "kind": "fragment",
+  "md": "[a](https://example.org/?a&amp;b&copy;) and [b](https://example.org/%zz) and [c](HTTP://Example.ORG/Path)",
+  "html": "<p><a href=\"https://example.org/?a&amp;b%C2%A9\">a</a> and <a href=\"https://example.org/%25zz\">b</a> and <a href=\"HTTP://Example.ORG/Path\">c</a></p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

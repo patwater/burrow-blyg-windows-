@@ -1,0 +1,12 @@
+{
+  "name": "linkify_ftp_and_slashes",
+  "kind": "fragment",
+  "md": "ftp://files.example.org and see://example.org and a//example.org and ://example.org",
+  "html": "<p><a href=\"ftp://files.example.org\">ftp://files.example.org</a> and see://example.org and a//example.org and ://example.org</p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

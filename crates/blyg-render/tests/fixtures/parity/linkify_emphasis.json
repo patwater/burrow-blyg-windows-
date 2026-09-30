@@ -1,0 +1,12 @@
+{
+  "name": "linkify_emphasis",
+  "kind": "fragment",
+  "md": "*https://example.org/em* and **https://example.org/strong** and _https://example.org/under_score_",
+  "html": "<p><em><a href=\"https://example.org/em\">https://example.org/em</a></em> and <strong><a href=\"https://example.org/strong\">https://example.org/strong</a></strong> and _<a href=\"https://example.org/under_score_\">https://example.org/under_score_</a></p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

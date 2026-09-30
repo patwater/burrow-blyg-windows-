@@ -1,0 +1,18 @@
+{
+  "name": "tr_found_remote",
+  "kind": "thread",
+  "md": "From a friend:\n![[02abcdefghjkmnpqrstvwxyz01]]\nThat is all.",
+  "html": "<p>From a friend:</p>\n\n<blockquote class=\"blyg-transclusion\" data-blyg-id=\"02abcdefghjkmnpqrstvwxyz01\" data-blyg-version=\"5\" data-blyg-origin=\"https://blyg.example.com/\">\n<p>Writing is thinking with a pencil.</p>\n\n\n<p class=\"provenance\"><a href=\"https://blyg.example.com/f/02abcdefghjkmnpqrstvwxyz01/\">from <em>Example Notes</em> ↗</a> · snapshot of v5</p></blockquote>\n<p>That is all.</p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [
+    {
+      "id": "02abcdefghjkmnpqrstvwxyz01",
+      "version": 5,
+      "origin": "https://blyg.example.com/"
+    }
+  ],
+  "errors": []
+}

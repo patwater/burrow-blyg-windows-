@@ -1,0 +1,21 @@
+{
+  "name": "tr_in_tk_inline",
+  "kind": "thread",
+  "md": "Summary: [TK]condense ![[01j9zq3k4m5n6p7q8r9s0t1v2w]][=]tools matter.[/TK] Done.",
+  "html": "<p>Summary: <span class=\"blyg-tk-gen\">tools matter.</span> Done.</p>\n",
+  "tk": {
+    "scopes": [
+      {
+        "instruction": "condense ![[01j9zq3k4m5n6p7q8r9s0t1v2w]]",
+        "generated": true,
+        "block": false,
+        "source_ids": [
+          "01j9zq3k4m5n6p7q8r9s0t1v2w"
+        ]
+      }
+    ],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

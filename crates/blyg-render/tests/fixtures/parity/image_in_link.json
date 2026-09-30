@@ -1,0 +1,12 @@
+{
+  "name": "image_in_link",
+  "kind": "fragment",
+  "md": "[![badge](https://images.example.org/b.svg)](https://example.org/)",
+  "html": "<p><a href=\"https://example.org/\"><img src=\"https://images.example.org/b.svg\" alt=\"badge\" referrerpolicy=\"no-referrer\"></a></p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

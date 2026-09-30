@@ -1,0 +1,19 @@
+{
+  "name": "tk_inline_across_paragraphs",
+  "kind": "fragment",
+  "md": "Text [TK]a[=]one\n\ntwo[/TK] more",
+  "html": "<p>Text <span class=\"blyg-tk-gen\">one</p>\n<p>two</span> more</p>\n",
+  "tk": {
+    "scopes": [
+      {
+        "instruction": "a",
+        "generated": true,
+        "block": false,
+        "source_ids": []
+      }
+    ],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

@@ -1,0 +1,12 @@
+{
+  "name": "linkify_ip",
+  "kind": "fragment",
+  "md": "192.168.1.1/path and http://192.168.1.1/path and 10.0.0.1",
+  "html": "<p>192.168.1.1/path and <a href=\"http://192.168.1.1/path\">http://192.168.1.1/path</a> and 10.0.0.1</p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

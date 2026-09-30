@@ -1,0 +1,12 @@
+{
+  "name": "links_url_encoding",
+  "kind": "fragment",
+  "md": "[a](https://example.org/a b) [b](https://example.org/ä?x=1&y=\"2\") [c](https://example.org/%20ok) [d](<https://example.org/q?a=1&b=2>)",
+  "html": "<p>[a](<a href=\"https://example.org/a\">https://example.org/a</a> b) <a href=\"https://example.org/%C3%A4?x=1&amp;y=%222%22\">b</a> <a href=\"https://example.org/%20ok\">c</a> <a href=\"https://example.org/q?a=1&amp;b=2\">d</a></p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

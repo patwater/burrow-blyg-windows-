@@ -1,0 +1,21 @@
+{
+  "name": "tk_in_fragment_with_ref",
+  "kind": "fragment",
+  "md": "[TK]expand on ![[01j9zq3k4m5n6p7q8r9s0t1v2w]][=]An expansion.[/TK]",
+  "html": "<div class=\"blyg-tk-gen\"><p>An expansion.</p>\n</div>\n",
+  "tk": {
+    "scopes": [
+      {
+        "instruction": "expand on ![[01j9zq3k4m5n6p7q8r9s0t1v2w]]",
+        "generated": true,
+        "block": true,
+        "source_ids": [
+          "01j9zq3k4m5n6p7q8r9s0t1v2w"
+        ]
+      }
+    ],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

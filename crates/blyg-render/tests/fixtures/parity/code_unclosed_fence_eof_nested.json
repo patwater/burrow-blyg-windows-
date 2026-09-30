@@ -1,0 +1,12 @@
+{
+  "name": "code_unclosed_fence_eof_nested",
+  "kind": "fragment",
+  "md": "> ```\n> quoted\n> code\n\n- item\n\n  ~~~\n  last",
+  "html": "<blockquote>\n<pre><code>quoted\ncode\n</code></pre>\n</blockquote>\n<ul>\n<li>\n<p>item</p>\n<pre><code>last</code></pre>\n</li>\n</ul>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

@@ -1,0 +1,21 @@
+{
+  "name": "tr_ungenerated_tk_with_directive",
+  "kind": "thread",
+  "md": "Go [TK]use\n![[01j9zq3k4m5n6p7q8r9s0t1v2w]]\nplease[/TK] now",
+  "html": "<p>Go <span class=\"blyg-tk-gen\">⚠ ungenerated — use\n![[01j9zq3k4m5n6p7q8r9s0t1v2w]]\nplease</span> now</p>\n",
+  "tk": {
+    "scopes": [
+      {
+        "instruction": "use\n![[01j9zq3k4m5n6p7q8r9s0t1v2w]]\nplease",
+        "generated": false,
+        "block": false,
+        "source_ids": [
+          "01j9zq3k4m5n6p7q8r9s0t1v2w"
+        ]
+      }
+    ],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

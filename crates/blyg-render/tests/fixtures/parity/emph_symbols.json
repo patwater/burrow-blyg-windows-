@@ -1,0 +1,12 @@
+{
+  "name": "emph_symbols",
+  "kind": "fragment",
+  "md": "*€100* and **£5**foo and _$x_ and *+plus+* and **\"quoted\"**x",
+  "html": "<p><em>€100</em> and <strong>£5</strong>foo and <em>$x</em> and <em>+plus+</em> and **&quot;quoted&quot;**x</p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

@@ -1,0 +1,12 @@
+{
+  "name": "autolink_edge",
+  "kind": "fragment",
+  "md": "<http://example.org/a b> and <a+b@example.org> and <irc://example.org> and <made-up:thing>",
+  "html": "<p>&lt;<a href=\"http://example.org/a\">http://example.org/a</a> b&gt; and <a href=\"mailto:a+b@example.org\">a+b@example.org</a> and <a href=\"irc://example.org\">irc://example.org</a> and <a href=\"made-up:thing\">made-up:thing</a></p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

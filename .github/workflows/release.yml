@@ -1,0 +1,144 @@
+name: Release
+
+# Push a tag like v0.1.0 (matching `version` in Cargo.toml, with a matching
+# `## [0.1.0]` section in CHANGELOG.md) to build, sign and publish a release.
+#
+# Required repository secret:
+#   UPDATE_SIGNING_KEY            PEM Ed25519 private key; signs SHA256SUMS as
+#                                 SHA256SUMS.sig for in-app updates (the app
+#                                 embeds the public key; see scripts/sign-sums.sh)
+#
+# Optional repository secrets (without them the app is ad-hoc signed, and users
+# have to open it with right-click → Open the first time):
+#   APPLE_DEVELOPER_ID_APP        "Developer ID Application: <Name> (<TEAMID>)"
+#   APPLE_CERTIFICATE_P12_BASE64  base64 of the Developer ID .p12
+#   APPLE_CERTIFICATE_PASSWORD    its password
+#   Notarization, either an app-specific password:
+#     APPLE_ID, APPLE_TEAM_ID, APPLE_APP_PASSWORD
+#   or an App Store Connect API key:
+#     APPLE_API_KEY_ID, APPLE_API_ISSUER, APPLE_API_KEY_P8_BASE64
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  release:
+    runs-on: macos-latest
+    timeout-minutes: 90
+    permissions:
+      contents: write # create the release and upload assets
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install the pinned toolchain and the Intel target
+        run: |
+          rustup show active-toolchain || rustup toolchain install
+          rustup target add aarch64-apple-darwin x86_64-apple-darwin
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          key: release-universal
+
+      - name: Check the tag, Cargo version, repo name and changelog agree
+        id: meta
+        env:
+          TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          version="$(cargo pkgid -p blyg-app | sed -E 's/.*[#@]//')"
+          if [ "v$version" != "$TAG" ]; then
+            echo "::error::tag $TAG doesn't match Cargo version $version"
+            exit 1
+          fi
+          configured="$(grep -E '^GITHUB_REPO=' packaging/config.env | cut -d= -f2)"
+          if [ "$configured" != "$REPO" ]; then
+            echo "::warning::packaging/config.env says GITHUB_REPO=$configured but this is $REPO"
+          fi
+          scripts/changelog-notes.sh "$version" > "$RUNNER_TEMP/notes.md"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          case "$version" in *-*) echo "prerelease=true" >> "$GITHUB_OUTPUT" ;; *) echo "prerelease=false" >> "$GITHUB_OUTPUT" ;; esac
+
+      - name: Require the update signing key
+        env:
+          HAS_KEY: ${{ secrets.UPDATE_SIGNING_KEY != '' }}
+        run: |
+          if [ "$HAS_KEY" != "true" ]; then
+            echo "::error::the UPDATE_SIGNING_KEY secret is missing; in-app updates need a signed SHA256SUMS"
+            exit 1
+          fi
+
+      - name: Build, sign and package (universal)
+        env:
+          BUILD_NUMBER: ${{ github.run_number }}
+          APPLE_DEVELOPER_ID_APP: ${{ secrets.APPLE_DEVELOPER_ID_APP }}
+          APPLE_CERTIFICATE_P12_BASE64: ${{ secrets.APPLE_CERTIFICATE_P12_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_KEY_P8_BASE64: ${{ secrets.APPLE_API_KEY_P8_BASE64 }}
+        run: scripts/bundle.sh --arch universal
+
+      # In-app updates only install a release whose SHA256SUMS carries a valid
+      # Ed25519 signature from this key. The script signs with Homebrew's
+      # OpenSSL 3, writes the key to a 0600 temp file (never echoed, deleted
+      # after), and verifies the signature with the public key embedded in
+      # the app, so a wrong key fails the job instead of shipping.
+      - name: Sign SHA256SUMS for in-app updates
+        env:
+          UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
+        run: scripts/sign-sums.sh dist/SHA256SUMS
+
+      - name: Note an unsigned build in the release notes
+        env:
+          SIGNED: ${{ secrets.APPLE_DEVELOPER_ID_APP != '' }}
+        run: |
+          if [ "$SIGNED" != "true" ]; then
+            cat >> "$RUNNER_TEMP/notes.md" <<'EOF'
+
+          ---
+          This build isn't notarized by Apple. The easiest way to install it is the
+          one-line Terminal installer in the README, which Gatekeeper doesn't block.
+          If you download it in a browser, macOS 15 and later say "Blygger" Not
+          Opened. Try opening it once, then click **Open Anyway** in System Settings ›
+          Privacy & Security, or run
+          `xattr -dr com.apple.quarantine /Applications/Blygger.app`.
+          EOF
+          fi
+
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+          VERSION: ${{ steps.meta.outputs.version }}
+          PRERELEASE: ${{ steps.meta.outputs.prerelease }}
+        run: |
+          flags=()
+          [ "$PRERELEASE" = "true" ] && flags+=(--prerelease)
+          gh release create "$TAG" \
+            --title "Blygger $VERSION" \
+            --notes-file "$RUNNER_TEMP/notes.md" \
+            --verify-tag \
+            "${flags[@]}" \
+            dist/Blygger-"$VERSION"-macos-universal.dmg \
+            dist/Blygger-"$VERSION"-macos-universal.zip \
+            dist/Blygger-macos-universal.dmg \
+            dist/Blygger-macos-universal.zip \
+            dist/SHA256SUMS \
+            dist/SHA256SUMS.sig

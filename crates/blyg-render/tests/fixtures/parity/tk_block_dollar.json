@@ -1,0 +1,19 @@
+{
+  "name": "tk_block_dollar",
+  "kind": "fragment",
+  "md": "Before.\n\n[TK]money[=]It costs $5 or $$10, see $& and $' and $`.[/TK]\n\nAfter.",
+  "html": "<p>Before.</p>\n<div class=\"blyg-tk-gen\"><p>It costs $5 or $$10, see $&amp; and $' and $`.</p>\n</div>\n<p>After.</p>\n",
+  "tk": {
+    "scopes": [
+      {
+        "instruction": "money",
+        "generated": true,
+        "block": true,
+        "source_ids": []
+      }
+    ],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

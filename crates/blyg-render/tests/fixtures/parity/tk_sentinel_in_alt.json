@@ -1,0 +1,25 @@
+{
+  "name": "tk_sentinel_in_alt",
+  "kind": "fragment",
+  "md": "![alt [TK]x[=]gen[/TK] more](/i.png) and ![[TK]y[/TK]](/j.png)",
+  "html": "<p><img src=\"/i.png\" alt=\"alt gen more\"> and <img src=\"/j.png\" alt=\"⚠ ungenerated — y\"></p>\n",
+  "tk": {
+    "scopes": [
+      {
+        "instruction": "x",
+        "generated": true,
+        "block": false,
+        "source_ids": []
+      },
+      {
+        "instruction": "y",
+        "generated": false,
+        "block": false,
+        "source_ids": []
+      }
+    ],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

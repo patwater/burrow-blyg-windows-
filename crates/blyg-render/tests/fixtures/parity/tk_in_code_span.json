@@ -1,0 +1,19 @@
+{
+  "name": "tk_in_code_span",
+  "kind": "fragment",
+  "md": "Code `[TK]x[=]y[/TK]` here.",
+  "html": "<p>Code <code><span class=\"blyg-tk-gen\">y</span></code> here.</p>\n",
+  "tk": {
+    "scopes": [
+      {
+        "instruction": "x",
+        "generated": true,
+        "block": false,
+        "source_ids": []
+      }
+    ],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

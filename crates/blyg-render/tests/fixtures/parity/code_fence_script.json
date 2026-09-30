@@ -1,0 +1,12 @@
+{
+  "name": "code_fence_script",
+  "kind": "fragment",
+  "md": "```html\n<script>alert(1)</script>\n```",
+  "html": "<pre><code class=\"language-html\">&lt;script&gt;alert(1)&lt;/script&gt;\n</code></pre>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

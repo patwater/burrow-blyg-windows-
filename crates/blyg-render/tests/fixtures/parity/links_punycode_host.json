@@ -1,0 +1,12 @@
+{
+  "name": "links_punycode_host",
+  "kind": "fragment",
+  "md": "[x](https://bücher.example/) and <https://bücher.example/p> and https://bücher.example/q",
+  "html": "<p><a href=\"https://xn--bcher-kva.example/\">x</a> and <a href=\"https://xn--bcher-kva.example/p\">https://bücher.example/p</a> and <a href=\"https://xn--bcher-kva.example/q\">https://bücher.example/q</a></p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

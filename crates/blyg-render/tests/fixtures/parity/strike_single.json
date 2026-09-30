@@ -1,0 +1,12 @@
+{
+  "name": "strike_single",
+  "kind": "fragment",
+  "md": "~single~ and ~~double~~ and ~~~triple~~~",
+  "html": "<p>~single~ and <s>double</s> and ~<s>triple</s>~</p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

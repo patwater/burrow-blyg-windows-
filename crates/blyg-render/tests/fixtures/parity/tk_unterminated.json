@@ -1,0 +1,17 @@
+{
+  "name": "tk_unterminated",
+  "kind": "fragment",
+  "md": "Start [TK]never closed\n\nMore text.",
+  "html": "<p>Start [TK]never closed</p>\n<p>More text.</p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": [
+      {
+        "at": 6,
+        "reason": "unterminated scope (missing [/TK])"
+      }
+    ]
+  },
+  "transclusions": [],
+  "errors": []
+}

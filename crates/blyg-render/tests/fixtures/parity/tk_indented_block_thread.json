@@ -1,0 +1,21 @@
+{
+  "name": "tk_indented_block_thread",
+  "kind": "thread",
+  "md": "Para.\n\n    [TK]x[=]![[01j9zq3k4m5n6p7q8r9s0t1v2w]][/TK]\n\nMore.",
+  "html": "<p>Para.</p>\n<pre><code><span class=\"blyg-tk-gen\">![[01j9zq3k4m5n6p7q8r9s0t1v2w]]</span>\n</code></pre>\n<p>More.</p>\n",
+  "tk": {
+    "scopes": [
+      {
+        "instruction": "x",
+        "generated": true,
+        "block": true,
+        "source_ids": [
+          "01j9zq3k4m5n6p7q8r9s0t1v2w"
+        ]
+      }
+    ],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

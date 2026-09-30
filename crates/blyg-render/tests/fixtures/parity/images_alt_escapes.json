@@ -1,0 +1,12 @@
+{
+  "name": "images_alt_escapes",
+  "kind": "fragment",
+  "md": "![a \\[b\\] c](/x.png) ![&copy; &#65; &nbsp;x](/y.png) ![\\*not em\\*](/z.png) ![outer ![in\\_ner](/n.png) &amp;](/o.png)",
+  "html": "<p><img src=\"/x.png\" alt=\"a [b] c\"> <img src=\"/y.png\" alt=\"© A  x\"> <img src=\"/z.png\" alt=\"*not em*\"> <img src=\"/o.png\" alt=\"outer in_ner &amp;\"></p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

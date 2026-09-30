@@ -1,0 +1,12 @@
+{
+  "name": "code_closed_fence_eof",
+  "kind": "fragment",
+  "md": "```\nclosed\n```",
+  "html": "<pre><code>closed\n</code></pre>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

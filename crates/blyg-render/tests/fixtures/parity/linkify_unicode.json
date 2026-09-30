@@ -1,0 +1,12 @@
+{
+  "name": "linkify_unicode",
+  "kind": "fragment",
+  "md": "https://example.org/café and https://example.org/%E2%9C%93 and https://xn--nxasmq6b.example/",
+  "html": "<p><a href=\"https://example.org/caf%C3%A9\">https://example.org/café</a> and <a href=\"https://example.org/%E2%9C%93\">https://example.org/✓</a> and <a href=\"https://xn--nxasmq6b.example/\">https://βόλοσ.example/</a></p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

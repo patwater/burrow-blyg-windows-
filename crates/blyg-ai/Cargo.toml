@@ -1,0 +1,21 @@
+[package]
+name = "blyg-ai"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+
+[dependencies]
+blyg-core = { path = "../blyg-core" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+url = "2"
+# Same client stack as blyg-core (blocking, rustls).
+ureq = { version = "2.12", default-features = false, features = ["tls", "json"] }
+# PKCE (S256) and JWT payload decoding for Sign in with ChatGPT.
+sha2 = "0.10"
+base64 = "0.22"
+getrandom = "0.2"
+
+[dev-dependencies]
+tempfile = "3"

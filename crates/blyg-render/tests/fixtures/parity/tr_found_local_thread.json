@@ -1,0 +1,17 @@
+{
+  "name": "tr_found_local_thread",
+  "kind": "thread",
+  "md": "![[01j9zq3k4m5n6p7q8r9s0t1v3x]]",
+  "html": "<blockquote class=\"blyg-transclusion\" data-blyg-id=\"01j9zq3k4m5n6p7q8r9s0t1v3x\" data-blyg-version=\"2\">\n<p>A thread about notebooks.</p>\n<blockquote class=\"blyg-transclusion\" data-blyg-id=\"01j9zq3k4m5n6p7q8r9s0t1v2w\" data-blyg-version=\"1\">\n<p>An older quoted fragment.</p>\n\n</blockquote>\n<p>Closing thought.</p>\n\n\n<p class=\"provenance\"><a href=\"/blyg/t/01j9zq3k4m5n6p7q8r9s0t1v3x/\">thread ↗</a> · snapshot of v2</p></blockquote>",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [
+    {
+      "id": "01j9zq3k4m5n6p7q8r9s0t1v3x",
+      "version": 2
+    }
+  ],
+  "errors": []
+}

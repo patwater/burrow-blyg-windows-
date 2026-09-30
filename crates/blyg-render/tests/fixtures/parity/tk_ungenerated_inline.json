@@ -1,0 +1,19 @@
+{
+  "name": "tk_ungenerated_inline",
+  "kind": "fragment",
+  "md": "Before [TK]summarise the argument[/TK] after.",
+  "html": "<p>Before <span class=\"blyg-tk-gen\">⚠ ungenerated — summarise the argument</span> after.</p>\n",
+  "tk": {
+    "scopes": [
+      {
+        "instruction": "summarise the argument",
+        "generated": false,
+        "block": false,
+        "source_ids": []
+      }
+    ],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

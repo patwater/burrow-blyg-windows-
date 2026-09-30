@@ -1,0 +1,12 @@
+{
+  "name": "para_basic",
+  "kind": "fragment",
+  "md": "Hello world.\n\nSecond paragraph\nwith a soft break.",
+  "html": "<p>Hello world.</p>\n<p>Second paragraph\nwith a soft break.</p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

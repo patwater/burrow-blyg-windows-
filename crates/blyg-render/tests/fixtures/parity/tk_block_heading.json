@@ -1,0 +1,19 @@
+{
+  "name": "tk_block_heading",
+  "kind": "fragment",
+  "md": "[TK]a heading and list[=]## Generated heading\n\n- item one\n- item two[/TK]",
+  "html": "<div class=\"blyg-tk-gen\"><h2>Generated heading</h2>\n<ul>\n<li>item one</li>\n<li>item two</li>\n</ul>\n</div>\n",
+  "tk": {
+    "scopes": [
+      {
+        "instruction": "a heading and list",
+        "generated": true,
+        "block": true,
+        "source_ids": []
+      }
+    ],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

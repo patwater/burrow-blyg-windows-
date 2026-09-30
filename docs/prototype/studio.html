@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Blygger Desktop — full editor</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Literata:ital,opsz,wght@0,7..72,400;1,7..72,400&family=IBM+Plex+Mono&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#efece5;--card:#faf8f3;--ink:#1d1b18;--muted:#6b665d;--line:#dcd6c9;--accent:#9b3d1f}
+@media (prefers-color-scheme: dark){:root{--bg:#121110;--card:#1b1a18;--ink:#ebe6dc;--muted:#9a9489;--line:#2f2d29;--accent:#e08a63}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 Inter,system-ui,sans-serif;padding:28px 16px 200px}
+main{max-width:1180px;margin:0 auto}
+h1{font:italic 400 2.3rem/1.1 Literata,Georgia,serif;margin:0 0 6px}
+.sub{color:var(--muted);margin:0 0 20px}
+.toolbar{display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap}
+button{font:600 .82rem Inter;background:transparent;color:var(--ink);border:1px solid var(--line);border-radius:7px;padding:7px 11px;cursor:pointer}
+button.on{border-color:var(--accent);color:var(--accent)}
+.lbl{font-size:.78rem;color:var(--muted)}
+kbd{font:500 .78rem Inter;padding:2px 6px;border:1px solid var(--line);border-bottom-width:2px;border-radius:5px;background:var(--card)}
+.win{background:#161513;color:#e4dfd3;border-radius:12px;overflow:hidden;box-shadow:0 0 0 1px rgba(0,0,0,.2),0 24px 60px -18px rgba(0,0,0,.45)}
+.tb{height:34px;display:flex;align-items:center;gap:7px;padding:0 12px;background:#1c1b18;border-bottom:1px solid #2a2824}
+.tb i{width:12px;height:12px;border-radius:50%}.tb i:nth-child(1){background:#ff5f57}.tb i:nth-child(2){background:#febc2e}.tb i:nth-child(3){background:#28c840}
+.tb .t{flex:1;text-align:center;font:500 12px Inter;color:#7f7a70;margin-right:50px}
+.panes{display:grid;grid-template-columns:22% 1fr 1fr;height:560px;transition:grid-template-columns .25s}
+.win.studio .panes{grid-template-columns:0 1fr 1fr}
+.win.write .panes{grid-template-columns:22% 1fr 0}
+.list{border-right:1px solid #2a2824;font:13px Inter;overflow:hidden;white-space:nowrap}
+.list div{padding:8px 12px;border-bottom:1px solid #2a2824}.list .sel{background:#26231e}
+.src{padding:22px 26px;font:14.5px/1.75 "IBM Plex Mono",monospace;white-space:pre-wrap;overflow:auto;border-right:1px solid #2a2824;color:#cfc9bd}
+.src .tk{color:#8fb3d9}.src .tr{color:#e7c070}.src .url{color:#9ec79a}.src .hl{background:#26231e;display:block;margin:0 -26px;padding:0 26px;box-shadow:inset 2px 0 0 #e0775a}
+.pv{background:#f7f3ea;color:#2a2622;overflow:auto;padding:30px 38px;font:17px/1.7 Literata,Georgia,serif}
+.pv .meta{font:12px Inter;color:#8a8173;margin-bottom:14px;display:flex;gap:8px}
+.pv .pill{border:1px solid #b9ae9c;border-radius:99px;padding:0 7px}
+.pv h2{font:italic 400 1.6rem/1.2 Literata,serif;margin:0 0 12px}
+.pv p{margin:0 0 .9em}
+.pv .gen{background:rgba(90,140,255,.14);box-shadow:0 0 0 2px rgba(90,140,255,.14);border-radius:3px}
+.pv blockquote{margin:1rem 0;padding:.6rem .9rem;border-left:3px solid #b9ae9c;background:#efe8da;border-radius:0 4px 4px 0;font-size:.92rem}
+.pv blockquote .prov{display:block;font:11.5px Inter;color:#8a8173;margin-top:4px}
+.pv .unres{border-left-color:#b33;background:#f6e3df;color:#9a2a1f;font-style:italic}
+.pv figure{margin:1.1rem 0}
+.pv .yt{position:relative;aspect-ratio:16/9;border-radius:3px;overflow:hidden;background:linear-gradient(135deg,#3d405b,#81667a 60%,#e07a5f);cursor:pointer}
+.pv .yt::before{content:"";position:absolute;top:50%;left:50%;width:58px;height:58px;margin:-29px 0 0 -29px;border-radius:50%;background:#9b3d1f}
+.pv .yt::after{content:"";position:absolute;top:50%;left:50%;margin:-11px 0 0 -6px;border-style:solid;border-width:11px 0 11px 18px;border-color:transparent transparent transparent #f7f3ea}
+.pv .yt.playing{background:#000}.pv .yt.playing::before,.pv .yt.playing::after{display:none}
+.pv .yt.playing span{position:absolute;inset:0;display:grid;place-items:center;color:#fff;font:13px Inter}
+.pv figcaption{font:12px Inter;color:#8a8173;margin-top:4px}
+.pv .img{height:170px;border-radius:3px;background:linear-gradient(180deg,#f3c68a,#e07a5f 70%,#3d405b)}
+.sb{height:30px;display:flex;align-items:center;gap:14px;padding:0 14px;border-top:1px solid #2a2824;background:#1c1b18;font:11.5px Inter;color:#7f7a70}
+.sb .g{flex:1}
+.notes{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:16px}
+@media (max-width:800px){.notes{grid-template-columns:1fr}.panes{grid-template-columns:0 1fr 0!important;height:auto}}
+.note{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px;font-size:.86rem}
+.note b{display:block;margin-bottom:3px}
+textarea.fb{width:100%;min-height:60px;margin-top:16px;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink);font:14px Inter;resize:vertical}
+#copy{background:var(--accent);color:#fff;border:0}
+</style>
+</head>
+<body>
+<main>
+<h1>The full editor</h1>
+<p class="sub">Source on the left, the page exactly as readers will see it on the right: your site's theme, images, quoted posts, AI-written spans, and video. Click the lines on the left to jump to them, or click the video.</p>
+<div class="toolbar">
+  <span class="lbl">Mode</span>
+  <button data-m="write">Write <kbd>⌘1</kbd></button>
+  <button data-m="both">List + editor + preview <kbd>⌘2</kbd></button>
+  <button data-m="studio" class="on">Full editor <kbd>⌘3</kbd></button>
+  <span class="lbl" style="margin-left:8px">Preview theme: your blyg's own stylesheet (fetched and cached; works offline)</span>
+</div>
+<div class="win studio" id="win">
+  <div class="tb"><i></i><i></i><i></i><div class="t">Why I built a posting app · thread · draft</div></div>
+  <div class="panes">
+    <div class="list"><div class="sel">Why I built a posting app</div><div>On friction</div><div>Heard a street band tonight…</div><div>Notes on a book about teams</div></div>
+    <div class="src" id="src"></div>
+    <div class="pv" id="pv"></div>
+  </div>
+  <div class="sb"><span>≡ thread</span><span>2 quotes · 1 AI span · 1 video · 2 images</span><span class="g"></span><span>⚠ 1 quote can't be resolved</span><span>synced</span><span>draft</span></div>
+</div>
+<div class="notes">
+  <div class="note"><b>Same renderer as your site</b>Your blyg's Markdown rules, its YouTube embeds and remote-image handling, the quote boxes and the TK tint are ported exactly and tested against your Worker's own output.</div>
+  <div class="note"><b>Resolves from what you hold</b>Quotes come from your own posts and your imported reading list, snapshotted the way publishing will. An unresolvable quote shows in red before you publish.</div>
+  <div class="note"><b>Safe and fast</b>Renders as you type (about 100 ms after you pause) without flicker. Links open in your browser. Videos load only when clicked.</div>
+</div>
+<textarea class="fb" id="fb" placeholder="Layout OK? Anything the web studio shows that's missing here?"></textarea>
+<div class="toolbar" style="margin-top:10px"><button id="copy">Copy feedback</button></div>
+</main>
+<script>
+const $=s=>document.querySelector(s);
+const SRC=[
+ ['Why I built a posting app','h'],
+ ['',''],
+ ['[TK]open with the idea from my friction post ![[0a1b2c3d…]][=]A while ago I wrote that every step between a thought and a post is a place the thought can die. This app is my attempt to remove the steps.[/TK]','tk'],
+ ['',''],
+ ['![[0a1b2c3d4e5f6g7h8j9k0m1n2p]]','tr'],
+ ['',''],
+ ['Here is what it looks like in practice:','p'],
+ ['',''],
+ ['https://www.youtube.com/watch?v=dQw4w9WgXcQ','url'],
+ ['',''],
+ ['![Evening light on the harbour](https://images.example.org/harbour.jpg)','img'],
+ ['',''],
+ ['![[2jpz9y52zzzzzzzzzzzzzzzzzz]]','tr2'],
+];
+let hl=-1;
+function esc(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;')}
+function render(){
+  $('#src').innerHTML=SRC.map(([t,k],i)=>{let h=esc(t)||'&nbsp;';if(k==='tk')h='<span class="tk">'+h+'</span>';if(k==='tr'||k==='tr2')h='<span class="tr">'+h+'</span>';if(k==='url'||k==='img')h='<span class="url">'+h+'</span>';return `<span data-i="${i}" class="${i===hl?'hl':''}">${h}</span>`}).join('\n');
+  document.querySelectorAll('#src [data-i]').forEach(e=>e.onclick=()=>{hl=+e.dataset.i;render();const t=document.querySelector(`#pv [data-l="${hl}"]`);if(t){t.scrollIntoView({block:'center',behavior:'smooth'});t.animate([{outline:'2px solid #e0775a'},{outline:'2px solid transparent'}],{duration:1200})}});
+}
+$('#pv').innerHTML=`<div class="meta"><span>blyg.example.com</span><span class="pill">draft · thread</span></div>
+<h2 data-l="0">Why I built a posting app</h2>
+<p data-l="2"><span class="gen">A while ago I wrote that every step between a thought and a post is a place the thought can die. This app is my attempt to remove the steps.</span></p>
+<blockquote data-l="4"><p>On friction: every step between the thought and the post is a place the thought can die. So the tool should disappear.</p><span class="prov">quoted from blyg.example.com · fragment v1 · snapshotted at publish</span></blockquote>
+<p data-l="6">Here is what it looks like in practice:</p>
+<figure data-l="8"><div class="yt" id="yt"><span></span></div><figcaption>https://www.youtube.com/watch?v=dQw4w9WgXcQ · click to load</figcaption></figure>
+<figure data-l="10"><div class="img"></div><figcaption>Evening light on the harbour · remote image, loaded without referrer</figcaption></figure>
+<blockquote class="unres" data-l="12">⚠ Can't quote 2jpz9y52…: it isn't in your posts or your reading list. Publishing will fail until you fix it.</blockquote>`;
+$('#yt').onclick=e=>{e.currentTarget.classList.add('playing');e.currentTarget.querySelector('span').textContent='▶ video playing (youtube-nocookie embed)'};
+render();
+document.querySelectorAll('[data-m]').forEach(b=>b.onclick=()=>{document.querySelectorAll('[data-m]').forEach(x=>x.classList.toggle('on',x===b));const w=$('#win');w.classList.remove('studio','write');if(b.dataset.m!=='both')w.classList.add(b.dataset.m)});
+$('#copy').onclick=async()=>{const t=$('#fb').value.trim()||'Full editor: looks good, proceed.';try{await navigator.clipboard.writeText('## Full editor\n'+t)}catch{};$('#copy').textContent='Copied ✓';setTimeout(()=>$('#copy').textContent='Copy feedback',1500)};
+</script>
+</body>
+</html>

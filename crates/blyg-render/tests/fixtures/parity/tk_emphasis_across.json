@@ -1,0 +1,19 @@
+{
+  "name": "tk_emphasis_across",
+  "kind": "fragment",
+  "md": "*Start [TK]x[=]middle* end[/TK] done.",
+  "html": "<p><em>Start <span class=\"blyg-tk-gen\">middle</em> end</span> done.</p>\n",
+  "tk": {
+    "scopes": [
+      {
+        "instruction": "x",
+        "generated": true,
+        "block": false,
+        "source_ids": []
+      }
+    ],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

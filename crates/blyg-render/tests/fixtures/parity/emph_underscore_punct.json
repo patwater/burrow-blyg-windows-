@@ -1,0 +1,12 @@
+{
+  "name": "emph_underscore_punct",
+  "kind": "fragment",
+  "md": "foo-_(bar)_ and _foo_bar_ and __init__ and *a `*` b*",
+  "html": "<p>foo-<em>(bar)</em> and <em>foo_bar</em> and <strong>init</strong> and <em>a <code>*</code> b</em></p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

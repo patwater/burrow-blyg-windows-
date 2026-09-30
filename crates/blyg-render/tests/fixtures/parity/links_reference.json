@@ -1,0 +1,12 @@
+{
+  "name": "links_reference",
+  "kind": "fragment",
+  "md": "[ref][r] and [Collapsed][] and [shortcut].\n\n[r]: https://example.org/ref 'Ref title'\n[collapsed]: /c\n[shortcut]: https://example.org/s",
+  "html": "<p><a href=\"https://example.org/ref\" title=\"Ref title\">ref</a> and <a href=\"/c\">Collapsed</a> and <a href=\"https://example.org/s\">shortcut</a>.</p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

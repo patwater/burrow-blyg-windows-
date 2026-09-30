@@ -1,0 +1,25 @@
+{
+  "name": "tk_sentinel_in_link_dest",
+  "kind": "fragment",
+  "md": "[l](https://example.org/[TK]x[=]p[/TK]) and <https://example.org/[TK]y[=]q[/TK]>",
+  "html": "<p>[l](<a href=\"https://example.org/\">https://example.org/</a><span class=\"blyg-tk-gen\">p</span>) and &lt;<a href=\"https://example.org/\">https://example.org/</a><span class=\"blyg-tk-gen\">q</span>&gt;</p>\n",
+  "tk": {
+    "scopes": [
+      {
+        "instruction": "x",
+        "generated": true,
+        "block": false,
+        "source_ids": []
+      },
+      {
+        "instruction": "y",
+        "generated": true,
+        "block": false,
+        "source_ids": []
+      }
+    ],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

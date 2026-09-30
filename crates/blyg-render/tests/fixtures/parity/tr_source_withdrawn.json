@@ -1,0 +1,17 @@
+{
+  "name": "tr_source_withdrawn",
+  "kind": "thread",
+  "md": "![[02abcdefghjkmnpqrstvwxyz05]]",
+  "html": "<blockquote class=\"blyg-transclusion unresolved\"><p>⚠ unresolvable: source withdrawn by origin</p></blockquote>",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": [
+    {
+      "directive": "![[02abcdefghjkmnpqrstvwxyz05]]",
+      "reason": "source withdrawn by origin"
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "name": "tk_block_generated",
+  "kind": "fragment",
+  "md": "Intro paragraph.\n\n[TK]write two short paragraphs[=]First generated paragraph.\n\nSecond with a [link](https://example.org/).[/TK]\n\nOutro.",
+  "html": "<p>Intro paragraph.</p>\n<div class=\"blyg-tk-gen\"><p>First generated paragraph.</p>\n<p>Second with a <a href=\"https://example.org/\">link</a>.</p>\n</div>\n<p>Outro.</p>\n",
+  "tk": {
+    "scopes": [
+      {
+        "instruction": "write two short paragraphs",
+        "generated": true,
+        "block": true,
+        "source_ids": []
+      }
+    ],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

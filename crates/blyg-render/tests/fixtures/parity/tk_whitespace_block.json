@@ -1,0 +1,19 @@
+{
+  "name": "tk_whitespace_block",
+  "kind": "fragment",
+  "md": "  [TK]padded[=]Padded block.[/TK]  \n\nNext.",
+  "html": "<div class=\"blyg-tk-gen\"><p>Padded block.</p>\n</div>\n<p>Next.</p>\n",
+  "tk": {
+    "scopes": [
+      {
+        "instruction": "padded",
+        "generated": true,
+        "block": true,
+        "source_ids": []
+      }
+    ],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

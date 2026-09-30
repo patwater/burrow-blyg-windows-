@@ -1,0 +1,10 @@
+/target
+.DS_Store
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+/.claude/worktrees/
+/docs/private/
+/CLAUDE.local.md
+/dist

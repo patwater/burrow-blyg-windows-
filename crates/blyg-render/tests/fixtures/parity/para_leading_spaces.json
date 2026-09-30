@@ -1,0 +1,12 @@
+{
+  "name": "para_leading_spaces",
+  "kind": "fragment",
+  "md": "   indented three\n\n\n\nafter blank lines   \n",
+  "html": "<p>indented three</p>\n<p>after blank lines</p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

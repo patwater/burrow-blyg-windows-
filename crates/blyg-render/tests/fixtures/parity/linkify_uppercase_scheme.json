@@ -1,0 +1,12 @@
+{
+  "name": "linkify_uppercase_scheme",
+  "kind": "fragment",
+  "md": "HTTP://EXAMPLE.ORG/UP and Https://Example.org/mixed and <HTTP://EXAMPLE.ORG/angle>",
+  "html": "<p><a href=\"HTTP://EXAMPLE.ORG/UP\">HTTP://EXAMPLE.ORG/UP</a> and <a href=\"Https://Example.org/mixed\">Https://Example.org/mixed</a> and <a href=\"HTTP://EXAMPLE.ORG/angle\">HTTP://EXAMPLE.ORG/angle</a></p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

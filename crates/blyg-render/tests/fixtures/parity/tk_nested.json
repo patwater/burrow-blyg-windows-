@@ -1,0 +1,17 @@
+{
+  "name": "tk_nested",
+  "kind": "fragment",
+  "md": "A [TK]outer [TK]inner[/TK] tail[/TK] B",
+  "html": "<p>A [TK]outer [TK]inner[/TK] tail[/TK] B</p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": [
+      {
+        "at": 12,
+        "reason": "nested TK scopes are not supported"
+      }
+    ]
+  },
+  "transclusions": [],
+  "errors": []
+}

@@ -1,0 +1,12 @@
+{
+  "name": "images_edge",
+  "kind": "fragment",
+  "md": "![up](HTTPS://IMAGES.EXAMPLE.ORG/U.PNG) ![amp &amp; alt](/a.png) ![br  \nline](/b.png) ![link [in](/x) alt](/c.png)",
+  "html": "<p><img src=\"HTTPS://IMAGES.EXAMPLE.ORG/U.PNG\" alt=\"up\" referrerpolicy=\"no-referrer\"> <img src=\"/a.png\" alt=\"amp &amp; alt\"> <img src=\"/b.png\" alt=\"br\nline\"> <img src=\"/c.png\" alt=\"link in alt\"></p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

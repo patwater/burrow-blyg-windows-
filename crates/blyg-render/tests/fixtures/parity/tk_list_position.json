@@ -1,0 +1,19 @@
+{
+  "name": "tk_list_position",
+  "kind": "fragment",
+  "md": "- [TK]item[=]generated item[/TK]\n- plain",
+  "html": "<ul>\n<li><span class=\"blyg-tk-gen\">generated item</span></li>\n<li>plain</li>\n</ul>\n",
+  "tk": {
+    "scopes": [
+      {
+        "instruction": "item",
+        "generated": true,
+        "block": false,
+        "source_ids": []
+      }
+    ],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

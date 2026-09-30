@@ -1,0 +1,12 @@
+{
+  "name": "linkify_protocol_relative",
+  "kind": "fragment",
+  "md": "Protocol relative //cdn.example.com/x here.",
+  "html": "<p>Protocol relative <a href=\"//cdn.example.com/x\">//cdn.example.com/x</a> here.</p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

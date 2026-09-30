@@ -1,0 +1,18 @@
+{
+  "name": "tr_found_remote_tombstone",
+  "kind": "thread",
+  "md": "  ![[02abcdefghjkmnpqrstvwxyz02]]  ",
+  "html": "<blockquote class=\"blyg-transclusion\" data-blyg-id=\"02abcdefghjkmnpqrstvwxyz02\" data-blyg-version=\"6\" data-blyg-origin=\"https://other.example.org/\">\n<p>Margins are where the reading happens.</p>\n\n\n<p class=\"provenance\"><a href=\"https://other.example.org/posts/on-margins/\">from other.example.org ↗</a> · snapshot of v6</p></blockquote>",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [
+    {
+      "id": "02abcdefghjkmnpqrstvwxyz02",
+      "version": 6,
+      "origin": "https://other.example.org/"
+    }
+  ],
+  "errors": []
+}

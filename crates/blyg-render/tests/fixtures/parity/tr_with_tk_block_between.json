@@ -1,0 +1,29 @@
+{
+  "name": "tr_with_tk_block_between",
+  "kind": "thread",
+  "md": "![[01j9zq3k4m5n6p7q8r9s0t1v2w]]\n\n[TK]bridge[=]A generated bridge.[/TK]\n\n![[02abcdefghjkmnpqrstvwxyz01]]",
+  "html": "<blockquote class=\"blyg-transclusion\" data-blyg-id=\"01j9zq3k4m5n6p7q8r9s0t1v2w\" data-blyg-version=\"3\">\n<p>Small tools, used daily, beat big tools used rarely.</p>\n\n\n<p class=\"provenance\"><a href=\"/blyg/f/01j9zq3k4m5n6p7q8r9s0t1v2w/\">fragment ↗</a> · snapshot of v3</p></blockquote>\n<div class=\"blyg-tk-gen\"><p>A generated bridge.</p>\n</div>\n\n<blockquote class=\"blyg-transclusion\" data-blyg-id=\"02abcdefghjkmnpqrstvwxyz01\" data-blyg-version=\"5\" data-blyg-origin=\"https://blyg.example.com/\">\n<p>Writing is thinking with a pencil.</p>\n\n\n<p class=\"provenance\"><a href=\"https://blyg.example.com/f/02abcdefghjkmnpqrstvwxyz01/\">from <em>Example Notes</em> ↗</a> · snapshot of v5</p></blockquote>",
+  "tk": {
+    "scopes": [
+      {
+        "instruction": "bridge",
+        "generated": true,
+        "block": true,
+        "source_ids": []
+      }
+    ],
+    "errors": []
+  },
+  "transclusions": [
+    {
+      "id": "01j9zq3k4m5n6p7q8r9s0t1v2w",
+      "version": 3
+    },
+    {
+      "id": "02abcdefghjkmnpqrstvwxyz01",
+      "version": 5,
+      "origin": "https://blyg.example.com/"
+    }
+  ],
+  "errors": []
+}

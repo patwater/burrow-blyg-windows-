@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Blygger Desktop — versions &amp; pins</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Literata:ital,opsz,wght@0,7..72,400;1,7..72,400&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#efece5;--card:#faf8f3;--ink:#1d1b18;--muted:#6b665d;--line:#dcd6c9;--accent:#9b3d1f}
+@media (prefers-color-scheme: dark){:root{--bg:#121110;--card:#1b1a18;--ink:#ebe6dc;--muted:#9a9489;--line:#2f2d29;--accent:#e08a63}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 Inter,system-ui,sans-serif;padding:28px 16px 200px}
+main{max-width:1000px;margin:0 auto}
+h1{font:italic 400 2.3rem/1.1 Literata,Georgia,serif;margin:0 0 6px}
+.sub{color:var(--muted);margin:0 0 24px}
+section{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:22px;margin:0 0 22px}
+h2{font:600 1.05rem Inter;margin:0 0 6px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.n{font:600 .75rem ui-monospace,monospace;color:var(--accent);border:1px solid var(--accent);border-radius:99px;padding:1px 8px}
+.rule{font-size:.85rem;color:var(--muted);margin:0 0 14px}
+.rule q{font-style:italic}
+textarea.fb{width:100%;min-height:60px;margin-top:16px;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);font:14px Inter;resize:vertical}
+
+.win{--wbg:#161513;--wink:#e4dfd3;--wmuted:#7f7a70;--wline:#2a2824;--wsel:#26231e;--wacc:#e0775a;--wbar:#1c1b18;--pin:#e7c070;
+  background:var(--wbg);color:var(--wink);border-radius:12px;overflow:hidden;box-shadow:0 0 0 1px rgba(0,0,0,.2),0 24px 60px -18px rgba(0,0,0,.45)}
+.tb{height:34px;display:flex;align-items:center;gap:7px;padding:0 12px;background:var(--wbar);border-bottom:1px solid var(--wline)}
+.tb i{width:12px;height:12px;border-radius:50%}.tb i:nth-child(1){background:#ff5f57}.tb i:nth-child(2){background:#febc2e}.tb i:nth-child(3){background:#28c840}
+.tb .t{flex:1;text-align:center;font:500 12px Inter;color:var(--wmuted);margin-right:50px}
+.grid{display:grid;grid-template-columns:1fr 290px;min-height:360px}
+@media (max-width:760px){.grid{grid-template-columns:1fr}}
+.doc{padding:24px 32px;font:17px/1.7 Literata,Georgia,serif;border-right:1px solid var(--wline)}
+.doc .hd{font:12px Inter;color:var(--wmuted);margin-bottom:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.doc .banner{font:12.5px Inter;background:#2a2417;color:var(--pin);border-radius:7px;padding:6px 10px;margin-bottom:12px}
+.side{padding:14px;font:13px Inter}
+.side h4{margin:0 0 10px;font:600 12px Inter;text-transform:uppercase;letter-spacing:.06em;color:var(--wmuted)}
+.v{display:grid;grid-template-columns:34px 1fr auto;gap:8px;align-items:start;padding:8px;border-radius:8px;margin-bottom:2px}
+.v .num{font:600 12px ui-monospace,monospace;color:var(--wmuted);padding-top:1px}
+.v .meta small{display:block;color:var(--wmuted);font-size:11.5px}
+.v .note{font-style:italic;color:#b9b3a7}
+.v.open{cursor:pointer}.v.open:hover{background:var(--wsel)}
+.v.sel{background:var(--wsel);box-shadow:inset 2px 0 0 var(--wacc)}
+.v.locked .meta{color:var(--wmuted)}
+.pinb{font:600 10.5px Inter;color:var(--pin);border:1px solid var(--pin);border-radius:99px;padding:0 6px;white-space:nowrap}
+.cur{font:600 10.5px Inter;color:var(--wacc);border:1px solid var(--wacc);border-radius:99px;padding:0 6px}
+.act{display:flex;gap:6px;flex-wrap:wrap;margin-top:12px}
+.act span{font:500 11.5px Inter;border:1px solid var(--wline);border-radius:6px;padding:4px 8px;color:var(--wink)}
+.act span.dis{opacity:.35}
+.legend{font:12px Inter;color:var(--muted);margin-top:10px;display:flex;gap:16px;flex-wrap:wrap}
+.feedrow{padding:12px 16px;border-bottom:1px solid var(--wline);font:13px Inter}
+.feedrow .tx{font:15px/1.5 Literata,serif;margin-top:3px}
+.feedrow .ed{font:600 10.5px Inter;background:#1f2e40;color:#8fb3d9;border-radius:99px;padding:1px 7px;margin-left:6px}
+.feedrow .chg{margin-top:6px;font-size:12.5px;color:#b9b3a7;border-left:2px solid #8fb3d9;padding-left:8px}
+.bad{text-decoration:line-through;opacity:.55}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+@media (max-width:760px){.two{grid-template-columns:1fr}}
+.tag{font:600 11px Inter;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px}
+.tag.no{color:#d98a7a}.tag.yes{color:#6fae7b}
+.sheet{margin-top:12px;border:1px solid var(--wline);border-radius:10px;padding:12px;font:13px Inter;background:var(--wbar)}
+.sheet b{display:block;margin-bottom:4px}
+.sheet .keys{color:var(--wmuted);margin-top:8px;font-size:12px}
+.vnav{display:inline-flex;align-items:center;gap:2px;border:1px solid var(--wline);border-radius:99px;padding:1px;font:600 11px Inter}
+.vnav button{background:transparent;border:0;color:var(--wink);font:600 12px Inter;width:22px;height:20px;border-radius:99px;cursor:pointer}
+.vnav button:disabled{opacity:.25;cursor:default}.vnav button:not(:disabled):hover{background:var(--wsel)}
+.vnav .lab{position:relative;padding:0 8px;cursor:pointer;color:var(--wacc)}
+.vnav .lab.pin{color:var(--pin)}
+.dd{position:absolute;top:22px;left:0;background:var(--wbar);border:1px solid var(--wline);border-radius:8px;padding:4px;min-width:190px;z-index:5;box-shadow:0 12px 30px rgba(0,0,0,.4);display:none}
+.dd.show{display:block}
+.dd div{padding:6px 8px;border-radius:6px;font:500 12px Inter;color:var(--wink);display:flex;justify-content:space-between;gap:10px}
+.dd div:hover{background:var(--wsel)}.dd small{color:var(--wmuted);font-weight:400}
+.single{display:block}.single .doc{border-right:0}
+#float{position:fixed;right:16px;bottom:16px;width:min(360px,calc(100vw - 32px));background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;box-shadow:0 8px 30px rgba(0,0,0,.18);z-index:50}
+#float textarea{width:100%;min-height:56px;margin-top:6px;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);font:14px Inter;resize:vertical}
+#float .r{display:flex;justify-content:space-between;align-items:center;font:600 .85rem Inter}
+#float button{font:600 .82rem Inter;background:var(--accent);color:#fff;border:0;border-radius:7px;padding:7px 11px;cursor:pointer}
+</style>
+</head>
+<body>
+<main>
+<h1>Versions &amp; pins</h1>
+<p class="sub">One entry per post, and a version history you can browse. That history follows the protocol's promise: <b>only pinned versions are public history</b>. Click the versions.</p>
+
+<section data-label="1. Someone else's post">
+<h2><span class="n">1</span> Browsing versions of someone else's post</h2>
+<p class="rule">Only the current version and pinned versions appear. They're browsed from the version pill at the top, so nothing takes up space in the reading view.</p>
+<div class="win">
+  <div class="tb"><i></i><i></i><i></i><div class="t">Reading › Rue</div></div>
+  <div class="single"><div class="doc" id="rdoc"></div></div>
+</div>
+<div class="legend"><span>‹ › step through the versions you're allowed to see, or click the pill for a list. Only the current version and 📌 pinned versions exist here. Unpinned versions don't appear at all.</span></div>
+<textarea class="fb" placeholder="Does this browsing feel right?"></textarea>
+</section>
+
+<section data-label="2. Your own post">
+<h2><span class="n">2</span> Your own post: full history, and pinning</h2>
+<p class="rule">Your own history is private to you, so you can open every version and restore any of them (restoring publishes as a new version; versions never go backwards). Pinning makes one version public forever.</p>
+<div class="win">
+  <div class="tb"><i></i><i></i><i></i><div class="t">On friction · ⌘Y versions</div></div>
+  <div class="grid">
+    <div class="doc" id="odoc"></div>
+    <div class="side"><h4>Versions</h4><div id="olist"></div><div id="osheet"></div></div>
+  </div>
+</div>
+<textarea class="fb" placeholder="Anything about pinning or restoring?"></textarea>
+</section>
+
+<section data-label="3. The reading list, corrected">
+<h2><span class="n">3</span> The reading list, corrected</h2>
+<p class="rule">In the earlier mock I showed a text diff of what changed since you last read a post. For unpinned versions that shows history the author never made public, which the protocol forbids. Here's the corrected version.</p>
+<div class="two">
+  <div><div class="tag no">✕ Earlier mock (breaks §8.4)</div>
+    <div class="win"><div class="feedrow"><span style="color:#7f7a70">Rue · v4</span><span class="ed">edited · v4</span><div class="tx">A hyperlink is a small unit of trust, lent from one writer to another.</div><div class="chg bad"><del>a little bit of trust.</del> → a small unit of trust, lent…</div></div></div></div>
+  <div><div class="tag yes">✓ Now</div>
+    <div class="win"><div class="feedrow"><span style="color:#7f7a70">Rue · v4</span><span class="ed">edited since you read v2</span><div class="tx">A hyperlink is a small unit of trust, lent from one writer to another.</div><div class="chg">v3 “sharper wording” · v4 “added the second clause”. Author's notes only.</div></div></div>
+    <p class="rule" style="margin-top:8px">If the version you read was <b>pinned</b>, a real diff appears (📌 v2 → now), because both texts are public.</p></div>
+</div>
+<textarea class="fb" placeholder="OK with notes instead of diffs for unpinned edits?"></textarea>
+</section>
+</main>
+
+<div id="float"><div class="r"><span>General comments</span><button id="copy">Copy all</button></div><textarea id="general" placeholder="Anything else…"></textarea></div>
+
+<script>
+const $=s=>document.querySelector(s);
+/* someone else's post: only current + pinned exist in the UI */
+const R=[
+ {v:5,at:'Sep 24',note:'added the second clause',cur:true,txt:'A hyperlink is a small unit of trust, lent from one writer to another. Spend it carefully.'},
+ {v:3,at:'Sep 21',note:null,pin:true,txt:'A hyperlink is a small unit of trust.'},
+ {v:1,at:'Sep 19',note:null,pin:true,txt:'A hyperlink is a litle bit of trust.'},
+];
+let ri=0, ddOpen=false;
+function rrender(){
+  const it=R[ri];
+  const lab=it.cur?`v${it.v} · current ▾`:`📌 v${it.v} · ${it.at} ▾`;
+  const acts=it.cur?'<span>Quote</span><span>Reply</span><span>Open on web</span>':'<span>Quote this version</span><span>Fork this pin</span><span>Diff vs now</span><span>Back to current</span>';
+  $('#rdoc').innerHTML=`<div class="hd"><span>rue.example.org · fragment</span>
+    <span class="vnav"><button id="older" ${ri>=R.length-1?'disabled':''} title="Older pinned version">‹</button><span class="lab ${it.cur?'':'pin'}" id="vlab">${lab}<div class="dd ${ddOpen?'show':''}" id="dd">${R.map((x,i)=>`<div data-i="${i}"><span>${x.cur?'v'+x.v+' · current':'📌 v'+x.v}</span><small>${x.at}</small></div>`).join('')}</div></span><button id="newer" ${ri===0?'disabled':''} title="Newer">›</button></span></div>
+    ${it.txt}<div class="act">${acts}</div>`;
+  $('#older').onclick=()=>{ri++;ddOpen=false;rrender()};
+  $('#newer').onclick=()=>{ri--;ddOpen=false;rrender()};
+  $('#vlab').onclick=e=>{if(e.target.closest('[data-i]'))return;ddOpen=!ddOpen;rrender()};
+  document.querySelectorAll('#dd [data-i]').forEach(d=>d.onclick=()=>{ri=+d.dataset.i;ddOpen=false;rrender()});
+  document.querySelectorAll('.act span').forEach(a=>{if(a.textContent==='Back to current')a.onclick=()=>{ri=0;rrender()}});
+}
+rrender();
+/* own post */
+const O=[
+ {v:4,at:'today 09:12',note:null,cur:true,txt:'On friction: every step between the thought and the post is a place the thought can die. So the tool should disappear.'},
+ {v:3,at:'Sep 22',note:'tightened',txt:'On friction: every step between a thought and a post is somewhere the thought can die.'},
+ {v:2,at:'Sep 21',note:null,pin:true,txt:'On friction: each step between thinking and posting is a place ideas die.'},
+ {v:1,at:'Sep 20',note:'first',txt:'Friction kills posts.'},
+];
+let osel=4, sheet=null;
+function orender(){
+  const it=O.find(x=>x.v===osel);
+  $('#odoc').innerHTML=`<div class="hd"><span>example.com · fragment</span>${it.cur?'<span class="cur">current · v'+it.v+'</span>':`<span style="color:#7f7a70">v${it.v} · ${it.at}</span>`}${it.pin?'<span class="pinb">📌 pinned, public forever</span>':''}${!it.cur&&!it.pin?'<span style="color:#7f7a70">· private to you</span>':''}</div>${it.txt}`;
+  $('#olist').innerHTML=O.map(x=>`<div class="v open ${x.v===osel?'sel':''}" data-v="${x.v}"><span class="num">v${x.v}</span><span class="meta">${x.note?'<span class="note">“'+x.note+'”</span>':'<span style="opacity:.6">no note</span>'}<small>${x.at}</small></span>${x.cur?'<span class="cur">now</span>':x.pin?'<span class="pinb">📌</span>':''}</div>`).join('')
+   +`<div class="act">${it.pin?'<span class="dis">Pinned ✓</span>':'<span data-a="pin">📌 Pin v'+it.v+'</span>'}${it.cur?'':'<span data-a="restore">Restore v'+it.v+'</span>'}</div>`;
+  document.querySelectorAll('#olist .v').forEach(e=>e.onclick=()=>{osel=+e.dataset.v;sheet=null;orender()});
+  document.querySelectorAll('#olist [data-a]').forEach(e=>e.onclick=()=>{sheet=e.dataset.a;orender()});
+  $('#osheet').innerHTML=sheet==='pin'?`<div class="sheet"><b>Pin v${it.v} forever?</b>This version will be served at a permanent address, even if you edit or withdraw the post later. Others can quote and fork it. <b style="display:inline">You can't undo this.</b><div class="keys">type <kbd>pin</kbd> then ⏎ to confirm · esc cancel</div></div>`
+    :sheet==='restore'?`<div class="sheet"><b>Restore v${it.v}?</b>Its text goes back into the editor. Nothing is published until you press ⌘⏎, and then it publishes as <b style="display:inline">v5</b>. Versions never go backwards.<div class="keys">⏎ restore to editor · esc cancel</div></div>`:'';
+}
+orender();
+$('#copy').onclick=async()=>{const parts=[];document.querySelectorAll('section').forEach(s=>{const t=s.querySelector('textarea.fb').value.trim();if(t)parts.push(`## ${s.dataset.label}\n${t}`)});const g=$('#general').value.trim();if(g)parts.push(`## General\n${g}`);const text=parts.length?parts.join('\n\n'):'Versions & pins: all good, proceed.';try{await navigator.clipboard.writeText(text)}catch{const ta=document.createElement('textarea');ta.value=text;document.body.append(ta);ta.select();document.execCommand('copy');ta.remove()}const b=$('#copy');b.textContent='Copied ✓';setTimeout(()=>b.textContent='Copy all',1500)};
+</script>
+</body>
+</html>

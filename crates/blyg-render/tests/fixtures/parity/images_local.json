@@ -1,0 +1,12 @@
+{
+  "name": "images_local",
+  "kind": "fragment",
+  "md": "![alt text](/media/abc.png) and ![](media/rel.jpg \"Title\")",
+  "html": "<p><img src=\"/media/abc.png\" alt=\"alt text\"> and <img src=\"media/rel.jpg\" alt=\"\" title=\"Title\"></p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

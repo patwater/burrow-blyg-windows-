@@ -1,0 +1,17 @@
+{
+  "name": "tr_self",
+  "kind": "thread",
+  "md": "Quoting myself:\n\n![[01j9zq3k4m5n6p7q8r9s0t1vzz]]",
+  "html": "<p>Quoting myself:</p>\n\n<blockquote class=\"blyg-transclusion unresolved\"><p>⚠ unresolvable: a thread cannot transclude itself</p></blockquote>",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": [
+    {
+      "directive": "![[01j9zq3k4m5n6p7q8r9s0t1vzz]]",
+      "reason": "a thread cannot transclude itself"
+    }
+  ]
+}

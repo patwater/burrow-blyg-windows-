@@ -1,0 +1,12 @@
+{
+  "name": "linkify_fuzzy_www",
+  "kind": "fragment",
+  "md": "Try www.example.org or www.example.org/path/ now.",
+  "html": "<p>Try <a href=\"http://www.example.org\">www.example.org</a> or <a href=\"http://www.example.org/path/\">www.example.org/path/</a> now.</p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

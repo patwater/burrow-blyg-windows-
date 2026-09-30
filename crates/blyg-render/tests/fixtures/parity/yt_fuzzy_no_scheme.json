@@ -1,0 +1,12 @@
+{
+  "name": "yt_fuzzy_no_scheme",
+  "kind": "fragment",
+  "md": "youtube.com/watch?v=Zx9_abc-123",
+  "html": "<p><a href=\"http://youtube.com/watch?v=Zx9_abc-123\">youtube.com/watch?v=Zx9_abc-123</a></p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

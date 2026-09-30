@@ -1,0 +1,12 @@
+{
+  "name": "image_alt_markup",
+  "kind": "fragment",
+  "md": "![*emph* and `code` alt](/a.png)",
+  "html": "<p><img src=\"/a.png\" alt=\"emph and  alt\"></p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

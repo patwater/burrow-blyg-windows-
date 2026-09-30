@@ -1,0 +1,19 @@
+{
+  "name": "tk_block_in_fence",
+  "kind": "fragment",
+  "md": "```\nbefore\n\n[TK]x[=]<fenced> & \"out\"[/TK]\n\nafter\n```",
+  "html": "<pre><code>before\n\n<span class=\"blyg-tk-gen\">&lt;fenced&gt; &amp; &quot;out&quot;</span>\n\nafter\n</code></pre>\n",
+  "tk": {
+    "scopes": [
+      {
+        "instruction": "x",
+        "generated": true,
+        "block": true,
+        "source_ids": []
+      }
+    ],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

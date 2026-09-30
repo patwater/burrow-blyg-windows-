@@ -1,0 +1,12 @@
+{
+  "name": "linkify_in_code",
+  "kind": "fragment",
+  "md": "`https://example.org/code` stays code.\n\n```\nhttps://example.org/fenced\n```",
+  "html": "<p><code>https://example.org/code</code> stays code.</p>\n<pre><code>https://example.org/fenced\n</code></pre>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

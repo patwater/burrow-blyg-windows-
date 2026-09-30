@@ -1,0 +1,12 @@
+{
+  "name": "linkify_parens",
+  "kind": "fragment",
+  "md": "Wiki (https://example.org/wiki/Thing_(disambiguation)) and (https://example.org/plain).",
+  "html": "<p>Wiki (<a href=\"https://example.org/wiki/Thing_(disambiguation)\">https://example.org/wiki/Thing_(disambiguation)</a>) and (<a href=\"https://example.org/plain\">https://example.org/plain</a>).</p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

@@ -1,0 +1,12 @@
+{
+  "name": "emphasis_nested",
+  "kind": "fragment",
+  "md": "*outer **inner** outer* and **a *b* c**",
+  "html": "<p><em>outer <strong>inner</strong> outer</em> and <strong>a <em>b</em> c</strong></p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

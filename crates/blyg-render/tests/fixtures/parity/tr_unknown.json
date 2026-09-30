@@ -1,0 +1,17 @@
+{
+  "name": "tr_unknown",
+  "kind": "thread",
+  "md": "Before.\n\n![[03zzzzzzzzzzzzzzzzzzzzzzzz]]\n\nAfter.",
+  "html": "<p>Before.</p>\n\n<blockquote class=\"blyg-transclusion unresolved\"><p>⚠ unresolvable: unknown item</p></blockquote>\n<p>After.</p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": [
+    {
+      "directive": "![[03zzzzzzzzzzzzzzzzzzzzzzzz]]",
+      "reason": "unknown item"
+    }
+  ]
+}

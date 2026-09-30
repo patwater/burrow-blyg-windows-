@@ -1,0 +1,25 @@
+{
+  "name": "tk_sentinel_after_email",
+  "kind": "fragment",
+  "md": "Mail [TK]who[=]someone@example.org[/TK], www.example.org[TK]x[=]/path[/TK] ok",
+  "html": "<p>Mail <span class=\"blyg-tk-gen\"><a href=\"mailto:someone@example.org\">someone@example.org</a></span>, <a href=\"http://www.example.org\">www.example.org</a><span class=\"blyg-tk-gen\">/path</span> ok</p>\n",
+  "tk": {
+    "scopes": [
+      {
+        "instruction": "who",
+        "generated": true,
+        "block": false,
+        "source_ids": []
+      },
+      {
+        "instruction": "x",
+        "generated": true,
+        "block": false,
+        "source_ids": []
+      }
+    ],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

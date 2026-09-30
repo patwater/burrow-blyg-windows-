@@ -1,0 +1,12 @@
+{
+  "name": "emphasis_intraword",
+  "kind": "fragment",
+  "md": "snake_case_word and foo*bar*baz and **unclosed and _mixed*",
+  "html": "<p>snake_case_word and foo<em>bar</em>baz and *<em>unclosed and _mixed</em></p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

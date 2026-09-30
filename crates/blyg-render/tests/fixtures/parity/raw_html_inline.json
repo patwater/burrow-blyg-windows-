@@ -1,0 +1,12 @@
+{
+  "name": "raw_html_inline",
+  "kind": "fragment",
+  "md": "inline <b>bold</b> and <img src=x onerror=alert(1)> and <a href=\"javascript:x\">a</a>",
+  "html": "<p>inline &lt;b&gt;bold&lt;/b&gt; and &lt;img src=x onerror=alert(1)&gt; and &lt;a href=&quot;javascript:x&quot;&gt;a&lt;/a&gt;</p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

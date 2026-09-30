@@ -1,0 +1,12 @@
+{
+  "name": "linkify_mailto_schema",
+  "kind": "fragment",
+  "md": "mailto:a@example.org and MAILTO:b@example.org and mailto:nobody",
+  "html": "<p><a href=\"mailto:a@example.org\">mailto:a@example.org</a> and <a href=\"MAILTO:b@example.org\">MAILTO:b@example.org</a> and mailto:nobody</p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

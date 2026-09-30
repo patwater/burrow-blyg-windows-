@@ -1,0 +1,12 @@
+{
+  "name": "lists_bullets",
+  "kind": "fragment",
+  "md": "- one\n- two\n- three\n\n* star\n+ plus",
+  "html": "<ul>\n<li>one</li>\n<li>two</li>\n<li>three</li>\n</ul>\n<ul>\n<li>star</li>\n</ul>\n<ul>\n<li>plus</li>\n</ul>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

@@ -1,0 +1,12 @@
+{
+  "name": "yt_bare",
+  "kind": "fragment",
+  "md": "https://www.youtube.com/watch?v=Zx9_abc-123",
+  "html": "<figure class=\"blyg-yt\" data-ytid=\"Zx9_abc-123\"><a class=\"blyg-yt-poster\" href=\"https://www.youtube.com/watch?v=Zx9_abc-123\" aria-label=\"Play video\"><img src=\"https://i.ytimg.com/vi/Zx9_abc-123/hqdefault.jpg\" alt=\"\" width=\"480\" height=\"360\" loading=\"lazy\" referrerpolicy=\"no-referrer\"></a><figcaption><a href=\"https://www.youtube.com/watch?v=Zx9_abc-123\">https://www.youtube.com/watch?v=Zx9_abc-123</a></figcaption></figure>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

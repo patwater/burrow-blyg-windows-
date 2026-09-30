@@ -1,0 +1,12 @@
+{
+  "name": "hr_and_table",
+  "kind": "fragment",
+  "md": "above\n\n---\n\n| a | b |\n|:--|--:|\n| 1 | 2 |\n| x | `y` |\n\n***",
+  "html": "<p>above</p>\n<hr>\n<table>\n<thead>\n<tr>\n<th style=\"text-align:left\">a</th>\n<th style=\"text-align:right\">b</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td style=\"text-align:left\">1</td>\n<td style=\"text-align:right\">2</td>\n</tr>\n<tr>\n<td style=\"text-align:left\">x</td>\n<td style=\"text-align:right\"><code>y</code></td>\n</tr>\n</tbody>\n</table>\n<hr>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

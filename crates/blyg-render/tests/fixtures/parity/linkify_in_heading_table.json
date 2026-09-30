@@ -1,0 +1,12 @@
+{
+  "name": "linkify_in_heading_table",
+  "kind": "fragment",
+  "md": "# See https://example.org/h\n\n| link |\n| --- |\n| www.example.org |",
+  "html": "<h1>See <a href=\"https://example.org/h\">https://example.org/h</a></h1>\n<table>\n<thead>\n<tr>\n<th>link</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><a href=\"http://www.example.org\">www.example.org</a></td>\n</tr>\n</tbody>\n</table>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

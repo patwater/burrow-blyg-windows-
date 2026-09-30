@@ -1,0 +1,12 @@
+{
+  "name": "entities",
+  "kind": "fragment",
+  "md": "&copy; &#169; &#xA9; &nbsp;x &amp; &bogus; &lt;b&gt;",
+  "html": "<p>© © ©  x &amp; &amp;bogus; &lt;b&gt;</p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

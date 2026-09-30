@@ -1,0 +1,17 @@
+{
+  "name": "tr_in_quote_fence",
+  "kind": "thread",
+  "md": "> ```\n> ![[01j9zq3k4m5n6p7q8r9s0t1v2w]]\n> ```\n\n- item\n\n      ![[01j9zq3k4m5n6p7q8r9s0t1v2w]]\n\n![[01j9zq3k4m5n6p7q8r9s0t1v2w]]",
+  "html": "<blockquote>\n<pre><code>![[01j9zq3k4m5n6p7q8r9s0t1v2w]]\n</code></pre>\n</blockquote>\n<ul>\n<li>\n<p>item</p>\n<pre><code>![[01j9zq3k4m5n6p7q8r9s0t1v2w]]\n</code></pre>\n</li>\n</ul>\n\n<blockquote class=\"blyg-transclusion\" data-blyg-id=\"01j9zq3k4m5n6p7q8r9s0t1v2w\" data-blyg-version=\"3\">\n<p>Small tools, used daily, beat big tools used rarely.</p>\n\n\n<p class=\"provenance\"><a href=\"/blyg/f/01j9zq3k4m5n6p7q8r9s0t1v2w/\">fragment ↗</a> · snapshot of v3</p></blockquote>",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [
+    {
+      "id": "01j9zq3k4m5n6p7q8r9s0t1v2w",
+      "version": 3
+    }
+  ],
+  "errors": []
+}

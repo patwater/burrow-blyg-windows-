@@ -1,0 +1,19 @@
+{
+  "name": "tk_inline_generated",
+  "kind": "fragment",
+  "md": "The weather was [TK]describe the weather[=]*grey and still*[/TK] that morning.",
+  "html": "<p>The weather was <span class=\"blyg-tk-gen\"><em>grey and still</em></span> that morning.</p>\n",
+  "tk": {
+    "scopes": [
+      {
+        "instruction": "describe the weather",
+        "generated": true,
+        "block": false,
+        "source_ids": []
+      }
+    ],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

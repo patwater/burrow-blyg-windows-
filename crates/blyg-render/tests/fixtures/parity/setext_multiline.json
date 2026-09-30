@@ -1,0 +1,12 @@
+{
+  "name": "setext_multiline",
+  "kind": "fragment",
+  "md": "line one\nline two\n===\n\n  indented\n  ---",
+  "html": "<h1>line one\nline two</h1>\n<h2>indented</h2>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

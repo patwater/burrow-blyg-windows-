@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- Blygger placeholder mark: a lowercase "b" in ink on Tufte paper, with
+       the accent dot the app uses for unpublished edits. Follows the macOS
+       icon grid: an 824px rounded tile centred on a 1024px canvas. -->
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="#fffff8"/>
+  <rect x="101.5" y="101.5" width="821" height="821" rx="184" fill="none" stroke="#111" stroke-opacity="0.14" stroke-width="3"/>
+  <rect x="330" y="250" width="72" height="520" fill="#111"/>
+  <circle cx="530" cy="606" r="164" fill="none" stroke="#111" stroke-width="72"/>
+  <circle cx="742" cy="330" r="46" fill="#a4271b"/>
+</svg>

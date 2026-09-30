@@ -1,0 +1,15 @@
+{
+  "mount": "/blyg",
+  "cases": [
+    { "name": "none", "media": [] },
+    { "name": "one", "media": [{ "r2_key": "media/01j9zq3k4m5n6p7q8r9s0t1m01.webp", "alt": "A red kite over a field" }] },
+    {
+      "name": "several",
+      "media": [
+        { "r2_key": "media/01j9zq3k4m5n6p7q8r9s0t1m02.png", "alt": null },
+        { "r2_key": "media/01j9zq3k4m5n6p7q8r9s0t1m03.jpg", "alt": "" },
+        { "r2_key": "media/01j9zq3k4m5n6p7q8r9s0t1m04.gif", "alt": "Fish & chips, \"quoted\" <b>not bold</b> it's" }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "name": "linkify_ports_queries",
+  "kind": "fragment",
+  "md": "http://localhost:8080/api and http://127.0.0.1:3000/ and https://example.org/search?q=a+b#frag and ftp://files.example.org/pub",
+  "html": "<p><a href=\"http://localhost:8080/api\">http://localhost:8080/api</a> and <a href=\"http://127.0.0.1:3000/\">http://127.0.0.1:3000/</a> and <a href=\"https://example.org/search?q=a+b#frag\">https://example.org/search?q=a+b#frag</a> and <a href=\"ftp://files.example.org/pub\">ftp://files.example.org/pub</a></p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

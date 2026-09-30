@@ -1,0 +1,12 @@
+{
+  "name": "lists_nested_loose",
+  "kind": "fragment",
+  "md": "- a\n\n  para in a\n- b\n  - b1\n  - b2\n\n    deep para\n- c",
+  "html": "<ul>\n<li>\n<p>a</p>\n<p>para in a</p>\n</li>\n<li>\n<p>b</p>\n<ul>\n<li>\n<p>b1</p>\n</li>\n<li>\n<p>b2</p>\n<p>deep para</p>\n</li>\n</ul>\n</li>\n<li>\n<p>c</p>\n</li>\n</ul>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

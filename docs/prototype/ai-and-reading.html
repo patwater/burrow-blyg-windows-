@@ -1,0 +1,348 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Blygger Desktop — AI &amp; reading</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Literata:ital,opsz,wght@0,7..72,400;1,7..72,400&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#efece5;--card:#faf8f3;--ink:#1d1b18;--muted:#6b665d;--line:#dcd6c9;--accent:#9b3d1f}
+@media (prefers-color-scheme: dark){:root{--bg:#121110;--card:#1b1a18;--ink:#ebe6dc;--muted:#9a9489;--line:#2f2d29;--accent:#e08a63}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 Inter,system-ui,sans-serif;padding:28px 16px 200px}
+main{max-width:1000px;margin:0 auto}
+h1{font:italic 400 2.3rem/1.1 Literata,Georgia,serif;margin:0 0 6px}
+.sub{color:var(--muted);margin:0 0 24px}
+section{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:22px;margin:0 0 22px}
+h2{font:600 1.05rem Inter,sans-serif;margin:0 0 14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.n{font:600 .75rem ui-monospace,monospace;color:var(--accent);border:1px solid var(--accent);border-radius:99px;padding:1px 8px}
+.muted{color:var(--muted);font-weight:400;font-size:.85rem}
+kbd{font:500 .78rem Inter,sans-serif;display:inline-block;min-width:1.7em;text-align:center;padding:2px 6px;border:1px solid var(--line);border-bottom-width:2px;border-radius:5px;background:var(--card);color:var(--ink)}
+button{font:600 .82rem Inter,sans-serif;background:var(--ink);color:var(--card);border:0;border-radius:7px;padding:7px 11px;cursor:pointer}
+button.playing{background:var(--accent)} button:disabled{opacity:.4;cursor:default}
+.toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px}
+.lbl{font-size:.78rem;color:var(--muted)}
+textarea.fb{width:100%;min-height:60px;margin-top:16px;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);font:14px Inter,sans-serif;resize:vertical}
+.cap{font-size:.82rem;color:var(--muted);margin-top:8px;text-align:center}
+
+/* app window — Tufte dark, side by side, Literata */
+.win{--wbg:#161513;--wink:#e4dfd3;--wmuted:#7f7a70;--wline:#2a2824;--wsel:#26231e;--wacc:#e0775a;--wbar:#1c1b18;--gen:#8fb3d9;
+  position:relative;background:var(--wbg);color:var(--wink);border-radius:12px;overflow:hidden;box-shadow:0 0 0 1px rgba(0,0,0,.2),0 24px 60px -18px rgba(0,0,0,.45)}
+.win.light{--wbg:#fffff8;--wink:#111;--wmuted:#8a867c;--wline:#ebe6d6;--wsel:#f2ecd8;--wacc:#a4271b;--wbar:#f6f3e7;--gen:#2f5d8a}
+.tb{height:34px;display:flex;align-items:center;gap:7px;padding:0 12px;background:var(--wbar);border-bottom:1px solid var(--wline)}
+.tb i{width:12px;height:12px;border-radius:50%}.tb i:nth-child(1){background:#ff5f57}.tb i:nth-child(2){background:#febc2e}.tb i:nth-child(3){background:#28c840}
+.tb .t{flex:1;text-align:center;font:500 12px Inter;color:var(--wmuted);margin-right:50px}
+.grid{display:grid;grid-template-columns:34% 1fr;height:400px}
+.list{border-right:1px solid var(--wline);font:13px/1.35 Inter}
+.list div{padding:8px 14px;border-bottom:1px solid var(--wline)}
+.list div.sel{background:var(--wsel)}
+.list small{display:block;color:var(--wmuted);font-size:11px;margin-top:2px}
+.ed{position:relative;padding:26px 36px;font:17px/1.7 Literata,Georgia,serif;overflow:auto;white-space:pre-wrap}
+.caret{display:inline-block;width:2px;height:1.15em;background:var(--wacc);vertical-align:text-bottom;animation:blink 1s steps(1) infinite}
+@keyframes blink{50%{opacity:0}}
+.tk{border-radius:4px;background:color-mix(in srgb,var(--gen) 14%,transparent);box-shadow:inset 0 -1px 0 color-mix(in srgb,var(--gen) 60%,transparent);padding:1px 2px}
+.tk .ins{font:italic 13px Inter;color:var(--gen);opacity:.85}
+.tk .ins::before{content:"✦ ";font-style:normal}
+.tk .out{color:var(--wink)}
+.tk .src{font:500 11.5px Inter;border:1px solid var(--gen);color:var(--gen);border-radius:99px;padding:0 6px;margin:0 2px;white-space:nowrap}
+.sel-hl{background:color-mix(in srgb,var(--wacc) 30%,transparent)}
+.sb{height:30px;display:flex;align-items:center;gap:12px;padding:0 14px;border-top:1px solid var(--wline);background:var(--wbar);font:11.5px Inter;color:var(--wmuted)}
+.sb .grow{flex:1}.sb .ai{color:var(--gen)}
+.pop{position:absolute;z-index:4;width:340px;background:var(--wbar);border:1px solid var(--wline);border-radius:10px;box-shadow:0 18px 40px -10px rgba(0,0,0,.5);padding:10px;font:13px Inter;opacity:0;transform:translateY(-4px);transition:.15s;pointer-events:none}
+.pop.show{opacity:1;transform:none}
+.pop input{width:100%;background:transparent;border:1px solid var(--wline);border-radius:7px;padding:7px 9px;color:var(--wink);font:13px Inter;outline:none}
+.pop .row{display:flex;justify-content:space-between;margin-top:7px;color:var(--wmuted);font-size:11.5px}
+.pop .model{color:var(--gen)}
+.hud{position:absolute;left:50%;bottom:40px;transform:translateX(-50%);display:flex;gap:5px;pointer-events:none;z-index:6}
+.hud kbd{font-size:15px;padding:6px 11px;background:rgba(20,20,20,.85);color:#fff;border-color:#000;animation:hud 1.1s forwards}
+@keyframes hud{0%{opacity:0;transform:translateY(6px)}12%{opacity:1;transform:none}75%{opacity:1}100%{opacity:0}}
+.toast{position:absolute;right:14px;bottom:40px;background:var(--wink);color:var(--wbg);font:12.5px Inter;padding:8px 12px;border-radius:8px;opacity:0;transition:.2s}
+.toast.show{opacity:1}
+
+/* published page */
+.pub{background:#fffff8;color:#111;border-radius:10px;padding:28px 36px;font:18px/1.7 Literata,Georgia,serif;box-shadow:0 0 0 1px rgba(0,0,0,.08)}
+.pub .meta{font:12px Inter;color:#888;margin-bottom:12px}
+.pub .gen{border-bottom:1.5px dotted #2f5d8a;position:relative;cursor:help}
+.pub .gen:hover::after{content:"Machine-generated · claude-opus-5 · drew on 1 of your posts";position:absolute;left:0;top:130%;white-space:nowrap;font:12px Inter;background:#111;color:#fff;padding:5px 8px;border-radius:6px;z-index:3}
+.pub .foot{font:12px Inter;color:#888;margin-top:14px;border-top:1px solid #eee;padding-top:8px}
+.pub.nodisc .gen{border-bottom:0;cursor:auto}.pub.nodisc .gen:hover::after{display:none}.pub.nodisc .foot{display:none}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+@media (max-width:760px){.two,.grid{grid-template-columns:1fr}.list{display:none}}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.seg button{background:transparent;color:var(--ink);border-radius:0}
+.seg button.on{background:var(--accent);color:#fff}
+
+/* accounts panel */
+.panel{background:#1c1b18;color:#e4dfd3;border-radius:12px;padding:18px;font:13px Inter;box-shadow:0 20px 50px -20px rgba(0,0,0,.5)}
+.panel h4{margin:0 0 12px;font:600 14px Inter}
+.prov{display:flex;gap:12px;align-items:center;border:1px solid #2f2d29;border-radius:10px;padding:12px;margin-bottom:10px;cursor:pointer;transition:.15s}
+.prov.off{opacity:.45}
+.prov .ic{width:34px;height:34px;border-radius:8px;display:grid;place-items:center;font:700 15px Inter;flex:none}
+.prov .bd{flex:1}.prov .bd b{display:block;font-weight:600}.prov .bd span{color:#9a9489;font-size:12px}
+.prov .st{font-size:11.5px;padding:3px 8px;border-radius:99px;white-space:nowrap}
+.ok{background:#1f3b27;color:#8fcf99}.warn{background:#3a2e14;color:#e7c070}.no{background:#2c2b28;color:#9a9489}
+.prov .tog{width:34px;height:20px;border-radius:99px;background:#3a3833;position:relative;flex:none}
+.prov .tog::after{content:"";position:absolute;left:3px;top:3px;width:14px;height:14px;border-radius:50%;background:#bbb;transition:.15s}
+.prov:not(.off) .tog{background:#e0775a}.prov:not(.off) .tog::after{left:17px;background:#fff}
+.flow{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:14px}
+.frame{border:1px solid var(--line);border-radius:10px;padding:12px;font-size:12.5px;background:var(--bg);min-height:120px;position:relative}
+.frame b{display:block;margin-bottom:6px;font-size:12px;color:var(--accent)}
+.frame .fake{border:1px solid var(--line);border-radius:6px;padding:8px;background:var(--card);margin-top:6px}
+.fake .btn{display:inline-block;background:#d97757;color:#fff;border-radius:5px;padding:3px 9px;font-weight:600;font-size:11.5px;margin-top:6px}
+@media (max-width:760px){.flow{grid-template-columns:1fr}}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{border:1px solid var(--line);border-radius:10px;padding:9px 12px;cursor:pointer;user-select:none;background:var(--card);max-width:300px}
+.chip b{display:block;font-size:.88rem}.chip span{font-size:.78rem;color:var(--muted)}
+.chip.in{border-color:var(--accent);box-shadow:inset 3px 0 0 var(--accent)}
+.chip b::before{content:"＋ ";opacity:.5}.chip.in b::before{content:"✓ ";color:var(--accent);opacity:1}
+
+.feeds{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+@media (max-width:760px){.feeds{grid-template-columns:1fr}}
+.feed{border-radius:12px;overflow:hidden;background:#161513;color:#e4dfd3;font:13px/1.4 Inter;min-height:300px;box-shadow:0 0 0 1px rgba(0,0,0,.2)}
+.feed .hd{padding:9px 14px;background:#1c1b18;border-bottom:1px solid #2a2824;color:#7f7a70;font-size:12px;display:flex;justify-content:space-between}
+.fi{padding:10px 14px;border-bottom:1px solid #2a2824;animation:slide .35s}
+@keyframes slide{from{opacity:0;transform:translateY(-8px)}}
+.fi .src{font-size:11px;color:#7f7a70}
+.fi .tx{font:14px/1.5 Literata,serif;margin-top:2px}
+.fi .bd{font-size:10.5px;border-radius:99px;padding:1px 7px;margin-left:6px}
+.fi .new{background:#3a2e14;color:#e7c070}.fi .ed{background:#1f2e40;color:#8fb3d9}
+.fi.unread{box-shadow:inset 3px 0 0 #e0775a}
+.fi.flash{background:#22201b}
+.diff{margin-top:6px;font:13px/1.5 Literata,serif;color:#b9b3a7;border-left:2px solid #8fb3d9;padding-left:8px}
+.diff ins{background:rgba(58,166,85,.25);text-decoration:none;color:#e4dfd3}.diff del{background:rgba(210,60,42,.25);color:#b9b3a7}
+.bad{color:#d98a7a}.good{color:#8fcf99}
+#float{position:fixed;right:16px;bottom:16px;width:min(360px,calc(100vw - 32px));background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;box-shadow:0 8px 30px rgba(0,0,0,.18);z-index:50}
+#float textarea{width:100%;min-height:56px;margin-top:6px;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);font:14px Inter;resize:vertical}
+#float .r{display:flex;justify-content:space-between;align-items:center;font:600 .85rem Inter}
+#float button{background:var(--accent);color:#fff}
+</style>
+</head>
+<body>
+<main>
+<h1>AI &amp; reading</h1>
+<p class="sub">Your blyg's AI feature is called <b>TK</b> ("to come"). You mark a gap in your draft with an instruction, and a model writes it. Here's how it would work in the app. Press ▶.</p>
+
+<!-- 1. TK in the editor -->
+<section data-label="1. Writing with TK">
+<h2><span class="n">1</span> Writing with TK</h2>
+<div class="toolbar">
+  <span class="lbl">▶ Demos</span>
+  <button data-demo="gen">Fill a gap</button>
+  <button data-demo="regen">Regenerate with a tweak</button>
+  <button data-demo="src">Draw on your own posts</button>
+  <button data-demo="shorten">Too long → shorten to fit</button>
+</div>
+<div class="win" id="win">
+  <div class="tb"><i></i><i></i><i></i><div class="t">Blygger</div></div>
+  <div class="grid">
+    <div class="list">
+      <div class="sel">On friction<small>◦ fragment · draft · now</small></div>
+      <div>Heard a street band tonight…<small>◦ fragment · v1</small></div>
+      <div>Notes on a book about teams…<small>≡ thread · v2</small></div>
+      <div>Tufte's sidenotes were…<small>◦ fragment · v1</small></div>
+    </div>
+    <div class="ed" id="ed"></div>
+  </div>
+  <div class="sb"><span id="kind">◦ fragment</span><span id="cnt">0 / 1000</span><span class="grow"></span><span class="ai" id="ai"></span><span>draft</span></div>
+  <div class="pop" id="pop"></div>
+  <div class="toast" id="toast"></div>
+  <div class="hud" id="hud"></div>
+</div>
+<p class="cap"><kbd>⌘</kbd><kbd>G</kbd> on a selection or an empty line → type an instruction → <kbd>⏎</kbd> the text streams in, tinted blue &nbsp;·&nbsp; <kbd>⌘</kbd><kbd>G</kbd> again inside it regenerates &nbsp;·&nbsp; <kbd>esc</kbd> discards &nbsp;·&nbsp; the tint is only in the editor</p>
+<textarea class="fb" placeholder="How should generating feel? Other keys?"></textarea>
+</section>
+
+<!-- 2. Disclosure -->
+<section data-label="2. What readers see">
+<h2><span class="n">2</span> What readers see <span class="muted">(hover the dotted text)</span></h2>
+<div class="toolbar"><span class="lbl">Disclose AI-written text</span>
+  <span class="seg"><button class="on" data-disc="on">Always (recommended)</button><button data-disc="off">Never</button></span></div>
+<div class="pub" id="pub">
+  <div class="meta">example.com · fragment · v1</div>
+  On friction: every step between the thought and the post is a place the thought can die. <span class="gen">It isn't only the minutes lost. Each login screen and each slow preview quietly asks whether the idea is worth the trouble, and most ideas, asked that way, say no.</span> So the tool should disappear.
+  <div class="foot">✦ Contains machine-generated text (claude-opus-5)</div>
+</div>
+<p class="cap">The Blygger protocol says a publisher <i>SHOULD</i> disclose generated prose. Today your Worker only discloses text it generated itself. For text generated in this app to be disclosed, the Worker needs one more small endpoint that records "this span was written by model X". That's patch 4, the same size as the others.</p>
+<textarea class="fb" placeholder="Always disclose, or do you want a per-post choice?"></textarea>
+</section>
+
+<!-- 3. Accounts -->
+<section data-label="3. Signing in to AI">
+<h2><span class="n">3</span> Signing in to AI <span class="muted">(click a row to switch it on or off)</span></h2>
+<div class="two">
+  <div class="panel" id="panel">
+    <h4>Settings › AI accounts</h4>
+    <div class="prov" data-p="anthropic"><div class="ic" style="background:#d97757;color:#fff">A</div><div class="bd"><b>Claude: sign in with your Anthropic account</b><span>Opens the browser, you approve once, done. Uses the Claude API.</span></div><span class="st ok">Signed in</span><div class="tog"></div></div>
+    <div class="prov" data-p="openai"><div class="ic" style="background:#fff;color:#000">◎</div><div class="bd"><b>ChatGPT models: OpenAI API key</b><span>Paste a key once. It's kept in the macOS Keychain.</span></div><span class="st no">Not set</span><div class="tog"></div></div>
+    <div class="prov off" data-p="local"><div class="ic" style="background:#2c2b28;color:#e4dfd3">⌘</div><div class="bd"><b>Use my Claude Code / Codex app</b><span>Hands generation to the apps you're already signed into, so it runs on your subscription.</span></div><span class="st warn">Terms unclear</span><div class="tog"></div></div>
+    <div class="prov off" data-p="server"><div class="ic" style="background:#2c2b28;color:#e4dfd3">☁</div><div class="bd"><b>Generate on my blyg server</b><span>Your Worker calls Claude with its own key. It works from Studio too.</span></div><span class="st no">Key not set</span><div class="tog"></div></div>
+    <div style="margin-top:12px;color:#9a9489;font-size:12px">Default model: <b style="color:#e4dfd3">Claude Opus 5</b> ▾ &nbsp;·&nbsp; Style prompt: <i>"Plain words. Short sentences. No hype."</i></div>
+  </div>
+  <div>
+    <div class="frame" style="min-height:auto"><b>Why not "Sign in with ChatGPT" or your Claude.ai plan directly?</b>
+      Anthropic doesn't allow third-party apps to offer claude.ai login or use subscription limits. OpenAI has no official way for apps to use a ChatGPT plan; the apps that do it borrow the Codex CLI's sign-in. So the app signs in to the <i>API</i> accounts, and the "Use my Claude Code / Codex" row is the nearest thing to your subscription.</div>
+    <div class="flow">
+      <div class="frame"><b>① Click "Sign in"</b><div class="fake">Claude<br><span class="btn">Sign in with Anthropic</span></div></div>
+      <div class="frame"><b>② Approve in the browser</b><div class="fake">platform.claude.com<br>Allow <i>Blygger</i> to use your API account?<br><span class="btn">Allow</span></div></div>
+      <div class="frame"><b>③ Back in the app</b><div class="fake">✓ Signed in as you@…<br><span style="color:var(--muted)">Nothing to paste. Revoke any time.</span></div></div>
+    </div>
+  </div>
+</div>
+<textarea class="fb" placeholder="Which of these do you want? Is the 'Terms unclear' option worth having?"></textarea>
+</section>
+
+<!-- 4. More AI helpers -->
+<section data-label="4. Extra AI helpers">
+<h2><span class="n">4</span> Extra helpers <span class="muted">(click to toggle; each one is a TK under the hood, so it's disclosed the same way)</span></h2>
+<div class="chips" id="chips">
+  <div class="chip in"><b>Fill a gap (TK)</b><span>The core feature shown above.</span></div>
+  <div class="chip in"><b>Shorten to fit 1000</b><span>Appears when a fragment is over the limit. You see a diff before accepting.</span></div>
+  <div class="chip"><b>Continue this thought</b><span>Writes the next paragraph in your voice.</span></div>
+  <div class="chip"><b>Outline a thread</b><span>Turns a fragment into a thread skeleton.</span></div>
+  <div class="chip"><b>Proofread</b><span>Typos and grammar only, shown as suggestions. Not disclosed, because it isn't generated prose.</span></div>
+  <div class="chip"><b>Reply to a reading item</b><span>Drafts a stub reply to a post in your subscriptions.</span></div>
+</div>
+<textarea class="fb" placeholder="Anything else AI should do?"></textarea>
+</section>
+
+<!-- 5. Reading -->
+<section data-label="5. Reading: one entry per post">
+<h2><span class="n">5</span> Reading: one entry per post, however many edits</h2>
+<div class="toolbar"><button id="feedDemo">▶ A post gets edited three times</button>
+  <span class="lbl">Edited posts:</span>
+  <span class="seg"><button class="on" data-pos="top">Move to top, marked edited</button><button data-pos="stay">Stay in place, marked edited</button></span></div>
+<div class="feeds">
+  <div><div class="feed" id="rss"><div class="hd"><span>A typical RSS reader</span><span id="rssN">4 unread</span></div></div><p class="cap bad" id="rssCap">Every edit arrives as a new unread item.</p></div>
+  <div><div class="feed" id="blyg"><div class="hd"><span>Blygger</span><span id="blygN">4 unread</span></div></div><p class="cap good">One row per post: the latest version, the version number, and <b>what changed since you read it</b>.</p></div>
+</div>
+<p class="cap">Also caught: the same post arriving from someone's blyg <i>and</i> their RSS feed, and RSS sites that change an entry's id when they edit it. Each still shows as one row. Posts the author withdrew disappear, unless you'd saved or quoted them.</p>
+<textarea class="fb" placeholder="Top or stay in place? Anything else that annoys you in RSS readers?"></textarea>
+</section>
+</main>
+
+<div id="float"><div class="r"><span>General comments</span><button id="copy">Copy all</button></div><textarea id="general" placeholder="Anything else…"></textarea></div>
+
+<script>
+const $=s=>document.querySelector(s), sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const ed=$('#ed');
+let doc=[]; // segments: {t:'text',v} | {t:'tk',ins,out,src,streaming}
+function esc(s){return s.replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))}
+function plain(){return doc.map(s=>s.t==='text'?s.v:(s.out||'')).join('')}
+function render(caret=true){
+  ed.innerHTML=doc.map(s=>{
+    if(s.t==='text') return esc(s.v).replace(/\[\[SEL\]\](.*?)\[\[\/SEL\]\]/s,'<span class="sel-hl">$1</span>');
+    return `<span class="tk"><span class="ins">${esc(s.ins)}${s.src?` <span class="src">![[On friction]]</span>`:''}</span>${s.out?' <span class="out">'+esc(s.out)+'</span>':''}${s.streaming?'<span class="caret"></span>':''}</span>`;
+  }).join('')+(caret&&!doc.some(s=>s.streaming)?'<span class="caret"></span>':'');
+  const n=plain().replace(/\[\[\/?SEL\]\]/g,'').length; const c=$('#cnt');
+  c.textContent=`${n} / 1000`; c.style.color=n>1000?'#d23c2a':'';
+}
+function hud(k){const h=$('#hud');h.innerHTML=k.map(x=>`<kbd>${x}</kbd>`).join('');const c=h.innerHTML;setTimeout(()=>{if(h.innerHTML===c)h.innerHTML=''},1100)}
+let tt;function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('show');clearTimeout(tt);tt=setTimeout(()=>t.classList.remove('show'),2400)}
+async function typeText(seg,str,sp=34){for(const ch of str){seg.v+=ch;render();await sleep(sp+Math.random()*sp*.7)}}
+async function pop(instr,model='claude-opus-5'){
+  const p=$('#pop'); p.style.left='40%'; p.style.top='120px';
+  p.innerHTML=`<input id="pi" placeholder="What should go here?"><div class="row"><span>⏎ generate · esc cancel</span><span class="model">${model} ▾</span></div>`;
+  p.classList.add('show'); const i=$('#pi'); await sleep(300);
+  for(const ch of instr){i.value+=ch;await sleep(38)} await sleep(450); hud(['⏎']); p.classList.remove('show');
+}
+async function stream(seg,text){seg.streaming=true;seg.out='';$('#ai').textContent='✦ generating…';render();
+  await sleep(500); for(const w of text.split(/(?<= )/)){seg.out+=w;render();await sleep(55+Math.random()*50)}
+  seg.streaming=false;$('#ai').textContent='✦ 1 AI span · claude-opus-5';render();}
+const DEMOS={
+  async gen(){
+    doc=[{t:'text',v:''}]; render(); await typeText(doc[0],'On friction: every step between the thought and the post is a place the thought can die. ');
+    await sleep(400); hud(['⌘','G']); await pop('say why, briefly, in my voice');
+    const s={t:'tk',ins:'say why, briefly, in my voice',out:''}; doc.push(s,{t:'text',v:''});
+    await stream(s,"It isn't only the minutes lost. Each login screen and each slow preview quietly asks whether the idea is worth the trouble, and most ideas, asked that way, say no.");
+    await sleep(500); await typeText(doc[2],' So the tool should disappear.'); await sleep(1200);
+  },
+  async regen(){
+    await DEMOS.gen(); await sleep(300); hud(['⌘','G']); toast('Regenerate: the instruction is kept, and you can edit it');
+    await pop('say why, briefly, in my voice. Shorter, one sentence.'); const s=doc[1]; s.ins='say why, briefly, in my voice. Shorter, one sentence.';
+    await stream(s,"Every extra step quietly asks whether the idea is worth it, and most ideas say no."); await sleep(1500);
+  },
+  async src(){
+    doc=[{t:'text',v:''}]; $('#kind').textContent='≡ thread'; render();
+    await typeText(doc[0],'Why I built a posting app\n\n'); hud(['⌘','G']);
+    await pop('open with the idea from my friction post');
+    const s={t:'tk',ins:'open with the idea from my friction post',src:true,out:''}; doc.push(s,{t:'text',v:'\n\n'});
+    toast('Type ![[ to pick one of your posts as source material'); await sleep(900);
+    await stream(s,"A while ago I wrote that every step between a thought and a post is a place the thought can die. This app is my attempt to remove the steps.");
+    await sleep(1600); $('#kind').textContent='◦ fragment';
+  },
+  async shorten(){
+    doc=[{t:'text',v:"On friction: every step between the thought and the post is a place the thought can die. "+"It isn't only the minutes lost; each login screen, each slow preview, each extra field quietly asks whether the idea is worth the trouble, and most ideas, asked that way, say no. ".repeat(6)}];
+    render(false); await sleep(900); toast('Over the limit · ⌘⇧G shortens to fit'); await sleep(1200); hud(['⌘','⇧','G']);
+    $('#ai').textContent='✦ shortening…'; await sleep(1100);
+    doc=[{t:'text',v:'On friction: every step between the thought and the post is a place the thought can die. '},{t:'tk',ins:'shortened to fit 1000',out:"Each login screen and slow preview asks whether the idea is worth the trouble, and most ideas, asked that way, say no."}];
+    $('#ai').textContent='✦ 1 AI span · claude-opus-5'; render(); toast('Fits now: 208 / 1000 · ⌘Z undoes'); await sleep(1800);
+  },
+};
+let playing=false;
+document.querySelectorAll('[data-demo]').forEach(b=>b.onclick=async()=>{if(playing)return;playing=true;
+  document.querySelectorAll('[data-demo]').forEach(x=>x.disabled=x!==b);b.classList.add('playing');$('#ai').textContent='';
+  try{await DEMOS[b.dataset.demo]()}finally{playing=false;b.classList.remove('playing');document.querySelectorAll('[data-demo]').forEach(x=>x.disabled=false)}});
+doc=[{t:'text',v:''}]; render();
+
+document.querySelectorAll('[data-disc]').forEach(b=>b.onclick=()=>{document.querySelectorAll('[data-disc]').forEach(x=>x.classList.toggle('on',x===b));$('#pub').classList.toggle('nodisc',b.dataset.disc==='off')});
+document.querySelectorAll('.prov').forEach(p=>p.onclick=()=>p.classList.toggle('off'));
+document.querySelectorAll('.chip').forEach(c=>c.onclick=()=>c.classList.toggle('in'));
+
+
+/* ---- reading demo ---- */
+const BASE=[
+ {id:'p1',src:'Ada · blyg',tx:'Lately I have been thinking about media that is finished.',v:1},
+ {id:'p2',src:'Lin · blyg',tx:'Gardens, not streams. A note on how I write in public.',v:2},
+ {id:'p3',src:'Omar · RSS',tx:'The consulting year in review.',v:1},
+ {id:'p4',src:'Rue · blyg',tx:'A hyperlink is a little bit of trust.',v:1},
+];
+const EDITS=[
+ 'A hyperlink is a small unit of trust.',
+ 'A hyperlink is a small unit of trust, lent from one writer to another.',
+ 'A hyperlink is a small unit of trust, lent from one writer to another. Spend it carefully.',
+];
+let pos='top';
+function row(it,{badge,unread,diff}={}){return `<div class="fi ${unread?'unread':''} ${diff?'flash':''}"><div class="src">${it.src}${it.v>1?` · v${it.v}`:''}${badge==='new'?'<span class="bd new">new</span>':''}${badge==='ed'?'<span class="bd ed">edited · v'+it.v+'</span>':''}</div><div class="tx">${it.tx}</div>${diff?`<div class="diff">${diff}</div>`:''}</div>`}
+function resetFeeds(){
+  const hd=(t,n)=>`<div class="hd"><span>${t}</span><span id="${n}">4 unread</span></div>`;
+  $('#rss').innerHTML=hd('A typical RSS reader','rssN')+BASE.map(b=>row(b,{unread:1})).join('');
+  $('#blyg').innerHTML=hd('Blygger','blygN')+BASE.map(b=>row(b,{unread:1})).join('');
+}
+resetFeeds();
+document.querySelectorAll('[data-pos]').forEach(b=>b.onclick=()=>{document.querySelectorAll('[data-pos]').forEach(x=>x.classList.toggle('on',x===b));pos=b.dataset.pos});
+$('#feedDemo').onclick=async()=>{
+  const b=$('#feedDemo'); if(b.disabled)return; b.disabled=true; resetFeeds(); await sleep(700);
+  // mark everything read
+  document.querySelectorAll('.fi').forEach(f=>f.classList.remove('unread')); $('#rssN').textContent='0 unread'; $('#blygN').textContent='0 unread';
+  await sleep(900);
+  let prev='A hyperlink is a little bit of trust.';
+  for(let i=0;i<3;i++){
+    const it={id:'p4',src:'Rue · blyg',tx:EDITS[i],v:i+2};
+    // RSS: new entry on top every time
+    $('#rss .hd').insertAdjacentHTML('afterend',row(it,{badge:'new',unread:1}));
+    $('#rssN').textContent=(i+1)+' unread';
+    // Blygger: replace the single p4 row
+    const rows=[...document.querySelectorAll('#blyg .fi')]; const old=rows.find(r=>r.querySelector('.src').textContent.startsWith('Rue's));
+    const diff=`<del>a little bit of trust.</del> <ins>${EDITS[i].replace('A hyperlink is ','')}</ins>`;
+    const html=row(it,{badge:'ed',unread:1,diff});
+    if(pos==='top'){ old.remove(); $('#blyg .hd').insertAdjacentHTML('afterend',html);} else { old.outerHTML=html; }
+    $('#blygN').textContent='1 unread';
+    await sleep(1500);
+  }
+  b.disabled=false;
+};
+
+$('#copy').onclick=async()=>{
+  const parts=[];
+  const disc=document.querySelector('[data-disc].on').dataset.disc;
+  const provs=[...document.querySelectorAll('.prov')].map(p=>`${p.querySelector('b').textContent}: ${p.classList.contains('off')?'OFF':'ON'}`);
+  parts.push(`## Picks\nEdited posts: ${pos}\nDisclosure: ${disc}\nAI accounts:\n- ${provs.join('\n- ')}\nHelpers IN: ${[...document.querySelectorAll('.chip.in b')].map(b=>b.textContent).join(', ')}\nHelpers OUT: ${[...document.querySelectorAll('.chip:not(.in) b')].map(b=>b.textContent).join(', ')}`);
+  document.querySelectorAll('section').forEach(s=>{const t=s.querySelector('textarea.fb').value.trim();if(t)parts.push(`## ${s.dataset.label}\n${t}`)});
+  const g=$('#general').value.trim(); if(g)parts.push(`## General\n${g}`);
+  const text=parts.join('\n\n');
+  try{await navigator.clipboard.writeText(text)}catch{const ta=document.createElement('textarea');ta.value=text;document.body.append(ta);ta.select();document.execCommand('copy');ta.remove()}
+  const b=$('#copy');b.textContent='Copied ✓';setTimeout(()=>b.textContent='Copy all',1500);
+};
+</script>
+</body>
+</html>

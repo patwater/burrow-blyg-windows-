@@ -1,0 +1,19 @@
+{
+  "name": "tk_inline_in_indented_code",
+  "kind": "fragment",
+  "md": "    code [TK]x[=]<y>[/TK] z\n\nafter",
+  "html": "<pre><code>code <span class=\"blyg-tk-gen\">&lt;y&gt;</span> z\n</code></pre>\n<p>after</p>\n",
+  "tk": {
+    "scopes": [
+      {
+        "instruction": "x",
+        "generated": true,
+        "block": false,
+        "source_ids": []
+      }
+    ],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

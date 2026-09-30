@@ -1,0 +1,39 @@
+[package]
+name = "blyg-app"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "blygger"
+path = "src/main.rs"
+
+[dependencies]
+blyg-core = { path = "../blyg-core" }
+blyg-ai = { path = "../blyg-ai" }
+# gpui-kit pins the matching GPUI snapshot (gpui-pre 0.3.6) plus gpui-base /
+# gpui-component 0.6.6. We use gpui-base's unstyled textarea and draw the rest.
+gpui-kit = { version = "=0.6.6", default-features = false }
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+async-channel = "2"
+global-hotkey = "0.8"
+raw-window-handle = "0.6"
+objc2 = "0.6"
+# --- full editor ---
+blyg-render = { path = "../blyg-render" }
+wry = { version = "0.57", default-features = false }
+ammonia = "4"
+# --- auto-update --- (signed release check + in-place install; src/update/)
+ureq = { version = "2.12", default-features = false, features = ["tls", "json"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+base64 = "0.22"
+semver = "1"
+url = "2"
+ed25519-dalek = { version = "2", default-features = false, features = ["std", "fast", "zeroize"] }
+
+[dev-dependencies]
+# --- full editor ---
+tempfile = "3"
+gpui-kit = { version = "=0.6.6", default-features = false, features = ["test-support"] }

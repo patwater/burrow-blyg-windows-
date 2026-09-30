@@ -1,0 +1,12 @@
+{
+  "name": "yt_params",
+  "kind": "fragment",
+  "md": "https://m.youtube.com/watch?feature=share&v=Zx9_abc-123&t=42",
+  "html": "<figure class=\"blyg-yt\" data-ytid=\"Zx9_abc-123\"><a class=\"blyg-yt-poster\" href=\"https://m.youtube.com/watch?feature=share&amp;v=Zx9_abc-123&amp;t=42\" aria-label=\"Play video\"><img src=\"https://i.ytimg.com/vi/Zx9_abc-123/hqdefault.jpg\" alt=\"\" width=\"480\" height=\"360\" loading=\"lazy\" referrerpolicy=\"no-referrer\"></a><figcaption><a href=\"https://m.youtube.com/watch?feature=share&amp;v=Zx9_abc-123&amp;t=42\">https://m.youtube.com/watch?feature=share&amp;v=Zx9_abc-123&amp;t=42</a></figcaption></figure>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

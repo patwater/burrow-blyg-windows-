@@ -1,0 +1,12 @@
+{
+  "name": "tr_plain_thread",
+  "kind": "thread",
+  "md": "A thread with *no* quotes and a https://example.org/ link.",
+  "html": "<p>A thread with <em>no</em> quotes and a <a href=\"https://example.org/\">https://example.org/</a> link.</p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

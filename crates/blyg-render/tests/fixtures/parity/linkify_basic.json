@@ -1,0 +1,12 @@
+{
+  "name": "linkify_basic",
+  "kind": "fragment",
+  "md": "Visit https://blyg.example.com/path?q=1&r=2 today.",
+  "html": "<p>Visit <a href=\"https://blyg.example.com/path?q=1&amp;r=2\">https://blyg.example.com/path?q=1&amp;r=2</a> today.</p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

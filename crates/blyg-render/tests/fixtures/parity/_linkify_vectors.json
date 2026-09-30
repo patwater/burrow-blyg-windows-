@@ -1,0 +1,829 @@
+{
+ "source": "linkify-it 5.0.0 test/fixtures/links.txt + not_links.txt, markdown-it 14.1.0 test/fixtures/markdown-it/linkify.txt (MIT, Vitaly Puzrin, Alex Kocharin)",
+ "cases": [
+  {
+   "md": "My http://example.com site",
+   "html": "<p>My <a href=\"http://example.com\">http://example.com</a> site</p>\n"
+  },
+  {
+   "md": "http://example.com",
+   "html": "<p><a href=\"http://example.com\">http://example.com</a></p>\n"
+  },
+  {
+   "md": "My http://example.com/ site",
+   "html": "<p>My <a href=\"http://example.com/\">http://example.com/</a> site</p>\n"
+  },
+  {
+   "md": "http://example.com/",
+   "html": "<p><a href=\"http://example.com/\">http://example.com/</a></p>\n"
+  },
+  {
+   "md": "http://example.com/foo_bar/",
+   "html": "<p><a href=\"http://example.com/foo_bar/\">http://example.com/foo_bar/</a></p>\n"
+  },
+  {
+   "md": "http://user:pass@example.com:8080",
+   "html": "<p><a href=\"http://user:pass@example.com:8080\">http://user:pass@example.com:8080</a></p>\n"
+  },
+  {
+   "md": "http://user@example.com",
+   "html": "<p><a href=\"http://user@example.com\">http://user@example.com</a></p>\n"
+  },
+  {
+   "md": "http://user@example.com:8080",
+   "html": "<p><a href=\"http://user@example.com:8080\">http://user@example.com:8080</a></p>\n"
+  },
+  {
+   "md": "http://user:pass@example.com",
+   "html": "<p><a href=\"http://user:pass@example.com\">http://user:pass@example.com</a></p>\n"
+  },
+  {
+   "md": "[https](https://www.ibm.com)[mailto](mailto:someone@ibm.com)",
+   "html": "<p><a href=\"https://www.ibm.com\">https</a><a href=\"mailto:someone@ibm.com\">mailto</a></p>\n"
+  },
+  {
+   "md": "https://www.ibm.com",
+   "html": "<p><a href=\"https://www.ibm.com\">https://www.ibm.com</a></p>\n"
+  },
+  {
+   "md": "http://example.com:8080",
+   "html": "<p><a href=\"http://example.com:8080\">http://example.com:8080</a></p>\n"
+  },
+  {
+   "md": "http://example.com/?foo=bar",
+   "html": "<p><a href=\"http://example.com/?foo=bar\">http://example.com/?foo=bar</a></p>\n"
+  },
+  {
+   "md": "http://example.com?foo=bar",
+   "html": "<p><a href=\"http://example.com?foo=bar\">http://example.com?foo=bar</a></p>\n"
+  },
+  {
+   "md": "http://example.com/#foo=bar",
+   "html": "<p><a href=\"http://example.com/#foo=bar\">http://example.com/#foo=bar</a></p>\n"
+  },
+  {
+   "md": "http://example.com#foo=bar",
+   "html": "<p><a href=\"http://example.com#foo=bar\">http://example.com#foo=bar</a></p>\n"
+  },
+  {
+   "md": "http://a.in",
+   "html": "<p><a href=\"http://a.in\">http://a.in</a></p>\n"
+  },
+  {
+   "md": "HTTP://GOOGLE.COM",
+   "html": "<p><a href=\"HTTP://GOOGLE.COM\">HTTP://GOOGLE.COM</a></p>\n"
+  },
+  {
+   "md": "http://example.invalid",
+   "html": "<p><a href=\"http://example.invalid\">http://example.invalid</a></p>\n"
+  },
+  {
+   "md": "http://inrgess2",
+   "html": "<p><a href=\"http://inrgess2\">http://inrgess2</a></p>\n"
+  },
+  {
+   "md": "http://999",
+   "html": "<p><a href=\"http://999\">http://999</a></p>\n"
+  },
+  {
+   "md": "http://host-name",
+   "html": "<p><a href=\"http://host-name\">http://host-name</a></p>\n"
+  },
+  {
+   "md": ">>example.com",
+   "html": "<blockquote>\n<blockquote>\n<p><a href=\"http://example.com\">example.com</a></p>\n</blockquote>\n</blockquote>\n"
+  },
+  {
+   "md": "example.com",
+   "html": "<p><a href=\"http://example.com\">example.com</a></p>\n"
+  },
+  {
+   "md": ">>http://example.com",
+   "html": "<blockquote>\n<blockquote>\n<p><a href=\"http://example.com\">http://example.com</a></p>\n</blockquote>\n</blockquote>\n"
+  },
+  {
+   "md": "http://lyricstranslate.com/en/someone-you-നിന്നെ-പോലൊരാള്‍.html",
+   "html": "<p><a href=\"http://lyricstranslate.com/en/someone-you-%E0%B4%A8%E0%B4%BF%E0%B4%A8%E0%B5%8D%E0%B4%A8%E0%B5%86-%E0%B4%AA%E0%B5%8B%E0%B4%B2%E0%B5%8A%E0%B4%B0%E0%B4%BE%E0%B4%B3%E0%B5%8D%E2%80%8D.html\">http://lyricstranslate.com/en/someone-you-നിന്നെ-പോലൊരാള്‍.html</a></p>\n"
+  },
+  {
+   "md": "//localhost",
+   "html": "<p><a href=\"//localhost\">//localhost</a></p>\n"
+  },
+  {
+   "md": "//test.123",
+   "html": "<p><a href=\"//test.123\">//test.123</a></p>\n"
+  },
+  {
+   "md": "http://localhost:8000?",
+   "html": "<p><a href=\"http://localhost:8000\">http://localhost:8000</a>?</p>\n"
+  },
+  {
+   "md": "http://localhost:8000",
+   "html": "<p><a href=\"http://localhost:8000\">http://localhost:8000</a></p>\n"
+  },
+  {
+   "md": "My ssl https://example.com site",
+   "html": "<p>My ssl <a href=\"https://example.com\">https://example.com</a> site</p>\n"
+  },
+  {
+   "md": "https://example.com",
+   "html": "<p><a href=\"https://example.com\">https://example.com</a></p>\n"
+  },
+  {
+   "md": "My ftp://example.com site",
+   "html": "<p>My <a href=\"ftp://example.com\">ftp://example.com</a> site</p>\n"
+  },
+  {
+   "md": "ftp://example.com",
+   "html": "<p><a href=\"ftp://example.com\">ftp://example.com</a></p>\n"
+  },
+  {
+   "md": "My ssl //example.com site",
+   "html": "<p>My ssl <a href=\"//example.com\">//example.com</a> site</p>\n"
+  },
+  {
+   "md": "//example.com",
+   "html": "<p><a href=\"//example.com\">//example.com</a></p>\n"
+  },
+  {
+   "md": "4.4.4.4",
+   "html": "<p>4.4.4.4</p>\n"
+  },
+  {
+   "md": "192.168.1.1/abc",
+   "html": "<p>192.168.1.1/abc</p>\n"
+  },
+  {
+   "md": "test.example@http://vk.com",
+   "html": "<p>test.example@<a href=\"http://vk.com\">http://vk.com</a></p>\n"
+  },
+  {
+   "md": "http://vk.com",
+   "html": "<p><a href=\"http://vk.com\">http://vk.com</a></p>\n"
+  },
+  {
+   "md": "text:http://example.com/",
+   "html": "<p>text:<a href=\"http://example.com/\">http://example.com/</a></p>\n"
+  },
+  {
+   "md": "google.com",
+   "html": "<p><a href=\"http://google.com\">google.com</a></p>\n"
+  },
+  {
+   "md": "google.com: // no port",
+   "html": "<p><a href=\"http://google.com\">google.com</a>: // no port</p>\n"
+  },
+  {
+   "md": "s.l.o.w.io",
+   "html": "<p><a href=\"http://s.l.o.w.io\">s.l.o.w.io</a></p>\n"
+  },
+  {
+   "md": "a-b.com",
+   "html": "<p><a href=\"http://a-b.com\">a-b.com</a></p>\n"
+  },
+  {
+   "md": "GOOGLE.COM.",
+   "html": "<p><a href=\"http://GOOGLE.COM\">GOOGLE.COM</a>.</p>\n"
+  },
+  {
+   "md": "GOOGLE.COM",
+   "html": "<p><a href=\"http://GOOGLE.COM\">GOOGLE.COM</a></p>\n"
+  },
+  {
+   "md": "google.xxx // known tld",
+   "html": "<p><a href=\"http://google.xxx\">google.xxx</a> // known tld</p>\n"
+  },
+  {
+   "md": "google.xxx",
+   "html": "<p><a href=\"http://google.xxx\">google.xxx</a></p>\n"
+  },
+  {
+   "md": "(Scoped http://example.com/foo_bar)",
+   "html": "<p>(Scoped <a href=\"http://example.com/foo_bar\">http://example.com/foo_bar</a>)</p>\n"
+  },
+  {
+   "md": "http://example.com/foo_bar",
+   "html": "<p><a href=\"http://example.com/foo_bar\">http://example.com/foo_bar</a></p>\n"
+  },
+  {
+   "md": "http://example.com/foo_bar_(wiki)",
+   "html": "<p><a href=\"http://example.com/foo_bar_(wiki)\">http://example.com/foo_bar_(wiki)</a></p>\n"
+  },
+  {
+   "md": "http://foo.com/blah_blah_[other]",
+   "html": "<p><a href=\"http://foo.com/blah_blah_%5Bother%5D\">http://foo.com/blah_blah_[other]</a></p>\n"
+  },
+  {
+   "md": "http://foo.com/blah_blah_{I'm_king}",
+   "html": "<p><a href=\"http://foo.com/blah_blah_%7BI'm_king%7D\">http://foo.com/blah_blah_{I'm_king}</a></p>\n"
+  },
+  {
+   "md": "http://foo.com/blah_blah_I'm_king",
+   "html": "<p><a href=\"http://foo.com/blah_blah_I'm_king\">http://foo.com/blah_blah_I'm_king</a></p>\n"
+  },
+  {
+   "md": "http://www.kmart.com/bestway-10'-x-30inch-steel-pro-frame-pool/p-004W007538417001P",
+   "html": "<p><a href=\"http://www.kmart.com/bestway-10'-x-30inch-steel-pro-frame-pool/p-004W007538417001P\">http://www.kmart.com/bestway-10'-x-30inch-steel-pro-frame-pool/p-004W007538417001P</a></p>\n"
+  },
+  {
+   "md": "http://foo.com/blah_blah_\"doublequoted\"",
+   "html": "<p><a href=\"http://foo.com/blah_blah_%22doublequoted%22\">http://foo.com/blah_blah_&quot;doublequoted&quot;</a></p>\n"
+  },
+  {
+   "md": "http://foo.com/blah_blah_'singlequoted'",
+   "html": "<p><a href=\"http://foo.com/blah_blah_'singlequoted'\">http://foo.com/blah_blah_'singlequoted'</a></p>\n"
+  },
+  {
+   "md": "(Scoped like http://example.com/foo_bar)",
+   "html": "<p>(Scoped like <a href=\"http://example.com/foo_bar\">http://example.com/foo_bar</a>)</p>\n"
+  },
+  {
+   "md": "[Scoped like http://example.com/foo_bar]",
+   "html": "<p>[Scoped like <a href=\"http://example.com/foo_bar\">http://example.com/foo_bar</a>]</p>\n"
+  },
+  {
+   "md": "{Scoped like http://example.com/foo_bar}",
+   "html": "<p>{Scoped like <a href=\"http://example.com/foo_bar\">http://example.com/foo_bar</a>}</p>\n"
+  },
+  {
+   "md": "\"Quoted like http://example.com/foo_bar\"",
+   "html": "<p>&quot;Quoted like <a href=\"http://example.com/foo_bar\">http://example.com/foo_bar</a>&quot;</p>\n"
+  },
+  {
+   "md": "'Quoted like http://example.com/foo_bar'",
+   "html": "<p>'Quoted like <a href=\"http://example.com/foo_bar\">http://example.com/foo_bar</a>'</p>\n"
+  },
+  {
+   "md": "[example.com/foo_bar.jpg)]",
+   "html": "<p>[<a href=\"http://example.com/foo_bar.jpg\">example.com/foo_bar.jpg</a>)]</p>\n"
+  },
+  {
+   "md": "example.com/foo_bar.jpg",
+   "html": "<p><a href=\"http://example.com/foo_bar.jpg\">example.com/foo_bar.jpg</a></p>\n"
+  },
+  {
+   "md": "http://example.com/foo_bar.jpg.",
+   "html": "<p><a href=\"http://example.com/foo_bar.jpg\">http://example.com/foo_bar.jpg</a>.</p>\n"
+  },
+  {
+   "md": "http://example.com/foo_bar.jpg",
+   "html": "<p><a href=\"http://example.com/foo_bar.jpg\">http://example.com/foo_bar.jpg</a></p>\n"
+  },
+  {
+   "md": "http://example.com/foo_bar/.",
+   "html": "<p><a href=\"http://example.com/foo_bar/\">http://example.com/foo_bar/</a>.</p>\n"
+  },
+  {
+   "md": "http://example.com/foo_bar,",
+   "html": "<p><a href=\"http://example.com/foo_bar\">http://example.com/foo_bar</a>,</p>\n"
+  },
+  {
+   "md": "http://index-of.es/Android/Professional.Android.2.Application.Development.(Wrox,.2010,.0470565527).pdf",
+   "html": "<p><a href=\"http://index-of.es/Android/Professional.Android.2.Application.Development.(Wrox,.2010,.0470565527).pdf\">http://index-of.es/Android/Professional.Android.2.Application.Development.(Wrox,.2010,.0470565527).pdf</a></p>\n"
+  },
+  {
+   "md": "https://github.com/markdown-it/linkify-it/compare/360b13a733f521a8d4903d3a5e1e46c357e9d3ce...f580766349525150a80a32987bb47c2d592efc33",
+   "html": "<p><a href=\"https://github.com/markdown-it/linkify-it/compare/360b13a733f521a8d4903d3a5e1e46c357e9d3ce...f580766349525150a80a32987bb47c2d592efc33\">https://github.com/markdown-it/linkify-it/compare/360b13a733f521a8d4903d3a5e1e46c357e9d3ce...f580766349525150a80a32987bb47c2d592efc33</a></p>\n"
+  },
+  {
+   "md": "https://www.google.com/search?sxsrf=ACYBGNTJFmX-GjNJ8fM-2LCkqyNyxGU1Ng%3A1575534146332&ei=Qr7oXf7rE4rRrgSEgrmoAw&q=clover&oq=clover&gs_l=psy-ab.3..0i67j0l9.2986.3947..4187...0.2..0.281.1366.1j0j5......0....1..gws-wiz.......0i71j35i39j0i131.qWp1nz4IJVA&ved=0ahUKEwj-lP6Iip7mAhWKqIsKHQRBDjUQ4dUDCAs&uact=5",
+   "html": "<p><a href=\"https://www.google.com/search?sxsrf=ACYBGNTJFmX-GjNJ8fM-2LCkqyNyxGU1Ng%3A1575534146332&amp;ei=Qr7oXf7rE4rRrgSEgrmoAw&amp;q=clover&amp;oq=clover&amp;gs_l=psy-ab.3..0i67j0l9.2986.3947..4187...0.2..0.281.1366.1j0j5......0....1..gws-wiz.......0i71j35i39j0i131.qWp1nz4IJVA&amp;ved=0ahUKEwj-lP6Iip7mAhWKqIsKHQRBDjUQ4dUDCAs&amp;uact=5\">https://www.google.com/search?sxsrf=ACYBGNTJFmX-GjNJ8fM-2LCkqyNyxGU1Ng%3A1575534146332&amp;ei=Qr7oXf7rE4rRrgSEgrmoAw&amp;q=clover&amp;oq=clover&amp;gs_l=psy-ab.3..0i67j0l9.2986.3947..4187...0.2..0.281.1366.1j0j5......0....1..gws-wiz.......0i71j35i39j0i131.qWp1nz4IJVA&amp;ved=0ahUKEwj-lP6Iip7mAhWKqIsKHQRBDjUQ4dUDCAs&amp;uact=5</a></p>\n"
+  },
+  {
+   "md": "https://ourworldindata.org/grapher/covid-deaths-days-since-per-million?zoomToSelection=true&time=9..&country=FRA+DEU+ITA+ESP+GBR+USA+CAN",
+   "html": "<p><a href=\"https://ourworldindata.org/grapher/covid-deaths-days-since-per-million?zoomToSelection=true&amp;time=9..&amp;country=FRA+DEU+ITA+ESP+GBR+USA+CAN\">https://ourworldindata.org/grapher/covid-deaths-days-since-per-million?zoomToSelection=true&amp;time=9..&amp;country=FRA+DEU+ITA+ESP+GBR+USA+CAN</a></p>\n"
+  },
+  {
+   "md": "http://example.com/foo_bar...",
+   "html": "<p><a href=\"http://example.com/foo_bar\">http://example.com/foo_bar</a>...</p>\n"
+  },
+  {
+   "md": "http://172.26.142.48/viewerjs/#../0529/slides.pdf",
+   "html": "<p><a href=\"http://172.26.142.48/viewerjs/#../0529/slides.pdf\">http://172.26.142.48/viewerjs/#../0529/slides.pdf</a></p>\n"
+  },
+  {
+   "md": "http://example.com/foo_bar..",
+   "html": "<p><a href=\"http://example.com/foo_bar\">http://example.com/foo_bar</a>..</p>\n"
+  },
+  {
+   "md": "http://example.com/foo_bar?p=10.",
+   "html": "<p><a href=\"http://example.com/foo_bar?p=10\">http://example.com/foo_bar?p=10</a>.</p>\n"
+  },
+  {
+   "md": "http://example.com/foo_bar?p=10",
+   "html": "<p><a href=\"http://example.com/foo_bar?p=10\">http://example.com/foo_bar?p=10</a></p>\n"
+  },
+  {
+   "md": "https://www.google.ru/maps/@59.9393895,30.3165389,15z?hl=ru",
+   "html": "<p><a href=\"https://www.google.ru/maps/@59.9393895,30.3165389,15z?hl=ru\">https://www.google.ru/maps/@59.9393895,30.3165389,15z?hl=ru</a></p>\n"
+  },
+  {
+   "md": "https://www.google.com/maps/place/New+York,+NY,+USA/@40.702271,-73.9968471,11z/data=!4m2!3m1!1s0x89c24fa5d33f083b:0xc80b8f06e177fe62?hl=en",
+   "html": "<p><a href=\"https://www.google.com/maps/place/New+York,+NY,+USA/@40.702271,-73.9968471,11z/data=!4m2!3m1!1s0x89c24fa5d33f083b:0xc80b8f06e177fe62?hl=en\">https://www.google.com/maps/place/New+York,+NY,+USA/@40.702271,-73.9968471,11z/data=!4m2!3m1!1s0x89c24fa5d33f083b:0xc80b8f06e177fe62?hl=en</a></p>\n"
+  },
+  {
+   "md": "https://www.google.com/analytics/web/?hl=ru&pli=1#report/visitors-overview/a26895874w20458057p96934174/",
+   "html": "<p><a href=\"https://www.google.com/analytics/web/?hl=ru&amp;pli=1#report/visitors-overview/a26895874w20458057p96934174/\">https://www.google.com/analytics/web/?hl=ru&amp;pli=1#report/visitors-overview/a26895874w20458057p96934174/</a></p>\n"
+  },
+  {
+   "md": "http://business.timesonline.co.uk/article/0,,9065-2473189,00.html",
+   "html": "<p><a href=\"http://business.timesonline.co.uk/article/0,,9065-2473189,00.html\">http://business.timesonline.co.uk/article/0,,9065-2473189,00.html</a></p>\n"
+  },
+  {
+   "md": "https://google.com/mail/u/0/#label/!!!Today/15c9b8193da01e65",
+   "html": "<p><a href=\"https://google.com/mail/u/0/#label/!!!Today/15c9b8193da01e65\">https://google.com/mail/u/0/#label/!!!Today/15c9b8193da01e65</a></p>\n"
+  },
+  {
+   "md": "http://example.com/123!",
+   "html": "<p><a href=\"http://example.com/123\">http://example.com/123</a>!</p>\n"
+  },
+  {
+   "md": "http://example.com/123",
+   "html": "<p><a href=\"http://example.com/123\">http://example.com/123</a></p>\n"
+  },
+  {
+   "md": "http://example.com/123!!!",
+   "html": "<p><a href=\"http://example.com/123\">http://example.com/123</a>!!!</p>\n"
+  },
+  {
+   "md": "http://example.com/foo--bar",
+   "html": "<p><a href=\"http://example.com/foo--bar\">http://example.com/foo--bar</a></p>\n"
+  },
+  {
+   "md": "See http://example.com/123; Example link.",
+   "html": "<p>See <a href=\"http://example.com/123\">http://example.com/123</a>; Example link.</p>\n"
+  },
+  {
+   "md": "http://example.com/123;123",
+   "html": "<p><a href=\"http://example.com/123;123\">http://example.com/123;123</a></p>\n"
+  },
+  {
+   "md": "http://www.bloomberg.com/news/articles/2015-06-26/from-deutsche-bank-to-siemens-what-s-troubling-germany-inc-",
+   "html": "<p><a href=\"http://www.bloomberg.com/news/articles/2015-06-26/from-deutsche-bank-to-siemens-what-s-troubling-germany-inc-\">http://www.bloomberg.com/news/articles/2015-06-26/from-deutsche-bank-to-siemens-what-s-troubling-germany-inc-</a></p>\n"
+  },
+  {
+   "md": "http://example.com/foo-with-trailing-dash-dot-.",
+   "html": "<p><a href=\"http://example.com/foo-with-trailing-dash-dot-\">http://example.com/foo-with-trailing-dash-dot-</a>.</p>\n"
+  },
+  {
+   "md": "http://example.com/foo-with-trailing-dash-dot-",
+   "html": "<p><a href=\"http://example.com/foo-with-trailing-dash-dot-\">http://example.com/foo-with-trailing-dash-dot-</a></p>\n"
+  },
+  {
+   "md": "<http://domain.com>",
+   "html": "<p><a href=\"http://domain.com\">http://domain.com</a></p>\n"
+  },
+  {
+   "md": "http://domain.com",
+   "html": "<p><a href=\"http://domain.com\">http://domain.com</a></p>\n"
+  },
+  {
+   "md": "<http://domain.com>.",
+   "html": "<p><a href=\"http://domain.com\">http://domain.com</a>.</p>\n"
+  },
+  {
+   "md": "<http://domain.com/foo>",
+   "html": "<p><a href=\"http://domain.com/foo\">http://domain.com/foo</a></p>\n"
+  },
+  {
+   "md": "http://domain.com/foo",
+   "html": "<p><a href=\"http://domain.com/foo\">http://domain.com/foo</a></p>\n"
+  },
+  {
+   "md": "<http://domain.com/foo>.",
+   "html": "<p><a href=\"http://domain.com/foo\">http://domain.com/foo</a>.</p>\n"
+  },
+  {
+   "md": "<domain.com>",
+   "html": "<p>&lt;<a href=\"http://domain.com\">domain.com</a>&gt;</p>\n"
+  },
+  {
+   "md": "domain.com",
+   "html": "<p><a href=\"http://domain.com\">domain.com</a></p>\n"
+  },
+  {
+   "md": "<domain.com>.",
+   "html": "<p>&lt;<a href=\"http://domain.com\">domain.com</a>&gt;.</p>\n"
+  },
+  {
+   "md": "<domain.com/foo>",
+   "html": "<p>&lt;<a href=\"http://domain.com/foo\">domain.com/foo</a>&gt;</p>\n"
+  },
+  {
+   "md": "domain.com/foo",
+   "html": "<p><a href=\"http://domain.com/foo\">domain.com/foo</a></p>\n"
+  },
+  {
+   "md": "<user@domain.com>",
+   "html": "<p><a href=\"mailto:user@domain.com\">user@domain.com</a></p>\n"
+  },
+  {
+   "md": "user@domain.com",
+   "html": "<p><a href=\"mailto:user@domain.com\">user@domain.com</a></p>\n"
+  },
+  {
+   "md": "<user@domain.com>.",
+   "html": "<p><a href=\"mailto:user@domain.com\">user@domain.com</a>.</p>\n"
+  },
+  {
+   "md": "<mailto:user@domain.com>",
+   "html": "<p><a href=\"mailto:user@domain.com\">mailto:user@domain.com</a></p>\n"
+  },
+  {
+   "md": "mailto:user@domain.com",
+   "html": "<p><a href=\"mailto:user@domain.com\">mailto:user@domain.com</a></p>\n"
+  },
+  {
+   "md": "test.\"foo\".bar@gmail.co.uk!",
+   "html": "<p><a href=\"mailto:test.%22foo%22.bar@gmail.co.uk\">test.&quot;foo&quot;.bar@gmail.co.uk</a>!</p>\n"
+  },
+  {
+   "md": "test.\"foo\".bar@gmail.co.uk",
+   "html": "<p><a href=\"mailto:test.%22foo%22.bar@gmail.co.uk\">test.&quot;foo&quot;.bar@gmail.co.uk</a></p>\n"
+  },
+  {
+   "md": "\"test@example.com\"",
+   "html": "<p>&quot;<a href=\"mailto:test@example.com\">test@example.com</a>&quot;</p>\n"
+  },
+  {
+   "md": "test@example.com",
+   "html": "<p><a href=\"mailto:test@example.com\">test@example.com</a></p>\n"
+  },
+  {
+   "md": "name@example.com",
+   "html": "<p><a href=\"mailto:name@example.com\">name@example.com</a></p>\n"
+  },
+  {
+   "md": ">>name@example.com",
+   "html": "<blockquote>\n<blockquote>\n<p><a href=\"mailto:name@example.com\">name@example.com</a></p>\n</blockquote>\n</blockquote>\n"
+  },
+  {
+   "md": "mailto:name@example.com",
+   "html": "<p><a href=\"mailto:name@example.com\">mailto:name@example.com</a></p>\n"
+  },
+  {
+   "md": "MAILTO:NAME@EXAMPLE.COM",
+   "html": "<p><a href=\"MAILTO:NAME@EXAMPLE.COM\">MAILTO:NAME@EXAMPLE.COM</a></p>\n"
+  },
+  {
+   "md": "mailto:foo_bar@example.com",
+   "html": "<p><a href=\"mailto:foo_bar@example.com\">mailto:foo_bar@example.com</a></p>\n"
+  },
+  {
+   "md": "foo+bar@gmail.com",
+   "html": "<p><a href=\"mailto:foo+bar@gmail.com\">foo+bar@gmail.com</a></p>\n"
+  },
+  {
+   "md": "192.168.1.1@gmail.com",
+   "html": "<p><a href=\"mailto:192.168.1.1@gmail.com\">192.168.1.1@gmail.com</a></p>\n"
+  },
+  {
+   "md": "mailto:foo@bar",
+   "html": "<p><a href=\"mailto:foo@bar\">mailto:foo@bar</a></p>\n"
+  },
+  {
+   "md": "(foobar email@example.com)",
+   "html": "<p>(foobar <a href=\"mailto:email@example.com\">email@example.com</a>)</p>\n"
+  },
+  {
+   "md": "email@example.com",
+   "html": "<p><a href=\"mailto:email@example.com\">email@example.com</a></p>\n"
+  },
+  {
+   "md": "(email@example.com foobar)",
+   "html": "<p>(<a href=\"mailto:email@example.com\">email@example.com</a> foobar)</p>\n"
+  },
+  {
+   "md": "(email@example.com)",
+   "html": "<p>(<a href=\"mailto:email@example.com\">email@example.com</a>)</p>\n"
+  },
+  {
+   "md": "http://✪df.ws/123",
+   "html": "<p><a href=\"http://xn--df-oiy.ws/123\">http://✪df.ws/123</a></p>\n"
+  },
+  {
+   "md": "http://xn--df-oiy.ws/123",
+   "html": "<p><a href=\"http://xn--df-oiy.ws/123\">http://✪df.ws/123</a></p>\n"
+  },
+  {
+   "md": "a.ws",
+   "html": "<p><a href=\"http://a.ws\">a.ws</a></p>\n"
+  },
+  {
+   "md": "➡.ws/䨹",
+   "html": "<p><a href=\"http://xn--hgi.ws/%E4%A8%B9\">➡.ws/䨹</a></p>\n"
+  },
+  {
+   "md": "example.com/䨹",
+   "html": "<p><a href=\"http://example.com/%E4%A8%B9\">example.com/䨹</a></p>\n"
+  },
+  {
+   "md": "президент.рф",
+   "html": "<p><a href=\"http://xn--d1abbgf6aiiy.xn--p1ai\">президент.рф</a></p>\n"
+  },
+  {
+   "md": "http://www.bürgerentscheid-krankenhäuser.de",
+   "html": "<p><a href=\"http://www.xn--brgerentscheid-krankenhuser-xkc78d.de\">http://www.bürgerentscheid-krankenhäuser.de</a></p>\n"
+  },
+  {
+   "md": "http://www.xn--brgerentscheid-krankenhuser-xkc78d.de",
+   "html": "<p><a href=\"http://www.xn--brgerentscheid-krankenhuser-xkc78d.de\">http://www.bürgerentscheid-krankenhäuser.de</a></p>\n"
+  },
+  {
+   "md": "http://bündnis-für-krankenhäuser.de/wp-content/uploads/2011/11/cropped-logohp.jpg",
+   "html": "<p><a href=\"http://xn--bndnis-fr-krankenhuser-i5b27cha.de/wp-content/uploads/2011/11/cropped-logohp.jpg\">http://bündnis-für-krankenhäuser.de/wp-content/uploads/2011/11/cropped-logohp.jpg</a></p>\n"
+  },
+  {
+   "md": "http://xn--bndnis-fr-krankenhuser-i5b27cha.de/wp-content/uploads/2011/11/cropped-logohp.jpg",
+   "html": "<p><a href=\"http://xn--bndnis-fr-krankenhuser-i5b27cha.de/wp-content/uploads/2011/11/cropped-logohp.jpg\">http://bündnis-für-krankenhäuser.de/wp-content/uploads/2011/11/cropped-logohp.jpg</a></p>\n"
+  },
+  {
+   "md": "http://ﻡﻮﻘﻋ.ﻭﺯﺍﺭﺓ-ﺍﻼﺘﺻﺍﻼﺗ.ﻢﺻﺭ/",
+   "html": "<p><a href=\"http://xn--8e7cza0a4c.xn----og0iba1a1af8nqa0knx5fd.xn--ee7c1a6h/\">http://ﻡﻮﻘﻋ.ﻭﺯﺍﺭﺓ-ﺍﻼﺘﺻﺍﻼﺗ.ﻢﺻﺭ/</a></p>\n"
+  },
+  {
+   "md": "http://xn--4gbrim.xn----ymcbaaajlc6dj7bxne2c.xn--wgbh1c/",
+   "html": "<p><a href=\"http://xn--4gbrim.xn----ymcbaaajlc6dj7bxne2c.xn--wgbh1c/\">http://موقع.وزارة-الاتصالات.مصر/</a></p>\n"
+  },
+  {
+   "md": "｜www.google.com/www.google.com/foo｜bar",
+   "html": "<p>｜<a href=\"http://www.google.com/www.google.com/foo\">www.google.com/www.google.com/foo</a>｜bar</p>\n"
+  },
+  {
+   "md": "www.google.com/www.google.com/foo",
+   "html": "<p><a href=\"http://www.google.com/www.google.com/foo\">www.google.com/www.google.com/foo</a></p>\n"
+  },
+  {
+   "md": "｜test@google.com｜bar",
+   "html": "<p>｜<a href=\"mailto:test@google.com\">test@google.com</a>｜bar</p>\n"
+  },
+  {
+   "md": "test@google.com",
+   "html": "<p><a href=\"mailto:test@google.com\">test@google.com</a></p>\n"
+  },
+  {
+   "md": "｜http://google.com｜bar",
+   "html": "<p>｜<a href=\"http://google.com\">http://google.com</a>｜bar</p>\n"
+  },
+  {
+   "md": "http://google.com",
+   "html": "<p><a href=\"http://google.com\">http://google.com</a></p>\n"
+  },
+  {
+   "md": "https://5b0ee223b312746c1659db3f--thelounge-chat.netlify.com/docs/",
+   "html": "<p><a href=\"https://5b0ee223b312746c1659db3f--thelounge-chat.netlify.com/docs/\">https://5b0ee223b312746c1659db3f--thelounge-chat.netlify.com/docs/</a></p>\n"
+  },
+  {
+   "md": "www.a--b.com",
+   "html": "<p><a href=\"http://www.a--b.com\">www.a--b.com</a></p>\n"
+  },
+  {
+   "md": "www.c--u.com",
+   "html": "<p><a href=\"http://www.c--u.com\">www.c--u.com</a></p>\n"
+  },
+  {
+   "md": "http://a---b.com/",
+   "html": "<p><a href=\"http://a---b.com/\">http://a---b.com/</a></p>\n"
+  },
+  {
+   "md": "example.invalid",
+   "html": "<p>example.invalid</p>\n"
+  },
+  {
+   "md": "example.invalid/",
+   "html": "<p>example.invalid/</p>\n"
+  },
+  {
+   "md": "http://.example.com",
+   "html": "<p>http://.example.com</p>\n"
+  },
+  {
+   "md": "http://-example.com",
+   "html": "<p>http://-example.com</p>\n"
+  },
+  {
+   "md": "hppt://example.com",
+   "html": "<p>hppt://example.com</p>\n"
+  },
+  {
+   "md": "example.coma",
+   "html": "<p>example.coma</p>\n"
+  },
+  {
+   "md": "-example.coma",
+   "html": "<p>-example.coma</p>\n"
+  },
+  {
+   "md": "foo.123",
+   "html": "<p>foo.123</p>\n"
+  },
+  {
+   "md": "localhost",
+   "html": "<p>localhost</p>\n"
+  },
+  {
+   "md": "localhost/",
+   "html": "<p>localhost/</p>\n"
+  },
+  {
+   "md": "///localhost",
+   "html": "<p>///localhost</p>\n"
+  },
+  {
+   "md": "///test.com",
+   "html": "<p>///test.com</p>\n"
+  },
+  {
+   "md": "//test",
+   "html": "<p>//test</p>\n"
+  },
+  {
+   "md": "_http://example.com",
+   "html": "<p>_<a href=\"http://example.com\">http://example.com</a></p>\n"
+  },
+  {
+   "md": "_//example.com",
+   "html": "<p>_//example.com</p>\n"
+  },
+  {
+   "md": "_example.com",
+   "html": "<p>_example.com</p>\n"
+  },
+  {
+   "md": "http://example.com_",
+   "html": "<p>http://example.com_</p>\n"
+  },
+  {
+   "md": "@example.com",
+   "html": "<p>@example.com</p>\n"
+  },
+  {
+   "md": "node.js and io.js",
+   "html": "<p>node.js and io.js</p>\n"
+  },
+  {
+   "md": "http://",
+   "html": "<p>http://</p>\n"
+  },
+  {
+   "md": "http://.",
+   "html": "<p>http://.</p>\n"
+  },
+  {
+   "md": "http://..",
+   "html": "<p>http://..</p>\n"
+  },
+  {
+   "md": "http://#",
+   "html": "<p>http://#</p>\n"
+  },
+  {
+   "md": "http://##",
+   "html": "<p>http://##</p>\n"
+  },
+  {
+   "md": "http://?",
+   "html": "<p>http://?</p>\n"
+  },
+  {
+   "md": "http://??",
+   "html": "<p>http://??</p>\n"
+  },
+  {
+   "md": "google.com:500000 // invalid port",
+   "html": "<p>google.com:500000 // invalid port</p>\n"
+  },
+  {
+   "md": "show image.jpg",
+   "html": "<p>show image.jpg</p>\n"
+  },
+  {
+   "md": "path:to:file.pm",
+   "html": "<p>path:to:file.pm</p>\n"
+  },
+  {
+   "md": "/path/to/file.pl",
+   "html": "<p>/path/to/file.pl</p>\n"
+  },
+  {
+   "md": "1.2.3.4.5",
+   "html": "<p>1.2.3.4.5</p>\n"
+  },
+  {
+   "md": "1.2.3",
+   "html": "<p>1.2.3</p>\n"
+  },
+  {
+   "md": "1.2.3.400",
+   "html": "<p>1.2.3.400</p>\n"
+  },
+  {
+   "md": "1000.2.3.4",
+   "html": "<p>1000.2.3.4</p>\n"
+  },
+  {
+   "md": "a1.2.3.4",
+   "html": "<p>a1.2.3.4</p>\n"
+  },
+  {
+   "md": "1.2.3.4a",
+   "html": "<p>1.2.3.4a</p>\n"
+  },
+  {
+   "md": "foo@bar",
+   "html": "<p>foo@bar</p>\n"
+  },
+  {
+   "md": "mailto:bar",
+   "html": "<p>mailto:bar</p>\n"
+  },
+  {
+   "md": "url http://www.youtube.com/watch?v=5Jt5GEr4AYg.",
+   "html": "<p>url <a href=\"http://www.youtube.com/watch?v=5Jt5GEr4AYg\">http://www.youtube.com/watch?v=5Jt5GEr4AYg</a>.</p>\n"
+  },
+  {
+   "md": "[https://example.com](https://example.com)",
+   "html": "<p><a href=\"https://example.com\">https://example.com</a></p>\n"
+  },
+  {
+   "md": "<https://example.com>",
+   "html": "<p><a href=\"https://example.com\">https://example.com</a></p>\n"
+  },
+  {
+   "md": "<a href=\"https://example.com\">https://example.com</a>",
+   "html": "<p>&lt;a href=&quot;<a href=\"https://example.com\">https://example.com</a>&quot;&gt;<a href=\"https://example.com\">https://example.com</a>&lt;/a&gt;</p>\n"
+  },
+  {
+   "md": "https://example.com/foo&amp;bar",
+   "html": "<p><a href=\"https://example.com/foo&amp;amp;bar\">https://example.com/foo&amp;amp;bar</a></p>\n"
+  },
+  {
+   "md": "https://example.com/foo*bar*baz",
+   "html": "<p><a href=\"https://example.com/foo*bar*baz\">https://example.com/foo*bar*baz</a></p>\n"
+  },
+  {
+   "md": "http://example.org/foo._bar_-_baz",
+   "html": "<p><a href=\"http://example.org/foo._bar_-_baz\">http://example.org/foo._bar_-_baz</a></p>\n"
+  },
+  {
+   "md": "https://example.com/foo`bar`baz",
+   "html": "<p><a href=\"https://example.com/foo%60bar%60baz\">https://example.com/foo`bar`baz</a></p>\n"
+  },
+  {
+   "md": "https://example.com/foo[123](456)bar",
+   "html": "<p><a href=\"https://example.com/foo%5B123%5D(456)bar\">https://example.com/foo[123](456)bar</a></p>\n"
+  },
+  {
+   "md": "\\https://example.com",
+   "html": "<p>\\https://example.com</p>\n"
+  },
+  {
+   "md": "https\\://example.com",
+   "html": "<p>https://example.com</p>\n"
+  },
+  {
+   "md": "https:\\//aa.org https://bb.org",
+   "html": "<p>https://aa.org <a href=\"https://bb.org\">https://bb.org</a></p>\n"
+  },
+  {
+   "md": "https:/\\/cc.org",
+   "html": "<p>https://cc.org</p>\n"
+  },
+  {
+   "md": "**http://example.com/foobar**",
+   "html": "<p><strong><a href=\"http://example.com/foobar\">http://example.com/foobar</a></strong></p>\n"
+  },
+  {
+   "md": "www.example.org",
+   "html": "<p><a href=\"http://www.example.org\">www.example.org</a></p>\n"
+  },
+  {
+   "md": "test@example.com\n\nmailto:test@example.com",
+   "html": "<p><a href=\"mailto:test@example.com\">test@example.com</a></p>\n<p><a href=\"mailto:test@example.com\">mailto:test@example.com</a></p>\n"
+  },
+  {
+   "md": "http://example.com/(c)",
+   "html": "<p><a href=\"http://example.com/(c)\">http://example.com/(c)</a></p>\n"
+  },
+  {
+   "md": "http:/example.com/",
+   "html": "<p>http:/example.com/</p>\n"
+  },
+  {
+   "md": "</a>[https://example.com](https://example.com)",
+   "html": "<p>&lt;/a&gt;<a href=\"https://example.com\">https://example.com</a></p>\n"
+  },
+  {
+   "md": "http://cdecl.ridiculousfish.com/?q=int+%28*f%29+%28float+*%29%3B",
+   "html": "<p><a href=\"http://cdecl.ridiculousfish.com/?q=int+%28*f%29+%28float+*%29%3B\">http://cdecl.ridiculousfish.com/?q=int+(*f)+(float+*)%3B</a></p>\n"
+  },
+  {
+   "md": "https://www.sell.fi/sites/default/files/elainlaakarilehti/tieteelliset_artikkelit/kahkonen_t._et_al.canine_pancreatitis-_review.pdf",
+   "html": "<p><a href=\"https://www.sell.fi/sites/default/files/elainlaakarilehti/tieteelliset_artikkelit/kahkonen_t._et_al.canine_pancreatitis-_review.pdf\">https://www.sell.fi/sites/default/files/elainlaakarilehti/tieteelliset_artikkelit/kahkonen_t._et_al.canine_pancreatitis-_review.pdf</a></p>\n"
+  },
+  {
+   "md": "i.org[x[x][xx: htt://a.b://a",
+   "html": "<p><a href=\"http://i.org\">i.org</a>[x[x][xx: htt://a.b://a</p>\n"
+  }
+ ]
+}

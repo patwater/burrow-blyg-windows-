@@ -1,0 +1,17 @@
+{
+  "name": "tr_ambiguous",
+  "kind": "thread",
+  "md": "![[02abcdefghjkmnpqrstvwxyz03]]",
+  "html": "<blockquote class=\"blyg-transclusion unresolved\"><p>⚠ unresolvable: ambiguous id: imported from more than one origin</p></blockquote>",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": [
+    {
+      "directive": "![[02abcdefghjkmnpqrstvwxyz03]]",
+      "reason": "ambiguous id: imported from more than one origin"
+    }
+  ]
+}

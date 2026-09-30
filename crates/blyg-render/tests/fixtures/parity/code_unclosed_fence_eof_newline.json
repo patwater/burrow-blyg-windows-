@@ -1,0 +1,12 @@
+{
+  "name": "code_unclosed_fence_eof_newline",
+  "kind": "fragment",
+  "md": "```\nends with newline\n",
+  "html": "<pre><code>ends with newline\n</code></pre>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

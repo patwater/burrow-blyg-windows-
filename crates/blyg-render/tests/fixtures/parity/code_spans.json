@@ -1,0 +1,12 @@
+{
+  "name": "code_spans",
+  "kind": "fragment",
+  "md": "Use `` a ` b `` and `<tag>` and ` padded ` code.",
+  "html": "<p>Use <code>a ` b</code> and <code>&lt;tag&gt;</code> and <code>padded</code> code.</p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

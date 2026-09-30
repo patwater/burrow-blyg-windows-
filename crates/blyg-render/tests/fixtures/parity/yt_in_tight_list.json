@@ -1,0 +1,12 @@
+{
+  "name": "yt_in_tight_list",
+  "kind": "fragment",
+  "md": "- https://youtu.be/Qa1b2C3d4E5\n- second",
+  "html": "<ul>\n<li><a href=\"https://youtu.be/Qa1b2C3d4E5\">https://youtu.be/Qa1b2C3d4E5</a></li>\n<li>second</li>\n</ul>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

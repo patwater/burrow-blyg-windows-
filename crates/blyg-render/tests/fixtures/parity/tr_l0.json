@@ -1,0 +1,17 @@
+{
+  "name": "tr_l0",
+  "kind": "thread",
+  "md": "![[02abcdefghjkmnpqrstvwxyz04]]",
+  "html": "<blockquote class=\"blyg-transclusion unresolved\"><p>⚠ unresolvable: source is a plain RSS (L0) item, not a blyg item</p></blockquote>",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": [
+    {
+      "directive": "![[02abcdefghjkmnpqrstvwxyz04]]",
+      "reason": "source is a plain RSS (L0) item, not a blyg item"
+    }
+  ]
+}

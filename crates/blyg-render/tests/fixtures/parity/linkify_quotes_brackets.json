@@ -1,0 +1,12 @@
+{
+  "name": "linkify_quotes_brackets",
+  "kind": "fragment",
+  "md": "\"https://example.org/quoted\" and <em>https://example.org/lt</em> and [https://example.org/bracket]",
+  "html": "<p>&quot;<a href=\"https://example.org/quoted\">https://example.org/quoted</a>&quot; and &lt;em&gt;<a href=\"https://example.org/lt\">https://example.org/lt</a>&lt;/em&gt; and [<a href=\"https://example.org/bracket\">https://example.org/bracket</a>]</p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

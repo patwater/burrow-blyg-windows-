@@ -1,0 +1,31 @@
+{
+  "name": "tk_multiple",
+  "kind": "fragment",
+  "md": "One [TK]a[=]alpha[/TK], two [TK]b[/TK], three [TK]c[=]gamma[/TK].",
+  "html": "<p>One <span class=\"blyg-tk-gen\">alpha</span>, two <span class=\"blyg-tk-gen\">⚠ ungenerated — b</span>, three <span class=\"blyg-tk-gen\">gamma</span>.</p>\n",
+  "tk": {
+    "scopes": [
+      {
+        "instruction": "a",
+        "generated": true,
+        "block": false,
+        "source_ids": []
+      },
+      {
+        "instruction": "b",
+        "generated": false,
+        "block": false,
+        "source_ids": []
+      },
+      {
+        "instruction": "c",
+        "generated": true,
+        "block": false,
+        "source_ids": []
+      }
+    ],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

@@ -1,0 +1,19 @@
+{
+  "name": "tk_block_with_image_and_yt",
+  "kind": "fragment",
+  "md": "[TK]media[=]![pic](https://images.example.org/p.png)\n\nhttps://youtu.be/Qa1b2C3d4E5[/TK]",
+  "html": "<div class=\"blyg-tk-gen\"><p><img src=\"https://images.example.org/p.png\" alt=\"pic\" referrerpolicy=\"no-referrer\"></p>\n<figure class=\"blyg-yt\" data-ytid=\"Qa1b2C3d4E5\"><a class=\"blyg-yt-poster\" href=\"https://youtu.be/Qa1b2C3d4E5\" aria-label=\"Play video\"><img src=\"https://i.ytimg.com/vi/Qa1b2C3d4E5/hqdefault.jpg\" alt=\"\" width=\"480\" height=\"360\" loading=\"lazy\" referrerpolicy=\"no-referrer\"></a><figcaption><a href=\"https://youtu.be/Qa1b2C3d4E5\">https://youtu.be/Qa1b2C3d4E5</a></figcaption></figure>\n</div>\n",
+  "tk": {
+    "scopes": [
+      {
+        "instruction": "media",
+        "generated": true,
+        "block": true,
+        "source_ids": []
+      }
+    ],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

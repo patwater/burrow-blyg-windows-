@@ -1,0 +1,12 @@
+{
+  "name": "tr_in_fragment",
+  "kind": "fragment",
+  "md": "Opening.\n\n![[01j9zq3k4m5n6p7q8r9s0t1v2w]]\n\nClosing.",
+  "html": "<p>Opening.</p>\n<p>![[01j9zq3k4m5n6p7q8r9s0t1v2w]]</p>\n<p>Closing.</p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

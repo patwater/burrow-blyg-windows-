@@ -1,0 +1,12 @@
+{
+  "name": "reference_multiline",
+  "kind": "fragment",
+  "md": "[foo]\n\n[foo]:\n  /url\n  \"the title\"\n\n[FOO bar][]\n\n[Foo  Bar]: /other",
+  "html": "<p><a href=\"/url\" title=\"the title\">foo</a></p>\n<p><a href=\"/other\">FOO bar</a></p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

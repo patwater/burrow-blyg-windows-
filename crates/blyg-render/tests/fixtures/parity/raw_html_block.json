@@ -1,0 +1,12 @@
+{
+  "name": "raw_html_block",
+  "kind": "fragment",
+  "md": "<div onclick=\"steal()\">hi</div>\n\n<script>alert(1)</script>\n\n<!-- comment -->",
+  "html": "<p>&lt;div onclick=&quot;steal()&quot;&gt;hi&lt;/div&gt;</p>\n<p>&lt;script&gt;alert(1)&lt;/script&gt;</p>\n<p>&lt;!-- comment --&gt;</p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

@@ -1,0 +1,12 @@
+{
+  "name": "images_alt_escapes_link",
+  "kind": "fragment",
+  "md": "[![a\\_b &lt;c&gt;](/i.png)](/l) ![`code` \\` &quot;q&quot;](/q.png)",
+  "html": "<p><a href=\"/l\"><img src=\"/i.png\" alt=\"a_b &lt;c&gt;\"></a> <img src=\"/q.png\" alt=\" ` &quot;q&quot;\"></p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

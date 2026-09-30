@@ -1,0 +1,12 @@
+{
+  "name": "code_fenced",
+  "kind": "fragment",
+  "md": "```rust\nfn main() { println!(\"<hi>\"); }\n```\n\n~~~\nplain & tilde\n~~~",
+  "html": "<pre><code class=\"language-rust\">fn main() { println!(&quot;&lt;hi&gt;&quot;); }\n</code></pre>\n<pre><code>plain &amp; tilde\n</code></pre>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

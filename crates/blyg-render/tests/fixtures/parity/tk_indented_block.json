@@ -1,0 +1,19 @@
+{
+  "name": "tk_indented_block",
+  "kind": "fragment",
+  "md": "Para.\n\n    [TK]x[=]indented output[/TK]\n\nMore.",
+  "html": "<p>Para.</p>\n<pre><code><span class=\"blyg-tk-gen\">indented output</span>\n</code></pre>\n<p>More.</p>\n",
+  "tk": {
+    "scopes": [
+      {
+        "instruction": "x",
+        "generated": true,
+        "block": true,
+        "source_ids": []
+      }
+    ],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

@@ -1,0 +1,17 @@
+{
+  "name": "tr_splits_list",
+  "kind": "thread",
+  "md": "- one\n![[01j9zq3k4m5n6p7q8r9s0t1v2w]]\n- two",
+  "html": "<ul>\n<li>one</li>\n</ul>\n\n<blockquote class=\"blyg-transclusion\" data-blyg-id=\"01j9zq3k4m5n6p7q8r9s0t1v2w\" data-blyg-version=\"3\">\n<p>Small tools, used daily, beat big tools used rarely.</p>\n\n\n<p class=\"provenance\"><a href=\"/blyg/f/01j9zq3k4m5n6p7q8r9s0t1v2w/\">fragment ↗</a> · snapshot of v3</p></blockquote>\n<ul>\n<li>two</li>\n</ul>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [
+    {
+      "id": "01j9zq3k4m5n6p7q8r9s0t1v2w",
+      "version": 3
+    }
+  ],
+  "errors": []
+}

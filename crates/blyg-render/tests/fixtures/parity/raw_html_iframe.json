@@ -1,0 +1,12 @@
+{
+  "name": "raw_html_iframe",
+  "kind": "fragment",
+  "md": "<iframe src=\"https://example.org/\"></iframe>",
+  "html": "<p>&lt;iframe src=&quot;<a href=\"https://example.org/\">https://example.org/</a>&quot;&gt;&lt;/iframe&gt;</p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

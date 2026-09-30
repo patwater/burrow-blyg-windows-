@@ -1,0 +1,12 @@
+{
+  "name": "linkify_auth_ports",
+  "kind": "fragment",
+  "md": "http://user:pass@example.org/ and http://example.org:99999/ and https://ex_ample.org/ and http://example.org:8080",
+  "html": "<p><a href=\"http://user:pass@example.org/\">http://user:pass@example.org/</a> and http://example.org:99999/ and https://ex_ample.org/ and <a href=\"http://example.org:8080\">http://example.org:8080</a></p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

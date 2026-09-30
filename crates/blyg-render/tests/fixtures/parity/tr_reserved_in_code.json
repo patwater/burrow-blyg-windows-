@@ -1,0 +1,17 @@
+{
+  "name": "tr_reserved_in_code",
+  "kind": "thread",
+  "md": "    ![[01j9zq3k4m5n6p7q8r9s0t1v2w@v2]]\n\n![[01j9zq3k4m5n6p7q8r9s0t1v2w@v2]]",
+  "html": "<pre><code>![[01j9zq3k4m5n6p7q8r9s0t1v2w@v2]]\n</code></pre>\n\n<blockquote class=\"blyg-transclusion unresolved\"><p>⚠ unresolvable: explicit-version references (@vN) are reserved, not supported in v0.1</p></blockquote>",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": [
+    {
+      "directive": "![[01j9zq3k4m5n6p7q8r9s0t1v2w@v2]]",
+      "reason": "explicit-version references (@vN) are reserved, not supported in v0.1"
+    }
+  ]
+}

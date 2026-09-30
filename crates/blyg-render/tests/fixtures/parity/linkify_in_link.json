@@ -1,0 +1,12 @@
+{
+  "name": "linkify_in_link",
+  "kind": "fragment",
+  "md": "[see https://example.org/x](https://example.org/y)",
+  "html": "<p><a href=\"https://example.org/y\">see https://example.org/x</a></p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

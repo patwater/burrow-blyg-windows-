@@ -1,0 +1,12 @@
+{
+  "name": "emphasis_mix",
+  "kind": "fragment",
+  "md": "*em* _em_ **strong** __strong__ ***both*** `code` ~~strike~~",
+  "html": "<p><em>em</em> <em>em</em> <strong>strong</strong> <strong>strong</strong> <em><strong>both</strong></em> <code>code</code> <s>strike</s></p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

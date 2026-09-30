@@ -1,0 +1,12 @@
+{
+  "name": "blockquote_basic",
+  "kind": "fragment",
+  "md": "> quoted\nlazy continuation\n\n> > nested\n> back",
+  "html": "<blockquote>\n<p>quoted\nlazy continuation</p>\n</blockquote>\n<blockquote>\n<blockquote>\n<p>nested\nback</p>\n</blockquote>\n</blockquote>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

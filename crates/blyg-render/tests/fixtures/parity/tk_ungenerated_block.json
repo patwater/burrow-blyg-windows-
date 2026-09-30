@@ -1,0 +1,19 @@
+{
+  "name": "tk_ungenerated_block",
+  "kind": "fragment",
+  "md": "[TK]  an opening line  [/TK]\n\nBody.",
+  "html": "<div class=\"blyg-tk-gen\"><p>⚠ ungenerated — an opening line</p>\n</div>\n<p>Body.</p>\n",
+  "tk": {
+    "scopes": [
+      {
+        "instruction": "an opening line",
+        "generated": false,
+        "block": true,
+        "source_ids": []
+      }
+    ],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

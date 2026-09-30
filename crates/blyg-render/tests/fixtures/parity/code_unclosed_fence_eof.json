@@ -1,0 +1,12 @@
+{
+  "name": "code_unclosed_fence_eof",
+  "kind": "fragment",
+  "md": "Text.\n\n```js\nlet a = 1;\n\nlet b = 2;",
+  "html": "<p>Text.</p>\n<pre><code class=\"language-js\">let a = 1;\n\nlet b = 2;</code></pre>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

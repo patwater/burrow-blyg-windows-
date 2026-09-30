@@ -1,0 +1,24 @@
+{
+  "name": "tk_block_dollar_thread",
+  "kind": "thread",
+  "md": "Before.\n\n[TK]money[=]Costs $5, see $& and $`.[/TK]\n\n![[01j9zq3k4m5n6p7q8r9s0t1v2w]]",
+  "html": "<p>Before.</p>\n<div class=\"blyg-tk-gen\"><p>Costs $5, see $&amp; and $`.</p>\n</div>\n\n<blockquote class=\"blyg-transclusion\" data-blyg-id=\"01j9zq3k4m5n6p7q8r9s0t1v2w\" data-blyg-version=\"3\">\n<p>Small tools, used daily, beat big tools used rarely.</p>\n\n\n<p class=\"provenance\"><a href=\"/blyg/f/01j9zq3k4m5n6p7q8r9s0t1v2w/\">fragment ↗</a> · snapshot of v3</p></blockquote>",
+  "tk": {
+    "scopes": [
+      {
+        "instruction": "money",
+        "generated": true,
+        "block": true,
+        "source_ids": []
+      }
+    ],
+    "errors": []
+  },
+  "transclusions": [
+    {
+      "id": "01j9zq3k4m5n6p7q8r9s0t1v2w",
+      "version": 3
+    }
+  ],
+  "errors": []
+}

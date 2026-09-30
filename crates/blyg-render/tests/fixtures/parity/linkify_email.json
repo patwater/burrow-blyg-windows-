@@ -1,0 +1,12 @@
+{
+  "name": "linkify_email",
+  "kind": "fragment",
+  "md": "Mail someone@example.com or mailto:other@example.org please.",
+  "html": "<p>Mail <a href=\"mailto:someone@example.com\">someone@example.com</a> or <a href=\"mailto:other@example.org\">mailto:other@example.org</a> please.</p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

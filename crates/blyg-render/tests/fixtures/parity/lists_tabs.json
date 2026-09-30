@@ -1,0 +1,12 @@
+{
+  "name": "lists_tabs",
+  "kind": "fragment",
+  "md": "-\tone\n-\ttwo\n\n\tcode with tab\n",
+  "html": "<ul>\n<li>\n<p>one</p>\n</li>\n<li>\n<p>two</p>\n<p>code with tab</p>\n</li>\n</ul>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

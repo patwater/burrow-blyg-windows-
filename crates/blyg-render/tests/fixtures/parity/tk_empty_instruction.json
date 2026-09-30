@@ -1,0 +1,19 @@
+{
+  "name": "tk_empty_instruction",
+  "kind": "fragment",
+  "md": "[TK][/TK]",
+  "html": "<div class=\"blyg-tk-gen\"><p>⚠ ungenerated — (no instruction)</p>\n</div>\n",
+  "tk": {
+    "scopes": [
+      {
+        "instruction": "",
+        "generated": false,
+        "block": true,
+        "source_ids": []
+      }
+    ],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

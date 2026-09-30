@@ -1,0 +1,12 @@
+{
+  "name": "tr_heading_and_code",
+  "kind": "thread",
+  "md": "# Title\n\n```js\nconsole.log(\"![[01j9zq3k4m5n6p7q8r9s0t1v2w]]\")\n```\n\n    ![[01j9zq3k4m5n6p7q8r9s0t1v2w]]",
+  "html": "<h1>Title</h1>\n<pre><code class=\"language-js\">console.log(&quot;![[01j9zq3k4m5n6p7q8r9s0t1v2w]]&quot;)\n</code></pre>\n<pre><code>![[01j9zq3k4m5n6p7q8r9s0t1v2w]]\n</code></pre>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

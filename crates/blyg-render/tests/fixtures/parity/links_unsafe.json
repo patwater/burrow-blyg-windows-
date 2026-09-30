@@ -1,0 +1,12 @@
+{
+  "name": "links_unsafe",
+  "kind": "fragment",
+  "md": "[x](javascript:alert(1)) [y](vbscript:msgbox) [z](file:///etc/passwd) [d](data:text/html;base64,AAAA)\n\n![ok](data:image/png;base64,AAAA)",
+  "html": "<p>[x](javascript:alert(1)) [y](vbscript:msgbox) [z](file:///etc/passwd) [d](data:text/html;base64,AAAA)</p>\n<p><img src=\"data:image/png;base64,AAAA\" alt=\"ok\"></p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

@@ -1,0 +1,17 @@
+{
+  "name": "tr_draft",
+  "kind": "thread",
+  "md": "![[01j9zq3k4m5n6p7q8r9s0t1v4y]]",
+  "html": "<blockquote class=\"blyg-transclusion unresolved\"><p>⚠ unresolvable: item is a draft, not published</p></blockquote>",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": [
+    {
+      "directive": "![[01j9zq3k4m5n6p7q8r9s0t1v4y]]",
+      "reason": "item is a draft, not published"
+    }
+  ]
+}

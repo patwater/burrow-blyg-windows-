@@ -1,0 +1,12 @@
+{
+  "name": "yt_titled",
+  "kind": "fragment",
+  "md": "[a talk](https://www.youtube.com/watch?v=Zx9_abc-123)",
+  "html": "<p><a href=\"https://www.youtube.com/watch?v=Zx9_abc-123\">a talk</a></p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

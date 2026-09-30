@@ -1,0 +1,27 @@
+{
+  "name": "tr_provenance_order",
+  "kind": "thread",
+  "md": "![[03zzzzzzzzzzzzzzzzzzzzzzzz]]\n\n![[01j9zq3k4m5n6p7q8r9s0t1v3x]]\n\n> plain quote\n\n![[02abcdefghjkmnpqrstvwxyz01]]",
+  "html": "<blockquote class=\"blyg-transclusion unresolved\"><p>⚠ unresolvable: unknown item</p></blockquote>\n\n<blockquote class=\"blyg-transclusion\" data-blyg-id=\"01j9zq3k4m5n6p7q8r9s0t1v3x\" data-blyg-version=\"2\">\n<p>A thread about notebooks.</p>\n<blockquote class=\"blyg-transclusion\" data-blyg-id=\"01j9zq3k4m5n6p7q8r9s0t1v2w\" data-blyg-version=\"1\">\n<p>An older quoted fragment.</p>\n\n</blockquote>\n<p>Closing thought.</p>\n\n\n<p class=\"provenance\"><a href=\"/blyg/t/01j9zq3k4m5n6p7q8r9s0t1v3x/\">thread ↗</a> · snapshot of v2</p></blockquote>\n<blockquote>\n<p>plain quote</p>\n</blockquote>\n\n<blockquote class=\"blyg-transclusion\" data-blyg-id=\"02abcdefghjkmnpqrstvwxyz01\" data-blyg-version=\"5\" data-blyg-origin=\"https://blyg.example.com/\">\n<p>Writing is thinking with a pencil.</p>\n\n\n<p class=\"provenance\"><a href=\"https://blyg.example.com/f/02abcdefghjkmnpqrstvwxyz01/\">from <em>Example Notes</em> ↗</a> · snapshot of v5</p></blockquote>",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [
+    {
+      "id": "01j9zq3k4m5n6p7q8r9s0t1v3x",
+      "version": 2
+    },
+    {
+      "id": "02abcdefghjkmnpqrstvwxyz01",
+      "version": 5,
+      "origin": "https://blyg.example.com/"
+    }
+  ],
+  "errors": [
+    {
+      "directive": "![[03zzzzzzzzzzzzzzzzzzzzzzzz]]",
+      "reason": "unknown item"
+    }
+  ]
+}

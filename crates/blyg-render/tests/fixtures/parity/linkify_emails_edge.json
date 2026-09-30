@@ -1,0 +1,12 @@
+{
+  "name": "linkify_emails_edge",
+  "kind": "fragment",
+  "md": "a.b+c@example.co.uk and \"quoted\"@example.com and user@localhost and x@y and (mail@example.org)",
+  "html": "<p><a href=\"mailto:a.b+c@example.co.uk\">a.b+c@example.co.uk</a> and &quot;<a href=\"mailto:quoted%22@example.com\">quoted&quot;@example.com</a> and user@localhost and x@y and (<a href=\"mailto:mail@example.org\">mail@example.org</a>)</p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

@@ -1,0 +1,12 @@
+{
+  "name": "unicode_misc",
+  "kind": "fragment",
+  "md": "emoji 😀 *עברית* é  nbsp em",
+  "html": "<p>emoji 😀 <em>עברית</em> é  nbsp em</p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

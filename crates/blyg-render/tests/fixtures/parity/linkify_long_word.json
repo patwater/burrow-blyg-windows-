@@ -1,0 +1,12 @@
+{
+  "name": "linkify_long_word",
+  "kind": "fragment",
+  "md": "supercalifragilisticexpialidocious-and-a-very-long-hyphenated-word-without-any-link.example-ish text",
+  "html": "<p>supercalifragilisticexpialidocious-and-a-very-long-hyphenated-word-without-any-link.example-ish text</p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

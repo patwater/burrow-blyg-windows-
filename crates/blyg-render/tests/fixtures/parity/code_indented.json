@@ -1,0 +1,12 @@
+{
+  "name": "code_indented",
+  "kind": "fragment",
+  "md": "Para\n\n    indented code\n    <b>kept</b>\n\nafter",
+  "html": "<p>Para</p>\n<pre><code>indented code\n&lt;b&gt;kept&lt;/b&gt;\n</code></pre>\n<p>after</p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

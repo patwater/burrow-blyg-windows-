@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Blygger Desktop — profiles</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Literata:ital,opsz,wght@0,7..72,400;1,7..72,400&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#efece5;--card:#faf8f3;--ink:#1d1b18;--muted:#6b665d;--line:#dcd6c9;--accent:#9b3d1f;--paper:#fffff8;--pink:#a4271b}
+@media (prefers-color-scheme: dark){:root{--bg:#121110;--card:#1b1a18;--ink:#ebe6dc;--muted:#9a9489;--line:#2f2d29;--accent:#e08a63}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 Inter,system-ui,sans-serif;padding:28px 16px 160px}
+main{max-width:1120px;margin:0 auto}
+h1{font:italic 400 2.3rem/1.1 Literata,Georgia,serif;margin:0 0 6px}
+h2{font:italic 400 1.5rem/1.2 Literata,Georgia,serif;margin:34px 0 6px}
+.sub{color:var(--muted);margin:0 0 18px;max-width:760px}
+kbd{font:500 .76rem Inter;padding:1px 6px;border:1px solid var(--line);border-bottom-width:2px;border-radius:5px;background:var(--card)}
+.win{background:#fffff8;color:#111;border-radius:12px;overflow:hidden;box-shadow:0 0 0 1px rgba(0,0,0,.12),0 24px 60px -20px rgba(0,0,0,.35);font-size:14px}
+.tb{height:34px;display:flex;align-items:center;gap:7px;padding:0 12px;background:#f4f1e6;border-bottom:1px solid #e4dfcf}
+.tb i{width:12px;height:12px;border-radius:50%}.tb i:nth-child(1){background:#ff5f57}.tb i:nth-child(2){background:#febc2e}.tb i:nth-child(3){background:#28c840}
+.tb .sw{margin-left:auto;display:flex;gap:4px;font:12.5px Inter;color:#6b665d}.tb .sw span{padding:2px 8px;border-radius:6px}.tb .sw .on{background:#e9e4d6;color:#111}
+.panes{display:grid;grid-template-columns:36% 1fr;height:560px}
+.list{border-right:1px solid #e4dfcf;overflow:auto}
+.row{padding:10px 14px;border-bottom:1px solid #eee9dc;cursor:pointer}.row.sel{background:#f1ecdf;box-shadow:inset 3px 0 0 var(--pink)}
+.row small{display:block;color:#8a8173;font-size:11.5px}
+.row b{font-weight:500}
+.read{padding:22px 30px;overflow:auto;position:relative}
+.hdr{display:flex;align-items:center;gap:8px;font:12.5px Inter;color:#8a8173;flex-wrap:wrap}
+.who{color:#111;cursor:pointer;border-bottom:1px dotted #b9ae9c}.who:hover{color:var(--pink);border-color:var(--pink)}
+.pill{border:1px solid #d9d2c1;border-radius:99px;padding:0 9px;color:var(--pink);font-weight:600}
+.lineage{margin:8px 0 0;font:12.5px Inter;color:#6b665d;display:flex;gap:14px;flex-wrap:wrap}
+.lineage a{color:#111;cursor:pointer;border-bottom:1px dotted #b9ae9c;text-decoration:none}.lineage a:hover{color:var(--pink)}
+.body{font:17px/1.65 Literata,Georgia,serif;margin-top:14px}
+blockquote{margin:14px 0;padding:8px 12px;border-left:3px solid #c9bfa9;background:#f4efe2;border-radius:0 4px 4px 0;font-size:15px}
+blockquote .prov{display:block;font:11.5px Inter;color:#8a8173;margin-top:4px}
+blockquote .prov a{color:#6b665d;cursor:pointer;border-bottom:1px dotted #b9ae9c}
+.btns{display:flex;gap:8px;margin-top:18px}
+.btn{font:500 12.5px Inter;border:1px solid #d9d2c1;border-radius:7px;padding:5px 10px;background:#fff;cursor:pointer;color:#111}
+.btn.pri{border-color:var(--pink);color:var(--pink)}
+.btn.done{background:#f1ecdf;color:#6b665d;border-color:#e4dfcf}
+/* profile sheet */
+.scrim{position:absolute;inset:0;background:rgba(20,18,15,.18);display:none}
+.scrim.on{display:block}
+.prof{position:absolute;top:0;right:0;bottom:0;width:min(440px,100%);background:#fffff8;border-left:1px solid #e4dfcf;box-shadow:-18px 0 40px -24px rgba(0,0,0,.3);padding:20px 22px;overflow:auto;transform:translateX(105%);transition:transform .22s}
+.prof.on{transform:none}
+.ph{display:flex;gap:12px;align-items:center}
+.av{width:52px;height:52px;border-radius:50%;background:linear-gradient(135deg,#e7c49a,#a4271b);flex:none}
+.ph .n{font:italic 400 1.35rem/1.1 Literata,serif}
+.ph .o{font:12px Inter;color:#8a8173}
+.bio{font:15px/1.55 Literata,serif;margin:12px 0 8px;color:#2a2622}
+.links{display:flex;gap:10px;flex-wrap:wrap;font:12.5px Inter}.links a{color:#6b665d}
+.pbtns{display:flex;gap:8px;margin:14px 0 6px}
+.tabs{display:flex;gap:16px;border-bottom:1px solid #e4dfcf;margin-top:14px;font:13px Inter}
+.tabs span{padding:6px 0;cursor:pointer;color:#8a8173}.tabs .on{color:#111;box-shadow:inset 0 -2px 0 var(--pink)}
+.tab{display:none;padding-top:8px}.tab.on{display:block}
+.br{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid #eee9dc}
+.br .t{flex:1;min-width:0}.br .t b{font-weight:500;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.br small{color:#8a8173;font-size:11.5px}
+.tag{font:600 10px Inter;letter-spacing:.04em;text-transform:uppercase;border:1px solid #d9d2c1;border-radius:4px;padding:0 4px;color:#8a8173}
+.post{padding:9px 0;border-bottom:1px solid #eee9dc}.post small{color:#8a8173;font-size:11.5px;display:block}
+.note{font:12px Inter;color:#8a8173;margin-top:14px}
+.toast{position:absolute;left:50%;bottom:16px;transform:translateX(-50%);background:#1d1b18;color:#fff;font:12.5px Inter;padding:7px 12px;border-radius:8px;opacity:0;transition:opacity .2s;pointer-events:none}
+.toast.on{opacity:1}
+.cards{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:14px}
+@media (max-width:820px){.cards{grid-template-columns:1fr}.panes{grid-template-columns:1fr}.list{display:none}}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px;font-size:.88rem}
+.card b{display:block;margin-bottom:3px}
+.fbw{margin-top:10px}
+textarea{width:100%;min-height:58px;padding:9px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink);font:14px Inter;resize:vertical}
+#float{position:fixed;right:16px;bottom:16px;width:min(360px,calc(100% - 32px));background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px;box-shadow:0 12px 32px -12px rgba(0,0,0,.35)}
+#float textarea{min-height:48px}
+#copy{margin-top:6px;width:100%;background:var(--accent);color:#fff;border:0;border-radius:8px;padding:8px;font:600 13px Inter;cursor:pointer}
+</style>
+</head>
+<body>
+<main>
+<h1>Profiles</h1>
+<p class="sub">Who someone is, who they read, and one click to follow them, or anyone they quote, stub or fork. Everything comes from the other blyg's public files (manifest, blogroll, archive index). It's fetched without your token, and there are no counts anywhere. Click the <u>dotted</u> names in the window below.</p>
+
+<div class="win" id="win">
+  <div class="tb"><i></i><i></i><i></i><div class="sw"><span>Posts</span><span class="on">Reading</span><span>Mentions</span><span>Subscriptions</span></div></div>
+  <div class="panes">
+    <div class="list">
+      <div class="row sel"><small>kit · thread · v2</small><b>Hello? Is this thing on?</b></div>
+      <div class="row"><small>Rue · blyg · v5</small><b>A hyperlink is a small unit of trust</b></div>
+      <div class="row"><small>Lin · blyg · edited · v4</small><b>Gardens, not streams</b></div>
+    </div>
+    <div class="read">
+      <div class="hdr"><span class="who" data-p="kit">kit.example.org</span> · ≡ thread <span class="pill">‹ v2 · current ▾ ›</span></div>
+      <div class="lineage">
+        <span>↳ stub of <a data-p="ada">ada.example.net · "On first posts"</a></span>
+        <span>⑂ forked from <a data-p="rue">rue.example.com v3 📌</a></span>
+      </div>
+      <div class="body">
+        <blockquote>Every first post is a test of whether anyone is listening.<span class="prov">quoted from <a data-p="ada">ada.example.net</a> · thread v1 · snapshotted at publish</span></blockquote>
+        <p>Hello? Is this thing on? You're my first stub.</p>
+      </div>
+      <div class="btns"><span class="btn">Quote</span><span class="btn">Reply</span><span class="btn">AI reply</span><span class="btn">Open on web</span><span class="btn" data-p="kit">Profile <kbd>⌘I</kbd></span></div>
+
+      <div class="scrim" id="scrim"></div>
+      <div class="prof" id="prof"></div>
+      <div class="toast" id="toast"></div>
+    </div>
+  </div>
+</div>
+<div class="fbw"><textarea data-s="The window: entry points (dotted names, lineage line, quote provenance, ⌘I)" placeholder="Entry points OK? Anything else that should open a profile?"></textarea></div>
+
+<h2>How it works</h2>
+<div class="cards">
+  <div class="card"><b>Open a profile from anywhere</b>An author's address in the reading header, the "↳ stub of" / "⑂ forked from" line, the source line under a quote, a mention, an entry in someone's blogroll, or a pasted URL (<kbd>⇧⌘O</kbd> Open profile…). An RSS feed gets a simpler card: title, link and recent posts.</div>
+  <div class="card"><b>What a profile shows</b>Name, bio, avatar and links from their manifest. <b>Blogroll</b>: their public <code>blogroll.opml</code>, each entry with Follow / Following. <b>Posts</b>: recent items from their archive index. <b>Connections</b>: blygs they quote, stub or fork, taken from their own posts. Lists only, no counts.</div>
+  <div class="card"><b>Follow = subscribe</b>Follow runs the same subscribe preview you already have, in one click. Following is private and client-local, so nobody gets a follower count. "Add to my blogroll" is a separate, deliberate choice. Profiles are cached and work offline.</div>
+</div>
+<div class="fbw"><textarea data-s="How it works (entry points, contents, follow semantics)" placeholder="Anything to add or drop? e.g. should Follow also add to your blogroll by default?"></textarea></div>
+
+<h2>Worth deciding</h2>
+<div class="cards">
+  <div class="card"><b>Privacy</b>Opening a profile fetches public files from that person's server, so it sees your IP, just like visiting their site in a browser. The app never sends your token or cookies. Option: fetch only when you open a profile, never in the background (proposed).</div>
+  <div class="card"><b>Connections tab</b>Built from the posts of theirs you hold, plus their archive index. Useful for "A stubs B, B looks interesting". It can be left out of v1 if it feels noisy.</div>
+  <div class="card"><b>Your own profile</b>The same sheet for your blyg (⌘I on your post) shows what visitors see, with "Edit site settings…" and your blogroll with toggles.</div>
+</div>
+<div class="fbw"><textarea data-s="Decisions (privacy, connections tab, own profile)" placeholder="Your calls on these"></textarea></div>
+</main>
+
+<div id="float"><textarea data-s="General" placeholder="General comments…"></textarea><button id="copy">Copy all feedback</button></div>
+
+<script>
+const P={
+ kit:{n:'Kit',o:'kit.example.org',bio:'Tinkering in public. Mostly short notes about tools and the people who make them.',links:['site','mastodon','github'],following:true,
+   roll:[['Ada Lovelace-ish','ada.example.net','blyg'],['Rue','rue.example.com','blyg'],['Small Tools Weekly','tools.example.com/feed.xml','rss'],['Omar\'s notes','omar.example.org','rss']],
+   posts:[['Hello? Is this thing on?','thread · v2 · today'],['Ghost rows are affordances','fragment · v1 · 3d'],['Why I moved my notes to a blyg','thread · v3 📌 · 2w']],
+   conn:[['ada.example.net','stubbed 2 posts'],['rue.example.com','forked 1 pin'],['lin.example.org','quoted 3 times']]},
+ ada:{n:'Ada',o:'ada.example.net',bio:'Writes about beginnings: first posts, first drafts, first tools.',links:['site'],following:false,
+   roll:[['Kit','kit.example.org','blyg'],['Lin','lin.example.org','blyg'],['Field Notes Quarterly','fieldnotes.example.com/rss','rss']],
+   posts:[['On first posts','thread · v1 📌 · 1w'],['The quiet web','fragment · v2 · 2w']],
+   conn:[['lin.example.org','quoted 1 time']]},
+ rue:{n:'Rue',o:'rue.example.com',bio:'Archivist by day. Every archive is an argument about what mattered.',links:['site','newsletter'],following:true,
+   roll:[['Ada','ada.example.net','blyg'],['Tide Tables','tides.example.org','blyg']],
+   posts:[['A hyperlink is a small unit of trust','thread · v5 · 1d'],['Every archive is an argument','fragment · withdrawn · 3w']],
+   conn:[]}
+};
+const followed=new Set(['kit.example.org','rue.example.com','omar.example.org']);
+const $=s=>document.querySelector(s);
+function toast(t){const e=$('#toast');e.textContent=t;e.classList.add('on');clearTimeout(e._t);e._t=setTimeout(()=>e.classList.remove('on'),1800)}
+function fbtn(o){const on=followed.has(o);return `<span class="btn ${on?'done':'pri'}" data-f="${o}">${on?'Following ✓':'Follow'}</span>`}
+function open(k){const p=P[k];if(!p)return;
+ $('#prof').innerHTML=`<div class="ph"><div class="av"></div><div><div class="n">${p.n}</div><div class="o">${p.o} · blyg</div></div><span class="btn" style="margin-left:auto" id="x">esc</span></div>
+ <div class="bio">${p.bio}</div><div class="links">${p.links.map(l=>`<a href="#" onclick="return false">${l} ↗</a>`).join('')}</div>
+ <div class="pbtns">${fbtn(p.o)}<span class="btn">Open site</span><span class="btn">Add to my blogroll</span></div>
+ <div class="tabs"><span class="on" data-t="roll">Blogroll</span><span data-t="posts">Posts</span><span data-t="conn">Connections</span></div>
+ <div class="tab on" id="t-roll">${p.roll.map(([t,o,k])=>`<div class="br"><div class="t"><b>${t}</b><small>${o}</small></div><span class="tag">${k}</span>${P[Object.keys(P).find(x=>P[x].o===o)]?`<span class="btn" data-p="${Object.keys(P).find(x=>P[x].o===o)}">Profile</span>`:''}${fbtn(o)}</div>`).join('')}</div>
+ <div class="tab" id="t-posts">${p.posts.map(([t,m])=>`<div class="post"><b style="font-weight:500">${t}</b><small>${m}</small></div>`).join('')}</div>
+ <div class="tab" id="t-conn">${p.conn.length?p.conn.map(([o,r])=>{const k=Object.keys(P).find(x=>P[x].o===o);return `<div class="br"><div class="t"><b>${o}</b><small>${r}</small></div>${k?`<span class="btn" data-p="${k}">Profile</span>`:''}${fbtn(o)}</div>`}).join(''):'<div class="note">No quotes, stubs or forks in the posts we hold.</div>'}</div>
+ <div class="note">From ${p.o}/blyg.json, blogroll.opml and items/index.json, fetched without your token. Cached for offline use.</div>`;
+ $('#prof').classList.add('on');$('#scrim').classList.add('on');}
+function close(){$('#prof').classList.remove('on');$('#scrim').classList.remove('on')}
+document.addEventListener('click',e=>{
+ const p=e.target.closest('[data-p]');if(p){open(p.dataset.p);return}
+ const f=e.target.closest('[data-f]');if(f){const o=f.dataset.f;if(followed.has(o)){toast('Already following '+o+' · unfollow in Subscriptions')}else{followed.add(o);toast('Previewing '+o+'… subscribed ✓');document.querySelectorAll(`[data-f="${o}"]`).forEach(b=>{b.className='btn done';b.textContent='Following ✓'})}return}
+ const t=e.target.closest('[data-t]');if(t){document.querySelectorAll('.tabs span').forEach(s=>s.classList.toggle('on',s===t));document.querySelectorAll('.tab').forEach(s=>s.classList.toggle('on',s.id==='t-'+t.dataset.t));return}
+ if(e.target.id==='x'||e.target.id==='scrim')close();
+});
+document.addEventListener('keydown',e=>{if(e.key==='Escape')close();if(e.metaKey&&e.key==='i'){e.preventDefault();open('kit')}});
+$('#copy').onclick=async()=>{const t=[...document.querySelectorAll('textarea')].filter(x=>x.value.trim()).map(x=>`## ${x.dataset.s}\n${x.value.trim()}`).join('\n\n')||'## Profiles\nLooks good, build it.';try{await navigator.clipboard.writeText(t)}catch{};$('#copy').textContent='Copied ✓';setTimeout(()=>$('#copy').textContent='Copy all feedback',1500)};
+</script>
+</body>
+</html>
