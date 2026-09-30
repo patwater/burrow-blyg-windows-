@@ -48,7 +48,7 @@ Every Windows change is gated with `cfg(target_os = "windows")` (or `cfg(windows
 
 | Area | Change |
 |---|---|
-| Preview and editor | A WebView2 surface through `wry` (`studio/webview.rs`), reusing the macOS page script, IPC, and navigation guard. GPUI's topmost DirectComposition layer is turned off at startup (`GPUI_DISABLE_DIRECT_COMPOSITION`), because it would cover the child webview. |
+| Preview and editor | A WebView2 surface through `wry` (`studio/webview.rs`), reusing the macOS page script, IPC, and navigation guard. GPUI's topmost DirectComposition layer is turned off at startup (`GPUI_DISABLE_DIRECT_COMPOSITION`), because it would cover the child webview. Creating a WebView2 runs a nested message loop, which crashed the app when GPUI asked for one mid-frame, so `DeferredSurface` builds it from a thread timer in GPUI's top-level loop and replays what it was asked to do meanwhile. |
 | Keys | `keymap::platform_keys` respells `cmd` as `ctrl`; `glyphs` and `hotkey_glyphs` write `Ctrl+Shift+X`; `keymap::hint` rewrites key hints in the app's text (`⇧⌘G` → `Ctrl+Shift+G`) and is the identity on macOS; the clash tests use a Windows list of system shortcuts. |
 | Window and menu | The native title bar, and `windows_menu.rs`, a Menu button that lists `cx.get_menus()`. The toolbar strip is not a window drag area on Windows (`app.rs`), because GPUI answers `HTCAPTION` for it and clicks on the toolbar and Menu buttons drawn over it would move the window instead. Release builds use the `windows` subsystem, so no console window opens; `blygger +action` attaches to the terminal that ran it. |
 | Wording | `keymap::hint` also rewrites macOS words (`Keychain` → `Credential Manager`, `this Mac` → `this PC`); the config file header is Windows-worded. |
@@ -58,6 +58,10 @@ Every Windows change is gated with `cfg(target_os = "windows")` (or `cfg(windows
 | External programs | Notepad for the config file, the shell URL handler for the browser, `.exe`/`.cmd` CLI shims. The CLI bridges start with `CREATE_NO_WINDOW`, and npm's `claude.cmd` shim gets the system prompt through `--system-prompt-file`, because cmd.exe can't pass a multi-line argument. |
 | Updates | Off on Windows (`update::disabled_reason`); the updater's tests stay macOS-only. |
 | Executable | `build.rs` embeds `packaging/Blygger.ico`; GPUI's `windows-manifest` feature supplies the per-monitor-DPI manifest. |
+
+## If it crashes
+
+A crash shows a message and writes what happened to `%LOCALAPPDATA%\Blygger\crash.log` (the latest crash only). Please include that file when you report it.
 
 ## Known gaps
 

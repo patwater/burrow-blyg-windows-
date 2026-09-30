@@ -56,6 +56,8 @@ fn main() -> ExitCode {
         // SAFETY: first thing in main, before any other thread exists.
         unsafe { std::env::set_var("GPUI_DISABLE_DIRECT_COMPOSITION", "1") };
     }
+    #[cfg(target_os = "windows")]
+    install_crash_log();
     let args: Vec<String> = std::env::args().skip(1).collect();
     if let Some(code) = cli::run(&args) {
         return code;
@@ -223,6 +225,40 @@ fn open_main(
         }
         Err(e) => eprintln!("blygger: couldn't open the main window: {e}"),
     }
+}
+
+/// Windows: a GUI program has nowhere to print a panic, and a panic inside
+/// a window callback ends the process at once. Write what happened to
+/// `%LOCALAPPDATA%\Blygger\crash.log` (the latest crash only) and say so.
+#[cfg(target_os = "windows")]
+fn install_crash_log() {
+    let previous = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let dir = blyg_core::config::data_dir();
+        let path = dir.join("crash.log");
+        let report = format!(
+            "Blygger {} crashed at {}\n\n{info}\n\n{}\n",
+            env!("CARGO_PKG_VERSION"),
+            chrono::Utc::now().to_rfc3339(),
+            std::backtrace::Backtrace::force_capture()
+        );
+        let _ = std::fs::create_dir_all(&dir);
+        let _ = std::fs::write(&path, report);
+        previous(info);
+        #[link(name = "user32")]
+        unsafe extern "system" {
+            fn MessageBoxW(hwnd: isize, text: *const u16, caption: *const u16, kind: u32) -> i32;
+        }
+        let wide = |s: &str| s.encode_utf16().chain(Some(0)).collect::<Vec<u16>>();
+        let text = wide(&format!(
+            "Blygger hit a bug and has to close.\n\nWhat happened is saved in {}",
+            path.display()
+        ));
+        let caption = wide("Blygger");
+        const MB_ICONERROR: u32 = 0x10;
+        // SAFETY: two NUL-terminated UTF-16 strings that outlive the call.
+        unsafe { MessageBoxW(0, text.as_ptr(), caption.as_ptr(), MB_ICONERROR) };
+    }));
 }
 
 /// `BLYGGER_NO_ACTIVATE=1`: never take focus from the frontmost app (used by
