@@ -5,8 +5,9 @@
 //! sheet overlay, and event forwarding). The screens:
 //!
 //! - **Reading** (⌘R): one row per post; edited posts on top with
-//!   "edited · vN"; the author's notes since you read it, and a text diff only
-//!   when the version you read was pinned. The version pill `‹ vN ▾ ›` shows
+//!   "edited · vN"; a source column (All, then each subscription, `[` / `]`)
+//!   to read one subscription at a time; the author's notes since you read
+//!   it, and a text diff only when the version you read was pinned. The version pill `‹ vN ▾ ›` shows
 //!   only the current and pinned versions of someone else's post.
 //! - **Mentions** (⌘⇧M): a list, never a count; a dot for new.
 //! - **Subscriptions** (⌘⇧S): subscribe (preview first), unsubscribe,
@@ -223,8 +224,11 @@ pub struct State {
     pub search: Option<Entity<InputState>>,
     /// The reading search, as typed. Filters `rows` into `shown`.
     pub query: String,
-    /// Indices into `rows` that match `query`, in display order: what the
-    /// list shows and ↑/↓ move through.
+    /// The subscription picked in the source column (`None` = all of
+    /// them). Filters `rows` into `shown` with `query`.
+    pub source: Option<String>,
+    /// Indices into `rows` from `source` that match `query`, in display
+    /// order: what the list shows and ↑/↓ move through.
     pub shown: Vec<usize>,
 }
 
@@ -249,6 +253,7 @@ impl State {
             available: backend.read_extensions_available(),
             search: None,
             query: String::new(),
+            source: None,
             shown: Vec::new(),
         }
         .refiltered()
@@ -259,9 +264,25 @@ impl State {
         self
     }
 
-    /// Recompute `shown` after `rows` or `query` changed.
+    /// Recompute `shown` after `rows`, `query` or `source` changed. A
+    /// source with no posts left (unsubscribed, say) goes back to "All".
     pub fn refilter(&mut self) {
-        self.shown = vm::filter(&self.rows, &self.query);
+        if let Some(s) = &self.source
+            && !self.rows.iter().any(|r| &r.subscription_id == s)
+        {
+            self.source = None;
+        }
+        self.shown = vm::filter(&self.rows, &self.query, self.source.as_deref());
+    }
+
+    /// The source column's entries ("All" first).
+    pub fn sources(&self) -> Vec<vm::Source> {
+        vm::sources(&self.rows, &self.subs)
+    }
+
+    /// The column shows only when there's more than one source to pick.
+    pub fn has_source_column(sources: &[vm::Source]) -> bool {
+        sources.len() > 2
     }
 
     /// The rows the list shows (all of them without a search).
@@ -531,6 +552,15 @@ impl MainView {
             }
             (View::Reading, "/") => {
                 self.focus_reading_search(window, cx);
+                true
+            }
+            // [ / ]: the previous / next source (subscription).
+            (View::Reading, "[") => {
+                self.step_reading_source(-1, cx);
+                true
+            }
+            (View::Reading, "]") => {
+                self.step_reading_source(1, cx);
                 true
             }
             (_, "escape") => {

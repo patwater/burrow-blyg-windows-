@@ -55,6 +55,84 @@ pub trait PreviewSurface {
     fn probe(&mut self) {}
 }
 
+/// What a surface has been asked to do since it last caught up, coalesced:
+/// the last frame, visibility and theme win, a new page drops script queued
+/// for the old one, and script runs in order after the page. Windows applies
+/// these from its top-level message loop rather than at once
+/// (`wry_surface_windows`).
+#[cfg_attr(not(all(target_os = "windows", not(test))), allow(dead_code))]
+#[derive(Debug, Default, PartialEq)]
+pub struct Ops {
+    frame: Option<Bounds<Pixels>>,
+    visible: Option<bool>,
+    dark: Option<bool>,
+    html: Option<String>,
+    evals: Vec<String>,
+    focus_parent: bool,
+    probe: bool,
+}
+
+#[cfg_attr(not(all(target_os = "windows", not(test))), allow(dead_code))]
+impl Ops {
+    pub fn is_empty(&self) -> bool {
+        *self == Ops::default()
+    }
+
+    pub fn set_frame(&mut self, bounds: Bounds<Pixels>) {
+        self.frame = Some(bounds);
+    }
+
+    pub fn set_visible(&mut self, visible: bool) {
+        self.visible = Some(visible);
+    }
+
+    pub fn set_dark(&mut self, dark: bool) {
+        self.dark = Some(dark);
+    }
+
+    pub fn load(&mut self, html: &str) {
+        self.html = Some(html.to_string());
+        self.evals.clear();
+    }
+
+    pub fn eval(&mut self, js: &str) {
+        self.evals.push(js.to_string());
+    }
+
+    pub fn focus_parent(&mut self) {
+        self.focus_parent = true;
+    }
+
+    pub fn probe(&mut self) {
+        self.probe = true;
+    }
+
+    /// Do it all, in an order that never shows a stale frame or page.
+    pub fn apply(self, s: &mut dyn PreviewSurface) {
+        if let Some(b) = self.frame {
+            s.set_frame(b);
+        }
+        if let Some(d) = self.dark {
+            s.set_dark(d);
+        }
+        if let Some(h) = &self.html {
+            s.load(h);
+        }
+        for js in &self.evals {
+            s.eval(js);
+        }
+        if self.focus_parent {
+            s.focus_parent();
+        }
+        if let Some(v) = self.visible {
+            s.set_visible(v);
+        }
+        if self.probe {
+            s.probe();
+        }
+    }
+}
+
 /// Reports the page's geometry and what it rendered, as one JSON line.
 #[cfg_attr(test, allow(dead_code))]
 pub const PROBE_JS: &str = r#"JSON.stringify({
@@ -417,12 +495,15 @@ mod wry_surface_windows {
     use wry::{NewWindowResponse, Rect, Theme, WebView, WebViewBuilder, WebViewExtWindows};
 
     // Creating a WebView2 waits for it in a nested message loop
-    // (webview2-com's `wait_with_pump`). GPUI asks for the surface while it
-    // draws a frame, with the app borrowed, and a GPUI task or event that the
-    // nested loop dispatches then borrows the app again and panics, which
-    // aborts the process. So the WebView is built later, from a Win32 thread
-    // timer that GPUI's top-level message loop dispatches while nothing is
-    // borrowed; until then `DeferredSurface` records what it is asked to do.
+    // (webview2-com's `wait_with_pump`), and other WebView2 and Win32 calls
+    // (focus, show/hide, navigation) can send messages to GPUI's window
+    // synchronously. GPUI makes its calls on the surface while it draws a
+    // frame or runs an update, with the app borrowed, and a GPUI callback
+    // that such a message reaches then borrows the app again and panics,
+    // which aborts the process. So `DeferredSurface` touches no WebView2 or
+    // Win32 API itself: it records what it is asked ([`Ops`]), and a Win32
+    // thread timer, which GPUI's top-level message loop dispatches while
+    // nothing is borrowed, builds the WebView and applies them.
 
     #[link(name = "user32")]
     unsafe extern "system" {
@@ -474,19 +555,52 @@ mod wry_surface_windows {
         }
     }
 
-    /// What the surface was asked to do before its WebView existed.
     #[derive(Default)]
-    struct Pending {
+    struct Shared {
+        /// `None` while it is being built, or while a flush is using it.
         view: Option<WrySurface>,
-        frame: Option<Bounds<Pixels>>,
-        visible: bool,
-        dark: Option<bool>,
-        html: Option<String>,
-        evals: Vec<String>,
+        /// Asked for and not yet applied.
+        ops: Ops,
+        /// It couldn't be built: drop whatever is asked.
+        failed: bool,
     }
 
-    /// A WebView2 surface built outside GPUI's frame (see above).
-    pub struct DeferredSurface(Rc<RefCell<Pending>>);
+    type SharedRef = Rc<RefCell<Shared>>;
+
+    /// Apply what is pending, outside GPUI's frame. The view is taken out
+    /// while WebView2 runs, so a nested message loop inside one of its
+    /// calls that reaches here again finds nothing to do; anything asked
+    /// meanwhile is flushed after.
+    fn flush(weak: &Weak<RefCell<Shared>>) {
+        let Some(shared) = weak.upgrade() else {
+            return;
+        };
+        let (mut view, ops) = {
+            let Ok(mut s) = shared.try_borrow_mut() else {
+                return;
+            };
+            let Some(view) = s.view.take() else {
+                return;
+            };
+            (view, std::mem::take(&mut s.ops))
+        };
+        ops.apply(&mut view);
+        let again = {
+            let mut s = shared.borrow_mut();
+            s.view = Some(view);
+            !s.ops.is_empty()
+        };
+        if again {
+            schedule(weak.clone());
+        }
+    }
+
+    fn schedule(weak: Weak<RefCell<Shared>>) {
+        defer(Box::new(move || flush(&weak)));
+    }
+
+    /// A WebView2 surface that GPUI can drive from inside a frame (see above).
+    pub struct DeferredSurface(SharedRef);
 
     impl DeferredSurface {
         pub fn new(window: &mut Window, tx: Sender<SurfaceEvent>) -> Result<Self, String> {
@@ -494,102 +608,92 @@ mod wry_surface_windows {
                 Ok(RawWindowHandle::Win32(h)) => Hwnd(h.hwnd),
                 _ => return Err("The preview couldn't find its window.".into()),
             };
-            let pending = Rc::new(RefCell::new(Pending::default()));
-            let weak: Weak<RefCell<Pending>> = Rc::downgrade(&pending);
+            let shared = SharedRef::default();
+            let weak = Rc::downgrade(&shared);
             defer(Box::new(move || {
                 if weak.upgrade().is_none() {
                     return; // the pane went away first
                 }
                 let built = WrySurface::new(&hwnd, tx);
-                let Some(pending) = weak.upgrade() else {
+                let Some(shared) = weak.upgrade() else {
                     return;
                 };
                 match built {
-                    Ok(mut view) => {
-                        let mut p = pending.borrow_mut();
-                        if let Some(b) = p.frame {
-                            view.set_frame(b);
-                        }
-                        if let Some(d) = p.dark {
-                            view.set_dark(d);
-                        }
-                        if let Some(h) = p.html.take() {
-                            view.load(&h);
-                        }
-                        for js in std::mem::take(&mut p.evals) {
-                            view.eval(&js);
-                        }
-                        view.set_visible(p.visible);
-                        p.view = Some(view);
+                    Ok(view) => {
+                        shared.borrow_mut().view = Some(view);
+                        flush(&weak);
                     }
-                    Err(msg) => eprintln!("blygger: {msg}"),
+                    Err(msg) => {
+                        eprintln!("blygger: {msg}");
+                        let mut s = shared.borrow_mut();
+                        s.failed = true;
+                        s.ops = Ops::default();
+                    }
                 }
             }));
-            Ok(DeferredSurface(pending))
+            Ok(DeferredSurface(shared))
+        }
+
+        /// Record a change; ask for a flush when none is due. One is due
+        /// already when changes are pending, or the view is out being built
+        /// or used (whoever has it flushes what is pending when done).
+        fn ask(&mut self, f: impl FnOnce(&mut Ops)) {
+            let mut s = self.0.borrow_mut();
+            if s.failed {
+                return;
+            }
+            let idle = s.ops.is_empty() && s.view.is_some();
+            f(&mut s.ops);
+            drop(s);
+            if idle {
+                schedule(Rc::downgrade(&self.0));
+            }
+        }
+    }
+
+    impl Drop for DeferredSurface {
+        fn drop(&mut self) {
+            // Closing a WebView2 is a WebView2 call too.
+            if let Ok(mut s) = self.0.try_borrow_mut()
+                && let Some(view) = s.view.take()
+            {
+                defer(Box::new(move || drop(view)));
+            }
         }
     }
 
     impl PreviewSurface for DeferredSurface {
         fn set_frame(&mut self, bounds: Bounds<Pixels>) {
-            let mut p = self.0.borrow_mut();
-            match p.view.as_mut() {
-                Some(v) => v.set_frame(bounds),
-                None => p.frame = Some(bounds),
-            }
+            self.ask(|o| o.set_frame(bounds));
         }
 
         fn set_visible(&mut self, visible: bool) {
-            let mut p = self.0.borrow_mut();
-            match p.view.as_mut() {
-                Some(v) => v.set_visible(visible),
-                None => p.visible = visible,
-            }
+            self.ask(|o| o.set_visible(visible));
         }
 
         fn reclaim_keyboard(&mut self) {
-            if let Some(v) = self.0.borrow_mut().view.as_mut() {
-                v.reclaim_keyboard();
-            }
+            // On Windows this is `focus_parent` (see `WrySurface`).
+            self.ask(Ops::focus_parent);
         }
 
         fn load(&mut self, html: &str) {
-            let mut p = self.0.borrow_mut();
-            match p.view.as_mut() {
-                Some(v) => v.load(html),
-                None => {
-                    // A new page makes script queued for the old one moot.
-                    p.html = Some(html.to_string());
-                    p.evals.clear();
-                }
-            }
+            self.ask(|o| o.load(html));
         }
 
         fn eval(&mut self, js: &str) {
-            let mut p = self.0.borrow_mut();
-            match p.view.as_mut() {
-                Some(v) => v.eval(js),
-                None => p.evals.push(js.to_string()),
-            }
+            self.ask(|o| o.eval(js));
         }
 
         fn focus_parent(&mut self) {
-            if let Some(v) = self.0.borrow_mut().view.as_mut() {
-                v.focus_parent();
-            }
+            self.ask(Ops::focus_parent);
         }
 
         fn probe(&mut self) {
-            if let Some(v) = self.0.borrow_mut().view.as_mut() {
-                v.probe();
-            }
+            self.ask(Ops::probe);
         }
 
         fn set_dark(&mut self, dark: bool) {
-            let mut p = self.0.borrow_mut();
-            match p.view.as_mut() {
-                Some(v) => v.set_dark(dark),
-                None => p.dark = Some(dark),
-            }
+            self.ask(|o| o.set_dark(dark));
         }
     }
 
@@ -737,6 +841,66 @@ mod tests {
         assert_eq!(navigation("javascript:alert(1)"), Nav::Deny);
         assert_eq!(navigation("file:///etc/passwd"), Nav::Deny);
         assert_eq!(navigation("data:text/html,hi"), Nav::Deny);
+    }
+
+    /// Records the calls a surface gets, in order.
+    #[derive(Default)]
+    struct Calls(Vec<String>);
+
+    impl PreviewSurface for Calls {
+        fn set_frame(&mut self, b: Bounds<Pixels>) {
+            self.0.push(format!("frame {}", f32::from(b.size.width)));
+        }
+        fn set_visible(&mut self, v: bool) {
+            self.0.push(format!("visible {v}"));
+        }
+        fn load(&mut self, html: &str) {
+            self.0.push(format!("load {html}"));
+        }
+        fn eval(&mut self, js: &str) {
+            self.0.push(format!("eval {js}"));
+        }
+        fn focus_parent(&mut self) {
+            self.0.push("focus".into());
+        }
+        fn set_dark(&mut self, d: bool) {
+            self.0.push(format!("dark {d}"));
+        }
+    }
+
+    #[test]
+    fn deferred_ops_coalesce_and_keep_their_order() {
+        use gpui_kit::{point, px, size};
+        let b = |w: f32| Bounds::new(point(px(0.), px(0.)), size(px(w), px(10.)));
+        let mut o = Ops::default();
+        assert!(o.is_empty());
+        o.set_visible(true);
+        o.eval("old();");
+        o.set_frame(b(100.));
+        o.load("<p>a</p>");
+        o.set_frame(b(200.));
+        o.eval("patch();");
+        o.focus_parent();
+        o.set_visible(false);
+        o.set_dark(true);
+        assert!(!o.is_empty());
+        let mut calls = Calls::default();
+        o.apply(&mut calls);
+        assert_eq!(
+            calls.0,
+            [
+                "frame 200",
+                "dark true",
+                "load <p>a</p>",
+                "eval patch();",
+                "focus",
+                "visible false",
+            ],
+            "the last frame and visibility win; a new page drops older script"
+        );
+        let mut calls = Calls::default();
+        Ops::default().apply(&mut calls);
+        assert!(calls.0.is_empty());
     }
 
     #[test]

@@ -688,7 +688,7 @@ fn search_keeps_a_matching_post_open_and_says_when_nothing_matches(cx: &mut Test
     cx.run_until_parked();
     assert!(shown(&view, cx).is_empty());
     assert_eq!(
-        super::vm::no_match(&query(&view, cx)),
+        super::vm::no_match(&query(&view, cx), None),
         "No posts match “Zeppelin”"
     );
     // ↓ does nothing on an empty result.
@@ -700,6 +700,81 @@ fn search_keeps_a_matching_post_open_and_says_when_nothing_matches(cx: &mut Test
     cx.run_until_parked();
     assert_eq!(query(&view, cx), "  Zeppelin ");
     assert!(shown(&view, cx).is_empty());
+}
+
+// ---------------------------------------------------------------- sources
+
+fn source(view: &Entity<MainView>, cx: &mut VisualTestContext) -> Option<String> {
+    view.read_with(cx, |v, _| v.reading.source.clone())
+}
+
+#[gpui_kit::test]
+fn the_source_column_groups_reading_by_subscription(cx: &mut TestAppContext) {
+    let (view, _, cx) = setup(cx);
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-r"));
+    cx.run_until_parked();
+    assert!(
+        cx.debug_bounds("reading-sources").is_some(),
+        "several subscriptions: the column shows"
+    );
+    let titles: Vec<String> = view.read_with(cx, |v, _| {
+        v.reading.sources().into_iter().map(|s| s.title).collect()
+    });
+    assert_eq!(
+        titles,
+        [
+            "All",
+            "Ada",
+            "Lin",
+            "Omar's notes",
+            "Rue",
+            "Shoreline Notes"
+        ]
+    );
+    assert_eq!(source(&view, cx), None);
+    let all = shown(&view, cx).len();
+
+    // ] picks the next source: only Ada's posts, and nothing opens.
+    cx.simulate_keystrokes("]");
+    cx.run_until_parked();
+    assert_eq!(source(&view, cx).as_deref(), Some("sub-ada"));
+    assert_eq!(shown(&view, cx), [ADA_FINISHED, ADA_TIDES]);
+    assert_eq!(opened(&view, cx), None);
+
+    // ↓ opens the source's first post; a search stays inside the source.
+    cx.simulate_keystrokes("down");
+    settle(cx);
+    assert_eq!(opened(&view, cx).as_deref(), Some(ADA_FINISHED));
+    view.update_in(cx, |v, window, cx| v.set_reading_query("tide", window, cx));
+    cx.run_until_parked();
+    assert_eq!(shown(&view, cx), [ADA_TIDES]);
+    assert_eq!(opened(&view, cx), None, "the open post no longer matches");
+    view.update_in(cx, |v, window, cx| v.set_reading_query("", window, cx));
+    cx.run_until_parked();
+
+    // Another source closes a post it doesn't list; "All" keeps one open.
+    open_row(&view, ADA_TIDES, cx);
+    cx.simulate_keystrokes("]");
+    cx.run_until_parked();
+    assert_eq!(source(&view, cx).as_deref(), Some("sub-lin"));
+    assert_eq!(shown(&view, cx), [LIN_GARDENS]);
+    assert_eq!(opened(&view, cx), None);
+    open_row(&view, LIN_GARDENS, cx);
+    view.update(cx, |v, cx| v.select_reading_source(None, cx));
+    cx.run_until_parked();
+    assert_eq!(shown(&view, cx).len(), all);
+    assert_eq!(opened(&view, cx).as_deref(), Some(LIN_GARDENS));
+
+    // [ at "All" stays there; ] runs out at the last source.
+    cx.simulate_keystrokes("[");
+    cx.run_until_parked();
+    assert_eq!(source(&view, cx), None);
+    for _ in 0..titles.len() {
+        cx.simulate_keystrokes("]");
+    }
+    cx.run_until_parked();
+    let last = view.read_with(cx, |v, _| v.reading.sources().pop().and_then(|s| s.id));
+    assert_eq!(source(&view, cx), last);
 }
 
 // ---------------------------------------------------------------- actions (#3)

@@ -356,7 +356,9 @@ pub fn xml_unescape(s: &str) -> String {
     while let Some(i) = rest.find('&') {
         out.push_str(&rest[..i]);
         let tail = &rest[i..];
-        let Some(end) = tail[..tail.len().min(12)].find(';') else {
+        // Bytes, not a string slice: the 12th byte can fall inside a
+        // multi-byte character (`&amp; that’s`), and slicing there panics.
+        let Some(end) = tail.bytes().take(12).position(|b| b == b';') else {
             out.push('&');
             rest = &tail[1..];
             continue;
@@ -927,6 +929,19 @@ mod tests {
         let e = parse_manifest(&json!({ "blyg": "0.9", "author": "nope" }), O);
         assert_eq!(e, Manifest::default());
         assert_eq!(parse_manifest(&json!([1, 2]), O), Manifest::default());
+    }
+
+    #[test]
+    fn unescaping_never_splits_a_character() {
+        // A curly apostrophe straddles the 12th byte after the `&`.
+        assert_eq!(xml_unescape("R&amp; that’s"), "R& that’s");
+        assert_eq!(xml_unescape("AT&T — that’s ok"), "AT&T — that’s ok");
+        assert_eq!(xml_unescape("&#x2014;é&lt;"), "—é<");
+        // Every cut of a string full of multi-byte text and stray ampersands.
+        let s = "a&b — “c” &amp;é&#233;ü🙂&x;&";
+        for (i, _) in s.char_indices() {
+            xml_unescape(&s[i..]);
+        }
     }
 
     #[test]

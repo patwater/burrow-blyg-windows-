@@ -135,6 +135,36 @@ impl MainView {
         }
         self.reading.query = q;
         self.reading.refilter();
+        self.keep_or_clear_reading_selection();
+        cx.notify();
+    }
+
+    /// Show only `source`'s posts (`None` = all). As with a search, the
+    /// open post stays open while it's still listed; otherwise the
+    /// selection and the reader clear, and nothing is marked read.
+    pub(crate) fn select_reading_source(&mut self, source: Option<String>, cx: &mut Context<Self>) {
+        if self.reading.source == source {
+            return;
+        }
+        self.reading.source = source;
+        self.reading.refilter();
+        self.keep_or_clear_reading_selection();
+        cx.notify();
+    }
+
+    /// `[` / `]`: the previous / next source in the column.
+    pub(super) fn step_reading_source(&mut self, delta: isize, cx: &mut Context<Self>) {
+        let sources = self.reading.sources();
+        if !super::State::has_source_column(&sources) {
+            return;
+        }
+        let next = vm::step_source(&sources, self.reading.source.as_deref(), delta);
+        self.select_reading_source(next, cx);
+    }
+
+    /// After the shown rows changed: scroll to the open post if it's still
+    /// shown, else close it and go back to the top.
+    fn keep_or_clear_reading_selection(&mut self) {
         let keep = self
             .reading
             .sel
@@ -153,7 +183,6 @@ impl MainView {
                     .scroll_to_item(0, ScrollStrategy::Top);
             }
         }
-        cx.notify();
     }
 
     /// The search field above the reading list.
@@ -532,13 +561,20 @@ impl MainView {
     ) -> AnyElement {
         let p = self.palette;
         let unread = self.reading.rows.iter().filter(|r| r.is_unread()).count();
+        let sources = self.reading.sources();
+        let by_source = super::State::has_source_column(&sources);
+        let keys = if by_source {
+            "↑↓ move · [ ] sources · ←→ versions · / search · esc back"
+        } else {
+            "↑↓ move · ←→ versions · / search · esc back"
+        };
         let hint = if !self.reading.available {
             String::new()
         } else if unread > 0 {
             // Reader-local, private state: allowed (never social).
-            format!("{unread} to read · ↑↓ move · ←→ versions · / search · esc back")
+            format!("{unread} to read · {keys}")
         } else {
-            "↑↓ move · ←→ versions · / search · esc back".into()
+            keys.into()
         };
         let header = self.screen_header("Reading", hint, vec![]);
         if !self.reading.available {
@@ -552,8 +588,14 @@ impl MainView {
         }
         let held = self.reading.rows.len();
         let count = self.reading.shown.len();
+        let source_title = self
+            .reading
+            .source
+            .as_ref()
+            .and_then(|id| sources.iter().find(|s| s.id.as_ref() == Some(id)))
+            .map(|s| s.title.clone());
         let list = div()
-            .w(relative(0.38))
+            .w(relative(if by_source { 0.34 } else { 0.38 }))
             .flex_none()
             .h_full()
             .flex()
@@ -578,7 +620,7 @@ impl MainView {
                             div()
                                 .text_size(px(13.))
                                 .text_color(p.ink)
-                                .child(vm::no_match(&self.reading.query)),
+                                .child(vm::no_match(&self.reading.query, source_title.as_deref())),
                         )
                         .child(
                             div()
@@ -620,9 +662,64 @@ impl MainView {
                     .flex_1()
                     .min_h_0()
                     .flex()
+                    .when(by_source, |d| {
+                        d.child(self.render_reading_sources(&sources, cx))
+                    })
                     .child(list)
                     .child(self.render_reading_detail(body_font, cx)),
             )
+            .into_any_element()
+    }
+
+    /// The source column: "All", then one entry per subscription with its
+    /// unread count (reader-local, private), so one prolific blyg doesn't
+    /// bury the rest. A click (or `[` / `]`) shows only that source.
+    fn render_reading_sources(&self, sources: &[vm::Source], cx: &mut Context<Self>) -> AnyElement {
+        let p = self.palette;
+        let rows = sources.iter().enumerate().map(|(ix, s)| {
+            let on = self.reading.source == s.id;
+            let id = s.id.clone();
+            let all = s.id.is_none();
+            div()
+                .id(("reading-source", ix))
+                .flex()
+                .items_center()
+                .gap(px(6.))
+                .px(px(12.))
+                .py(px(5.))
+                .cursor_pointer()
+                .when(on, |d| d.bg(p.sel).text_color(p.ink))
+                .when(!on, |d| d.hover(|h| h.text_color(p.ink)))
+                .when(all, |d| d.mb(px(4.)).font_weight(FontWeight::MEDIUM))
+                .on_click(cx.listener(move |this, _, window, cx| {
+                    window.focus(&this.reading.focus, cx);
+                    this.select_reading_source(id.clone(), cx);
+                }))
+                .child(div().flex_1().min_w_0().truncate().child(s.title.clone()))
+                .when(s.unread > 0, |d| {
+                    d.child(
+                        div()
+                            .flex_none()
+                            .text_size(px(10.5))
+                            .text_color(p.accent)
+                            .child(s.unread.to_string()),
+                    )
+                })
+        });
+        div()
+            .id("reading-sources")
+            .debug_selector(|| "reading-sources".into())
+            .w(px(176.))
+            .flex_none()
+            .h_full()
+            .overflow_y_scroll()
+            .py(px(8.))
+            .border_r_1()
+            .border_color(p.line)
+            .font_family("Inter")
+            .text_size(px(12.))
+            .text_color(p.muted)
+            .children(rows)
             .into_any_element()
     }
 

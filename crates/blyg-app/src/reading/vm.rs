@@ -89,18 +89,100 @@ pub fn matches_query(r: &ReadingItem, query: &str) -> bool {
         || (r.content_md.trim().is_empty() && has(&html_text(&r.content_html)))
 }
 
-/// Indices into `rows` of the rows the reading search shows, in order.
-pub fn filter(rows: &[ReadingItem], query: &str) -> Vec<usize> {
+/// Indices into `rows` of the rows the list shows, in order: those from
+/// `source` (a subscription id; `None` = every source) that match `query`.
+pub fn filter(rows: &[ReadingItem], query: &str, source: Option<&str>) -> Vec<usize> {
     rows.iter()
         .enumerate()
+        .filter(|(_, r)| source.is_none_or(|s| r.subscription_id == s))
         .filter(|(_, r)| matches_query(r, query))
         .map(|(i, _)| i)
         .collect()
 }
 
-/// The list's empty state when the search matches nothing.
-pub fn no_match(query: &str) -> String {
-    format!("No posts match “{}”", query.trim())
+/// The list's empty state when the search matches nothing (in `source`,
+/// by its title, when one is picked).
+pub fn no_match(query: &str, source: Option<&str>) -> String {
+    match source {
+        Some(t) => format!("No posts from {t} match “{}”", query.trim()),
+        None => format!("No posts match “{}”", query.trim()),
+    }
+}
+
+// ---------------------------------------------------------------- sources
+
+/// One entry in the reading list's source column: every post ("All"), or
+/// one subscription's, so a prolific blyg doesn't bury the others.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Source {
+    /// The subscription id; `None` = every source.
+    pub id: Option<String>,
+    pub title: String,
+    /// Posts held from it (as the list shows them).
+    pub posts: usize,
+    /// Of those, not yet read (reader-local, private: never social).
+    pub unread: usize,
+}
+
+/// "All", then each subscription that has posts in `rows`, by title
+/// (case-insensitive). The title is the subscription's own, else the one
+/// its posts carry, else its host.
+pub fn sources(rows: &[ReadingItem], subs: &[Subscription]) -> Vec<Source> {
+    let mut by_id: Vec<Source> = Vec::new();
+    for r in rows {
+        let ix = match by_id
+            .iter()
+            .position(|s| s.id.as_deref() == Some(r.subscription_id.as_str()))
+        {
+            Some(ix) => ix,
+            None => {
+                let named = subs
+                    .iter()
+                    .find(|s| s.id == r.subscription_id)
+                    .map(|s| s.title.trim())
+                    .filter(|t| !t.is_empty());
+                let title = named
+                    .or(Some(r.subscription_title.trim()).filter(|t| !t.is_empty()))
+                    .map(str::to_string)
+                    .unwrap_or_else(|| host(&r.origin));
+                by_id.push(Source {
+                    id: Some(r.subscription_id.clone()),
+                    title,
+                    posts: 0,
+                    unread: 0,
+                });
+                by_id.len() - 1
+            }
+        };
+        by_id[ix].posts += 1;
+        by_id[ix].unread += usize::from(r.is_unread());
+    }
+    by_id.sort_by(|a, b| {
+        a.title
+            .to_lowercase()
+            .cmp(&b.title.to_lowercase())
+            .then_with(|| a.id.cmp(&b.id))
+    });
+    let mut out = vec![Source {
+        id: None,
+        title: "All".into(),
+        posts: rows.len(),
+        unread: rows.iter().filter(|r| r.is_unread()).count(),
+    }];
+    out.append(&mut by_id);
+    out
+}
+
+/// The source `delta` places from `current` (clamped to the ends); a
+/// source that has gone away counts as "All".
+pub fn step_source(sources: &[Source], current: Option<&str>, delta: isize) -> Option<String> {
+    let at = sources
+        .iter()
+        .position(|s| s.id.as_deref() == current)
+        .unwrap_or(0);
+    let last = sources.len().saturating_sub(1) as isize;
+    let next = (at as isize + delta).clamp(0, last) as usize;
+    sources.get(next).and_then(|s| s.id.clone())
 }
 
 /// Visible text of an HTML fragment (tags dropped), for searching only.
@@ -933,8 +1015,90 @@ mod tests {
         let mut md = r.clone();
         md.content_md = "Paper and bamboo.".into();
         assert!(matches_query(&md, "bamboo"));
-        assert_eq!(filter(&[r.clone(), md, r], "bamboo"), [1]);
-        assert_eq!(no_match(" kites  "), "No posts match “kites”");
+        assert_eq!(filter(&[r.clone(), md, r], "bamboo", None), [1]);
+        assert_eq!(no_match(" kites  ", None), "No posts match “kites”");
+        assert_eq!(
+            no_match("kites", Some("Rue")),
+            "No posts from Rue match “kites”"
+        );
+    }
+
+    /// The source column: "All" first, then each subscription with posts,
+    /// by title, with reader-local unread counts; a search stays inside the
+    /// picked source.
+    #[test]
+    fn sources_group_the_list_by_subscription() {
+        let sub = |id: &str, title: &str| Subscription {
+            id: id.into(),
+            kind: SubscriptionKind::Blyg,
+            origin: format!("https://{id}.blyg.example.com/"),
+            feed_url: format!("https://{id}.blyg.example.com/"),
+            title: title.into(),
+            status: "active".into(),
+            in_blogroll: false,
+        };
+        let post = |sub: &str, n: u32, read: bool| ReadingItem {
+            subscription_id: sub.into(),
+            remote_id: format!("{sub}-{n}"),
+            subscription_title: String::new(),
+            origin: format!("https://{sub}.blyg.example.com/"),
+            kind: Kind::Fragment,
+            state: "current".into(),
+            version: 1,
+            created: None,
+            updated: None,
+            observed_at: "2026-01-01T00:00:00Z".into(),
+            content_md: format!("Post {n} from {sub}"),
+            content_html: String::new(),
+            author: None,
+            page: None,
+            thumb: None,
+            hoppers: vec![],
+            pinned_version_retained: None,
+            read_version: read.then_some(1),
+            stub_of: None,
+            forked_from: None,
+            transclusions: vec![],
+        };
+        let subs = [
+            sub("big", "a Big one"),
+            sub("zed", "Zed"),
+            sub("idle", "Idle"),
+        ];
+        // A prolific source, a quiet one, and one not in `subs` any more.
+        let rows = vec![
+            post("big", 1, false),
+            post("big", 2, false),
+            post("zed", 1, false),
+            post("big", 3, true),
+            post("gone", 1, true),
+        ];
+        let got = sources(&rows, &subs);
+        let view: Vec<(Option<&str>, &str, usize, usize)> = got
+            .iter()
+            .map(|s| (s.id.as_deref(), s.title.as_str(), s.posts, s.unread))
+            .collect();
+        assert_eq!(
+            view,
+            [
+                (None, "All", 5, 3),
+                (Some("big"), "a Big one", 3, 2),
+                (Some("gone"), "gone.blyg.example.com", 1, 0),
+                (Some("zed"), "Zed", 1, 1),
+            ],
+            "by title, ignoring case; no entry for a subscription without posts"
+        );
+        assert_eq!(filter(&rows, "", Some("zed")), [2]);
+        assert_eq!(filter(&rows, "post 2", Some("big")), [1]);
+        assert!(filter(&rows, "post 2", Some("zed")).is_empty());
+        assert_eq!(filter(&rows, "", None).len(), 5);
+        // [ and ]: step, clamped at the ends; a vanished source is "All".
+        assert_eq!(step_source(&got, None, 1).as_deref(), Some("big"));
+        assert_eq!(step_source(&got, Some("big"), -1), None);
+        assert_eq!(step_source(&got, None, -1), None);
+        assert_eq!(step_source(&got, Some("zed"), 1).as_deref(), Some("zed"));
+        assert_eq!(step_source(&got, Some("nope"), 2).as_deref(), Some("gone"));
+        assert_eq!(step_source(&[], None, 1), None);
     }
 
     /// The quote picker offers someone else's post as the current version
