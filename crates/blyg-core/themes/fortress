@@ -1,0 +1,37 @@
+# Fortress: dig, build, discover. Readable prose, with the fortress around
+# it. After Dwarf Fortress, CP437 glyphs and lamplight underground.
+name = Fortress
+family = woody
+base = dark
+
+color-bg = #1f1b17
+color-ink = #eadcc2
+color-muted = #a29278
+color-line = #3b342c
+color-accent = #e0a33a
+color-sel = #3a2c1a
+color-bar = #12100e
+color-bar-ink = #e0a33a
+color-side = #161310
+color-quote-bg = #2a241e
+color-quote-rule = #4a3f33
+color-toast = #e0a33a
+color-toast-ink = #1f1b17
+color-text-selection = #e0a33a40
+
+font-writing = Literata
+font-ui = Menlo
+font-chrome = Menlo
+radius = 2
+sheet.radius = 2
+toast.radius = 2
+chip.radius = 2
+
+row.selected = inset-bar(#e0a33a)
+quote.frame = box-corners(#7a6a52)
+divider = glyph-divider(#4f7fa8, "≈")
+status.ornament = z-level(#e0a33a)
+marker.pinned = glyph(#e0a33a, "☼")
+marker.new = glyph(#e0a33a, "*")
+texture = stone-speckle(#eadcc2, opacity=0.08)
+empty.art = glyph(#e0a33a, "☼")

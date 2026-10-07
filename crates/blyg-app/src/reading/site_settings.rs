@@ -23,8 +23,9 @@ impl MainView {
         let title = input("Site title", window, cx);
         let name = input("Your name (optional)", window, cx);
         let bio = input("A line about you (optional)", window, cx);
+        let timezone = input("UTC (e.g. Europe/Lisbon)", window, cx);
         let links = cx.new(|cx| TextareaState::new(window, cx).soft_wrap(true));
-        for i in [&title, &name, &bio] {
+        for i in [&title, &name, &bio, &timezone] {
             let sub = cx.subscribe_in(i, window, |this, _, ev, window, cx| {
                 if let InputEvent::PressEnter { .. } = ev {
                     this.save_site_settings(window, cx);
@@ -40,6 +41,7 @@ impl MainView {
                 name,
                 bio,
                 links,
+                timezone,
                 load: Load::Loading,
                 error: None,
                 busy: false,
@@ -57,6 +59,7 @@ impl MainView {
                     name,
                     bio,
                     links,
+                    timezone,
                     load,
                     ..
                 }) = v.reading.sheet.as_mut()
@@ -75,6 +78,7 @@ impl MainView {
                     set(title, &s.site_title, window, cx);
                     set(name, &s.author_name, window, cx);
                     set(bio, &s.author_bio, window, cx);
+                    set(timezone, &s.timezone, window, cx);
                     links.update(cx, |st, cx| {
                         st.set_value(vm::format_links(&s.author_links), window, cx)
                     });
@@ -93,6 +97,7 @@ impl MainView {
             name,
             bio,
             links,
+            timezone,
             load,
             error,
             busy,
@@ -124,6 +129,11 @@ impl MainView {
             author_name: text(name, cx),
             author_bio: text(bio, cx),
             author_links,
+            // Sent only if the server reported it; empty clears it (UTC).
+            timezone: base
+                .timezone
+                .as_ref()
+                .map(|_| timezone.read(cx).value().trim().to_string()),
             ..base.clone()
         };
         *busy = true;
@@ -154,13 +164,74 @@ impl MainView {
         .detach();
     }
 
+    /// Flip "Accept mentions" (saved with the rest on Save).
+    pub(crate) fn toggle_accept_mentions(&mut self, cx: &mut Context<Self>) {
+        if let Some(RSheet::Site {
+            load: Load::Ready(s),
+            busy: false,
+            ..
+        }) = self.reading.sheet.as_mut()
+            && let Some(on) = s.accept_mentions.as_mut()
+        {
+            *on = !*on;
+            cx.notify();
+        }
+    }
+
+    /// Flip "Show responses by default" (saved with the rest on Save).
+    pub(crate) fn toggle_responses_default(&mut self, cx: &mut Context<Self>) {
+        if let Some(RSheet::Site {
+            load: Load::Ready(s),
+            busy: false,
+            ..
+        }) = self.reading.sheet.as_mut()
+            && let Some(on) = s.show_responses_default.as_mut()
+        {
+            *on = !*on;
+            cx.notify();
+        }
+    }
+
+    /// Flip "Highlight generated text by default" (saved with the rest).
+    pub(crate) fn toggle_highlight_default(&mut self, cx: &mut Context<Self>) {
+        if let Some(RSheet::Site {
+            load: Load::Ready(s),
+            busy: false,
+            ..
+        }) = self.reading.sheet.as_mut()
+            && let Some(on) = s.highlight_generated_default.as_mut()
+        {
+            *on = !*on;
+            cx.notify();
+        }
+    }
+
+    /// Choose where the `[[` picker's query is typed (saved with the rest).
+    pub(crate) fn set_picker_typing(
+        &mut self,
+        to: blyg_core::PickerTyping,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(RSheet::Site {
+            load: Load::Ready(s),
+            busy: false,
+            ..
+        }) = self.reading.sheet.as_mut()
+            && let Some(t) = s.picker_typing.as_mut()
+        {
+            *t = to;
+            cx.notify();
+        }
+    }
+
     pub(super) fn render_site_sheet(&self, sheet: &RSheet, cx: &mut Context<Self>) -> AnyElement {
-        let p = self.palette;
+        let p = self.palette.on_page();
         let RSheet::Site {
             title,
             name,
             bio,
             links,
+            timezone,
             load,
             error,
             busy,
@@ -230,6 +301,18 @@ impl MainView {
             }
             Load::Ready(_) => {}
         }
+        let (accept, tz, responses) = match load {
+            Load::Ready(s) => (
+                s.accept_mentions,
+                s.timezone.is_some(),
+                s.show_responses_default,
+            ),
+            _ => (None, false, None),
+        };
+        let (highlight, typing) = match load {
+            Load::Ready(s) => (s.highlight_generated_default, s.picker_typing),
+            _ => (None, None),
+        };
         frame
             .child(label("SITE TITLE"))
             .child(self.input_box(
@@ -252,12 +335,105 @@ impl MainView {
                     .h(px(84.))
                     .px(px(10.))
                     .py(px(7.))
-                    .rounded(px(7.))
+                    .rounded(px(self.theme.corner(7.)))
                     .border_1()
                     .border_color(if error.is_some() { p.over } else { p.line })
                     .text_size(px(13.))
                     .child(gpui_kit::base::input::Textarea::new(links)),
             )
+            .when_some(accept, |d, on| {
+                d.child(
+                    div()
+                        .id("site-accept-mentions")
+                        .mt(px(12.))
+                        .flex()
+                        .gap(px(8.))
+                        .cursor_pointer()
+                        .child(if on { "☑" } else { "☐" })
+                        .child(
+                            div()
+                                .flex()
+                                .flex_col()
+                                .child("Accept mentions")
+                                .child(div().text_color(p.muted).child(
+                                    "Other blygs can tell yours when they quote, stub or fork your posts.",
+                                )),
+                        )
+                        .on_click(cx.listener(|this, _, _, cx| this.toggle_accept_mentions(cx))),
+                )
+            })
+            .when(tz, |d| {
+                d.child(label("TIME ZONE · dates on your pages"))
+                    .child(self.input_box(
+                        gpui_kit::base::input::Input::new(timezone).into_any_element(),
+                        false,
+                    ))
+            })
+            .when_some(responses, |d, on| {
+                d.child(
+                    div()
+                        .id("site-responses-default")
+                        .mt(px(12.))
+                        .flex()
+                        .gap(px(8.))
+                        .cursor_pointer()
+                        .child(if on { "☑" } else { "☐" })
+                        .child(
+                            div()
+                                .flex()
+                                .flex_col()
+                                .child("Show responses by default")
+                                .child(div().text_color(p.muted).child(
+                                    "Posts list their verified responses unless you chose otherwise for that post.",
+                                )),
+                        )
+                        .on_click(cx.listener(|this, _, _, cx| this.toggle_responses_default(cx))),
+                )
+            })
+            .when_some(highlight, |d, on| {
+                d.child(
+                    div()
+                        .id("site-highlight-default")
+                        .mt(px(12.))
+                        .flex()
+                        .gap(px(8.))
+                        .cursor_pointer()
+                        .child(if on { "☑" } else { "☐" })
+                        .child(
+                            div()
+                                .flex()
+                                .flex_col()
+                                .child("Highlight generated text by default")
+                                .child(div().text_color(p.muted).child(
+                                    "Text written by [TK] generation shows tinted, with a robot badge, unless a post chose otherwise.",
+                                )),
+                        )
+                        .on_click(cx.listener(|this, _, _, cx| this.toggle_highlight_default(cx))),
+                )
+            })
+            .when_some(typing, |d, now| {
+                use blyg_core::PickerTyping as T;
+                let opt = |t: T, label: &'static str| {
+                    let on = now == t;
+                    div()
+                        .id(SharedString::from(format!("site-picker-{}", t.as_str())))
+                        .flex()
+                        .gap(px(6.))
+                        .cursor_pointer()
+                        .child(if on { "◉" } else { "○" })
+                        .child(label)
+                        .on_click(cx.listener(move |this, _, _, cx| this.set_picker_typing(t, cx)))
+                };
+                d.child(label("[[ PICKER · where you type to search"))
+                    .child(
+                        div()
+                            .flex()
+                            .gap(px(16.))
+                            .child(opt(T::Auto, "automatic (the editor)"))
+                            .child(opt(T::Editor, "the editor"))
+                            .child(opt(T::Panel, "the picker")),
+                    )
+            })
             .when_some(error.clone(), |d, e| {
                 d.child(div().mt(px(6.)).text_color(p.over).child(e))
             })

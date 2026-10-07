@@ -4,7 +4,14 @@
 # themselves (through BLYG_E2E_CTL) to take the Worker down mid-session.
 #
 #   e2e-wrangler.sh setup                 derive the scratch config + secrets
-#   e2e-wrangler.sh start <name> <port>   start instance <name> (own D1/R2 state)
+#   e2e-wrangler.sh token | password      print a scratch dev secret
+#   e2e-wrangler.sh mint-token <port>     sign in once and mint a manual API
+#                                         token with all four owner scopes
+#                                         (studio 0.28+); prints it, or nothing
+#                                         on an older studio
+#   e2e-wrangler.sh start <name> <port> [KEY=value…]
+#                                         start instance <name> (own D1/R2 state);
+#                                         KEY=value overrides its dev vars only
 #   e2e-wrangler.sh stop <name>           stop only the processes this script started
 #   e2e-wrangler.sh stop-all
 #
@@ -78,29 +85,74 @@ JS
       printf 'OWNER_PASSWORD=%s\n' "$(rnd 24)"
       printf 'COOKIE_SECRET=%s\n' "$(rnd 48)"
       printf 'BLYG_OWNER_TOKEN=%s\n' "$(rnd 40)"
+      # Studio 0.28+ refuses to fetch private addresses; the two local
+      # instances subscribe to each other on 127.0.0.1.
+      printf 'ALLOW_PRIVATE_FETCH=true\n'
+      # Studio 0.28+ budgets API work per minute (120 owner writes, 60 for
+      # all tokens together); the suite outruns that in seconds. The app's
+      # handling of a 429 has its own test, which lowers the budget again.
+      local v; for v in API_READ_LIMIT API_WRITE_LIMIT API_DELEGATED_READ_LIMIT API_DELEGATED_WRITE_LIMIT; do
+        printf '%s=100000\n' "$v"
+      done
     } >"$BLYG_E2E_SCRATCH/.dev.vars"
     chmod 600 "$BLYG_E2E_SCRATCH/.dev.vars"
   fi
 }
 
 token() { sed -n 's/^BLYG_OWNER_TOKEN=//p' "$BLYG_E2E_SCRATCH/.dev.vars"; }
+password() { sed -n 's/^OWNER_PASSWORD=//p' "$BLYG_E2E_SCRATCH/.dev.vars"; }
+
+# Studio 0.28+ budgets password sign-ins, so the tests share one manual token
+# (More → Client access in Studio) instead of signing in per test.
+mint_token() {
+  local port="${1:?port}" base jar out
+  base="http://127.0.0.1:$port"
+  jar="$BLYG_E2E_SCRATCH/cookies.$port"
+  curl -fsS -o /dev/null -c "$jar" --data-urlencode "password=$(password)" "$base/studio/login" \
+    || die "signing in to :$port failed"
+  out="$(curl -sS -b "$jar" -H 'content-type: application/json' -w '\n%{http_code}' \
+    -d '{"name":"burrow-e2e","scope":["owner:read","owner:draft","owner:publish","owner:manage"],"resource":"api"}' \
+    "$base/api/authorizations")"
+  rm -f "$jar"
+  case "${out##*$'\n'}" in
+    200) printf '%s' "${out%$'\n'*}" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>process.stdout.write(JSON.parse(s).access_token))' ;;
+    404) ;;
+    *) die "minting a token on :$port failed (${out##*$'\n'})" ;;
+  esac
+}
 
 free_port() { node -e 'const s=require("net").createServer().listen(0,"127.0.0.1",()=>{console.log(s.address().port);s.close()})'; }
 
 start() {
   local name="${1:?name}" port="${2:?port}"
+  shift 2
   local state="$BLYG_E2E_SCRATCH/$name"
   mkdir -p "$state"
   [ -f "$CONF" ] || setup
+  # Extra KEY=value args override the shared dev vars for this instance
+  # only: its own copy of the config, next to its own .dev.vars.
+  local conf="$CONF"
+  if [ "$#" -gt 0 ]; then
+    mkdir -p "$state/conf"
+    conf="$state/conf/wrangler.e2e.json"
+    cp "$CONF" "$conf"
+    local kv pattern=""
+    for kv in "$@"; do
+      case "$kv" in *=*) ;; *) die "start: expected KEY=value, got $kv" ;; esac
+      pattern="$pattern|^${kv%%=*}="
+    done
+    { grep -Ev "${pattern#|}" "$BLYG_E2E_SCRATCH/.dev.vars" || true; printf '%s\n' "$@"; } >"$state/conf/.dev.vars"
+    chmod 600 "$state/conf/.dev.vars"
+  fi
   # Idempotent: applies only what's new (the Worker may have moved on).
   (cd "$BLYG_WORKER_DIR" && "$WRANGLER" d1 migrations apply DB --local \
-    --persist-to "$state/d1" -c "$CONF") >"$state/migrate.log" 2>&1 \
+    --persist-to "$state/d1" -c "$conf") >"$state/migrate.log" 2>&1 \
     || { cat "$state/migrate.log" >&2; die "migrations failed for $name"; }
   local inspector; inspector="$(free_port)"
   # Own process group (set -m), so stop can signal exactly what we started.
   set -m
   (cd "$BLYG_WORKER_DIR" && exec "$WRANGLER" dev --local --ip 127.0.0.1 --port "$port" \
-    --inspector-port "$inspector" --persist-to "$state/d1" -c "$CONF" \
+    --inspector-port "$inspector" --persist-to "$state/d1" -c "$conf" \
     --test-scheduled --show-interactive-dev-session=false) >>"$state/wrangler.log" 2>&1 &
   local pid=$!
   set +m
@@ -140,7 +192,9 @@ stop() {
 case "$cmd" in
   setup) setup ;;
   token) token ;;
+  password) password ;;
   free-port) free_port ;;
+  mint-token) mint_token "$@" ;;
   start) start "$@" ;;
   stop) stop "$@" ;;
   stop-all)

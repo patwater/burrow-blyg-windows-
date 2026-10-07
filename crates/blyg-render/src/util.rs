@@ -16,6 +16,19 @@ pub fn escape_html(s: &str) -> String {
     out
 }
 
+/// The Worker's `escapeHref` (util.ts, studio 0.28): an http(s) or mailto
+/// URL (relative ones resolve to https), HTML-escaped; anything else is `#`.
+pub fn escape_href(value: &str) -> String {
+    let followable = url::Url::parse("https://link.invalid/")
+        .and_then(|base| base.join(value))
+        .is_ok_and(|u| matches!(u.scheme(), "http" | "https" | "mailto"));
+    if followable {
+        escape_html(value)
+    } else {
+        "#".to_string()
+    }
+}
+
 /// JavaScript's WhiteSpace + LineTerminator set (what `String#trim` and `\s` use).
 pub fn is_js_ws(c: char) -> bool {
     matches!(

@@ -2,7 +2,7 @@
   "name": "tk_sentinel_in_url",
   "kind": "fragment",
   "md": "Link: [TK]give a url[=]https://example.org/a[/TK] tail",
-  "html": "<p>Link: <span class=\"blyg-tk-gen\"><a href=\"https://example.org/a\">https://example.org/a</a></span> tail</p>\n",
+  "html": "<p>Link: <span class=\"blyg-tk-gen\"><a href=\"https://example.org/a\">https://example.org/a</span></a> tail</p>\n",
   "tk": {
     "scopes": [
       {

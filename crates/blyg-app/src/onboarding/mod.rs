@@ -16,6 +16,7 @@
 
 mod steps;
 mod tutorial;
+pub(crate) mod whats_new;
 
 #[cfg(test)]
 mod tests;
@@ -30,6 +31,7 @@ use gpui_kit::*;
 use super::{MainView, Sheet};
 use crate::ai::settings as ais;
 use crate::fake::FakeBackend;
+use crate::theme::Rule; // --- themes --- dividers
 
 pub use tutorial::Tutorial;
 
@@ -163,13 +165,29 @@ impl MainView {
         // Without a data dir (headless tests) there's no first-run memory:
         // those keep the plain Connect sheet.
         if let Some(dir) = data_dir(cx) {
-            let onboarded = blyg_core::state::AppState::load(&dir).onboarded;
+            let state = blyg_core::state::AppState::load(&dir);
+            let onboarded = state.onboarded;
+            // The first launch of a newer version: what changed, then the
+            // tour (or not). A first run learns it all from the tour.
+            let current = env!("CARGO_PKG_VERSION");
+            let news = if state.seen_version.as_deref() == Some(current) {
+                vec![]
+            } else {
+                let _ = blyg_core::state::AppState::update(&dir, |s| {
+                    s.seen_version = Some(current.into())
+                });
+                whats_new::since(state.seen_version.as_deref(), current)
+            };
             // Already connected (e.g. set up before onboarding existed):
             // don't walk them through it; Settings › Help can replay it.
             if !onboarded && has_blyg {
                 let _ = blyg_core::state::AppState::update(&dir, |s| s.onboarded = true);
             } else if !has_blyg {
                 self.open_onboarding(FlowStep::Welcome, window, cx);
+                return true;
+            }
+            if onboarded && !news.is_empty() {
+                self.start_whats_new(news, window, cx);
                 return true;
             }
         }
@@ -190,6 +208,7 @@ impl MainView {
         self.onboarding_sync(window, cx);
         if self.onboarding.tutorial.is_some() {
             self.tutorial_watch_typing(window, cx);
+            self.tutorial_watch_observed(window, cx);
             return self.render_tutorial(window, cx);
         }
         self.render_onboarding(cx)
@@ -312,7 +331,7 @@ impl MainView {
         self.current = None;
         self.requery(window, cx);
         self.show_toast(
-            "Trying Blygger with sample data",
+            "Trying Burrow with sample data",
             Some("Nothing here reaches a blyg · connect one any time".into()),
             cx,
         );
@@ -345,7 +364,8 @@ impl MainView {
                 // an unsaved dev theme override.
                 let mut fresh = crate::settings::prefs(cx);
                 self.persisted = fresh.clone();
-                fresh.theme = self.prefs.theme;
+                fresh.theme = self.prefs.theme.clone();
+                fresh.theme_dark = self.prefs.theme_dark.clone();
                 self.prefs = fresh;
                 self.onboarding_next(window, cx);
             }
@@ -433,7 +453,7 @@ impl MainView {
                 .rounded(px(5.))
                 .border_1()
                 .border_b_2()
-                .border_color(p.line)
+                .border_color(p.edge())
                 .text_color(p.ink)
                 .font_weight(FontWeight::MEDIUM)
                 .text_size(px(11.5))
@@ -451,8 +471,8 @@ impl MainView {
                 .rounded(px(8.))
                 .border_1()
                 .cursor_pointer()
-                .border_color(if primary { p.accent } else { p.line })
-                .when(primary, |d| d.text_color(p.accent))
+                .border_color(if primary { p.accent } else { p.edge() })
+                .when(primary, |d| d.text_color(p.accent_text()))
                 .hover(|s| s.border_color(p.accent))
                 .child(kbd(key))
                 .child(label)
@@ -469,7 +489,7 @@ impl MainView {
 
         let (title, body): (&str, AnyElement) = match step {
             FlowStep::Welcome => (
-                "Welcome to Blygger",
+                "Welcome to Burrow",
                 div()
                     .flex()
                     .flex_col()
@@ -487,7 +507,7 @@ impl MainView {
                             .px(px(10.))
                             .py(px(7.))
                             .rounded(px(7.))
-                            .bg(p.bar)
+                            .bg(p.panel())
                             .text_size(px(11.5))
                             .text_color(p.muted)
                             .line_height(relative(1.45))
@@ -511,13 +531,15 @@ impl MainView {
                     .gap(px(10.))
                     .child(para(match &host {
                         Some(h) => crate::keymap::hint_owned(format!(
-                            "Connected to {h}. You can change it later from the Blygger menu."
+                            "Connected to {h}. You can change it later from the Burrow menu."
                         ))
                         .into(),
                         None => crate::keymap::hint(
-                            "Blygger writes to your own blyg. You'll need its address and \
-                             its owner token; the token goes in your macOS Keychain, the \
-                             address in your config file.",
+                            "Burrow writes to your own blyg. You'll need its address; then \
+                                 sign in with your browser (blygger-studio 0.28 or later), or \
+                                 use an API token from Studio → More → Client access, or the \
+                                 studio password. The sign-in goes in your macOS Keychain, \
+                                 the address in your config file.",
                         )
                         .into(),
                     }))
@@ -558,17 +580,16 @@ impl MainView {
                     let free = ais::toggles_freely(kind);
                     let on = r.enabled;
                     let tone_color = match tone {
-                        ais::Tone::Good => p.green,
+                        ais::Tone::Good => p.green_text(),
                         ais::Tone::Neutral => p.muted,
-                        ais::Tone::Bad => p.warn,
+                        ais::Tone::Bad => p.warn_text(),
                     };
                     div()
                         .flex()
                         .items_center()
                         .gap(px(10.))
                         .py(px(4.))
-                        .border_b_1()
-                        .border_color(p.line)
+                        .rule_b(&p)
                         .child(
                             div()
                                 .w(px(150.))
@@ -594,8 +615,8 @@ impl MainView {
                                 .border_1()
                                 .cursor_pointer()
                                 .text_size(px(11.5))
-                                .border_color(if on { p.accent } else { p.line })
-                                .when(on, |d| d.text_color(p.accent))
+                                .border_color(if on { p.accent } else { p.edge() })
+                                .when(on, |d| d.text_color(p.accent_text()))
                                 .hover(|s| s.border_color(p.accent))
                                 .child(if on { "On" } else { "Off" })
                                 .on_click(cx.listener(move |this, _, _, cx| {
@@ -623,7 +644,11 @@ impl MainView {
                                 .into(),
                         ))
                         .child(div().flex().flex_col().children(rows))
-                        .children(f.message.clone().map(|m| div().text_color(p.over).child(m)))
+                        .children(
+                            f.message
+                                .clone()
+                                .map(|m| div().text_color(p.over_text()).child(m)),
+                        )
                         .child(
                             div()
                                 .mt(px(4.))
@@ -661,12 +686,16 @@ impl MainView {
                         .flex_col()
                         .gap(px(10.))
                         .child(para(
-                            "Blygger is keyboard-first. A quiet toolbar can show the main actions \
+                            "Burrow is keyboard-first. A quiet toolbar can show the main actions \
                              as buttons too, and every button's tooltip teaches its key. You can \
                              change this in Settings (⌘,)."
                                 .into(),
                         ))
-                        .children(f.message.clone().map(|m| div().text_color(p.over).child(m)))
+                        .children(
+                            f.message
+                                .clone()
+                                .map(|m| div().text_color(p.over_text()).child(m)),
+                        )
                         .child(
                             div()
                                 .mt(px(4.))
@@ -727,14 +756,13 @@ impl MainView {
             div()
                 .size(px(6.))
                 .rounded_full()
-                .bg(if *s == step { p.accent } else { p.line })
+                .bg(if *s == step { p.accent } else { p.edge() })
         });
         let footer =
             div()
                 .mt(px(16.))
                 .pt(px(10.))
-                .border_t_1()
-                .border_color(p.line)
+                .rule_t(&p)
                 .flex()
                 .items_center()
                 .gap(px(14.))
@@ -784,17 +812,9 @@ impl MainView {
             }))
             .w(px(540.))
             .max_w(relative(0.92))
-            .bg(p.bg)
-            .border_1()
-            .border_color(p.line)
-            .rounded(px(12.))
-            .shadow(vec![BoxShadow {
-                color: p.shadow,
-                offset: point(px(0.), px(18.)),
-                blur_radius: px(48.),
-                spread_radius: px(-10.),
-                inset: false,
-            }])
+            // --- themes --- the theme's sheet border, radius and a shadow
+            // that shows on dark themes.
+            .map(|d| crate::theme_ext::card(d, &self.theme))
             .px(px(22.))
             .py(px(18.))
             .font_family(SharedString::from(self.prefs.ui().family))
@@ -827,7 +847,7 @@ impl MainView {
                 .absolute()
                 .inset_0()
                 .occlude()
-                .bg(p.ink.opacity(if p.dark { 0.35 } else { 0.12 }))
+                .bg(p.scrim())
                 .flex()
                 .items_center()
                 .justify_center()
@@ -885,7 +905,7 @@ impl MainView {
                 .rounded_full()
                 .border_1()
                 .cursor_pointer()
-                .border_color(p.line)
+                .border_color(p.edge())
                 .hover(|s| s.border_color(p.accent))
                 .child(label)
         };
@@ -942,7 +962,7 @@ impl MainView {
         self.open_onboarding(FlowStep::Welcome, window, cx);
     }
 
-    /// "Show this tutorial every time I open Blygger" (`tutorial-on-launch`).
+    /// "Show this tutorial every time I open Burrow" (`tutorial-on-launch`).
     pub(super) fn render_tutorial_checkbox(
         &self,
         id: &'static str,
@@ -973,7 +993,7 @@ impl MainView {
                     .text_size(px(10.))
                     .child(if on { "✓" } else { "" }),
             )
-            .child("Show this tutorial every time I open Blygger")
+            .child("Show this tutorial every time I open Burrow")
             .on_click(cx.listener(move |this, _, _, cx| this.set_tutorial_on_launch(!on, cx)))
             .into_any_element()
     }
@@ -988,7 +1008,7 @@ impl MainView {
 
     // ------------------------------------------------------------ demos
 
-    /// `BLYGGER_DEMO=ob-…` / `tut-…` (screenshots): the same calls a click
+    /// `BLYGGER_DEMO=ob-…` (`ob-news`: what's new) / `tut-…` (screenshots): the same calls a click
     /// or a key makes.
     pub(super) fn onboarding_demo(
         &mut self,
@@ -1003,12 +1023,21 @@ impl MainView {
             ("ob-ai", 0) => self.open_onboarding(FlowStep::Ai, window, cx),
             ("ob-buttons", 0) => self.open_onboarding(FlowStep::Buttons, window, cx),
             ("ob-tour", 0) => self.open_onboarding(FlowStep::Tutorial, window, cx),
+            // The first launch after an update.
+            ("ob-news", 0) => {
+                self.start_whats_new(whats_new::RELEASES.iter().collect(), window, cx)
+            }
+            // `tut-<id>`: the step as it begins; `tut-<id>+`: after its key.
             (s, 0) if s.starts_with("tut-") => {
                 self.start_tutorial(window, cx);
-                let id = s.trim_start_matches("tut-");
+                let id = s.trim_start_matches("tut-").trim_end_matches('+');
                 if let Some(i) = steps::STEPS.iter().position(|st| st.id == id) {
                     self.tutorial_enter(i, window, cx);
                 }
+            }
+            (s, 1) if s.starts_with("tut-") && s.ends_with('+') => {
+                let id = s.trim_start_matches("tut-").trim_end_matches('+');
+                self.tutorial_demo_act(id, window, cx);
             }
             _ => {}
         }

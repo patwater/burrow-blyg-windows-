@@ -7,6 +7,7 @@ use gpui_kit::*;
 
 use super::vm::{self, Button, Row, Tab};
 use crate::app::{MainView, TITLEBAR_H};
+use crate::theme::Rule; // --- themes --- dividers
 
 const WIDTH: f32 = 440.;
 
@@ -24,7 +25,7 @@ impl MainView {
         label: impl Into<SharedString>,
         look: Look,
     ) -> Stateful<Div> {
-        let p = self.palette;
+        let p = self.palette.on_page();
         let id: SharedString = id.into();
         let sel = id.to_string();
         div()
@@ -33,10 +34,10 @@ impl MainView {
             .flex_none()
             .px(px(10.))
             .py(px(4.))
-            .rounded(px(7.))
+            .rounded(px(self.theme.corner(7.)))
             .border_1()
             .cursor_pointer()
-            .font_family("Inter")
+            .font_family(self.chrome())
             .text_size(px(12.5))
             .font_weight(FontWeight::MEDIUM)
             .map(|d| match look {
@@ -51,7 +52,7 @@ impl MainView {
     }
 
     fn pf_avatar(&self, prof: &Profile, initial: &str) -> AnyElement {
-        let p = self.palette;
+        let p = self.palette.on_page();
         let circle = div()
             .size(px(52.))
             .flex_none()
@@ -81,7 +82,7 @@ impl MainView {
     }
 
     pub(super) fn render_profile_sheet(&mut self, cx: &mut Context<Self>) -> AnyElement {
-        let p = self.palette;
+        let p = self.palette.on_page();
         let focus = self
             .profiles
             .focus
@@ -103,8 +104,7 @@ impl MainView {
             .w(px(WIDTH))
             .max_w(relative(1.))
             .bg(p.bg)
-            .border_l_1()
-            .border_color(p.line)
+            .rule_l(&p)
             .shadow(vec![BoxShadow {
                 color: p.shadow,
                 offset: point(px(-18.), px(0.)),
@@ -115,7 +115,7 @@ impl MainView {
             .overflow_y_scroll()
             .px(px(22.))
             .py(px(20.))
-            .font_family("Inter")
+            .font_family(self.prefs.ui().family)
             .text_size(px(13.))
             .text_color(p.ink)
             .child(content)
@@ -143,7 +143,7 @@ impl MainView {
     }
 
     fn render_profile_content(&self, cx: &mut Context<Self>) -> AnyElement {
-        let p = self.palette;
+        let p = self.palette.on_page();
         let Some(page) = self.profiles.page() else {
             return div().into_any_element();
         };
@@ -279,8 +279,7 @@ impl MainView {
             .flex()
             .gap(px(16.))
             .mt(px(14.))
-            .border_b_1()
-            .border_color(p.line)
+            .rule_b(&p)
             .text_size(px(13.))
             .children(tabs_list.iter().map(|&t| {
                 let on = t == page.tab;
@@ -358,7 +357,7 @@ impl MainView {
         tab: Tab,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let p = self.palette;
+        let p = self.palette.on_page();
         let open = r.profile_url.clone().or(r.open_url.clone()).is_some();
         let body = div()
             .id(SharedString::from(format!("pf-row-{i}")))
@@ -438,10 +437,10 @@ impl MainView {
             .py(px(9.))
             .px(px(6.))
             .mx(px(-6.))
-            .rounded(px(6.))
-            .border_b_1()
-            .border_color(p.line)
+            .rounded(px(self.theme.corner(6.)))
+            .rule_b(&p)
             .when(selected, |d| d.bg(p.sel))
+            .map(|d| crate::ornament::page_row(&self.theme, d, selected))
             .child(body)
             .children(tag)
             .children(profile_btn)
@@ -460,7 +459,7 @@ impl MainView {
         origin: &str,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let p = self.palette;
+        let p = self.palette.on_page();
         let url = origin.to_string();
         div()
             .id(id)
@@ -493,7 +492,7 @@ impl MainView {
         doc: Option<&blyg_core::Lineage>,
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
-        let p = self.palette;
+        let p = self.palette.on_page();
         let mut lineage = item.lineage();
         if let Some(doc) = doc {
             lineage = lineage.or(doc);
@@ -514,21 +513,61 @@ impl MainView {
                 .children(parts.into_iter().map(|l| {
                     let url = l.url.clone();
                     let id = l.id;
-                    div().flex().gap(px(5.)).child(l.lead).child(
-                        div()
-                            .id(id)
-                            .debug_selector(move || id.to_string())
-                            .cursor_pointer()
-                            .text_color(p.ink)
-                            .border_b_1()
-                            .border_dashed()
-                            .border_color(p.muted.opacity(0.6))
-                            .hover(|s| s.text_color(p.accent))
-                            .on_click(cx.listener(move |this, _, window, cx| {
-                                this.open_profile(url.clone(), window, cx)
-                            }))
-                            .child(l.link),
-                    )
+                    // --- quote targets --- the name opens the profile; the
+                    // lead and the rest open the post itself.
+                    let post =
+                        |el: Stateful<Div>, target: Option<(String, String, Option<u32>)>| {
+                            el.when_some(target, |d, (o, i, v)| {
+                                d.cursor_pointer()
+                                    .hover(|s| s.text_color(p.accent))
+                                    .on_click(cx.listener(move |this, _, window, cx| {
+                                        this.open_original(o.clone(), i.clone(), v, window, cx)
+                                    }))
+                            })
+                        };
+                    let post_id = format!("{id}-post");
+                    let sel = post_id.clone();
+                    div()
+                        .flex()
+                        .gap(px(5.))
+                        .child(
+                            post(
+                                div().id(SharedString::from(format!("{id}-lead"))),
+                                l.target.clone(),
+                            )
+                            .child(l.lead),
+                        )
+                        .child(
+                            div()
+                                .flex()
+                                .child(
+                                    div()
+                                        .id(id)
+                                        .debug_selector(move || id.to_string())
+                                        .cursor_pointer()
+                                        .text_color(p.ink)
+                                        .border_b_1()
+                                        .border_dashed()
+                                        .border_color(p.muted.opacity(0.6))
+                                        .hover(|s| s.text_color(p.accent))
+                                        .on_click(cx.listener(move |this, _, window, cx| {
+                                            this.open_profile(url.clone(), window, cx)
+                                        }))
+                                        .child(l.name),
+                                )
+                                .when(!l.rest.is_empty(), |d| {
+                                    d.child(
+                                        post(
+                                            div()
+                                                .id(SharedString::from(post_id))
+                                                .debug_selector(move || sel.clone())
+                                                .whitespace_nowrap(),
+                                            l.target.clone(),
+                                        )
+                                        .child(l.rest),
+                                    )
+                                }),
+                        )
                 }))
                 .into_any_element(),
         )
@@ -540,7 +579,7 @@ impl MainView {
         input: &Entity<InputState>,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let p = self.palette;
+        let p = self.palette.on_page();
         input.update(cx, |s, _| {
             s.set_editor_style(gpui_kit::base::input::InputEditorStyle {
                 foreground: p.ink,
@@ -562,7 +601,7 @@ impl MainView {
                     div()
                         .px(px(6.))
                         .py(px(1.))
-                        .rounded(px(5.))
+                        .rounded(px(self.theme.corner(5.)))
                         .border_1()
                         .border_b_2()
                         .border_color(p.line)
@@ -579,22 +618,8 @@ impl MainView {
                 .occlude()
                 .w(px(500.))
                 .max_w(relative(0.92))
-                .bg(p.bg)
-                .border_1()
-                .border_t_0()
-                .border_color(p.line)
-                .rounded_b(px(12.))
-                .shadow(vec![BoxShadow {
-                    color: p.shadow,
-                    offset: point(px(0.), px(18.)),
-                    blur_radius: px(40.),
-                    spread_radius: px(-12.),
-                    inset: false,
-                }])
-                .px(px(18.))
-                .py(px(16.))
-                .font_family("Inter")
-                .text_size(px(13.))
+                // --- themes --- the theme's sheet (radius, border).
+                .map(|d| self.sheet_style(d))
                 .text_color(p.ink)
                 .capture_action(cx.listener(|this, _: &Escape, window, cx| {
                     cx.stop_propagation();
@@ -613,7 +638,7 @@ impl MainView {
                     div()
                         .px(px(10.))
                         .py(px(7.))
-                        .rounded(px(7.))
+                        .rounded(px(self.theme.corner(7.)))
                         .border_1()
                         .border_color(if error.is_some() { p.over } else { p.line })
                         .text_size(px(13.5))

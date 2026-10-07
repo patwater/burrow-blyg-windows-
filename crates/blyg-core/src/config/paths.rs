@@ -19,6 +19,8 @@ use std::path::{Path, PathBuf};
 
 pub const APP_ID: &str = "org.blygger.desktop";
 pub const CONFIG_FILE_NAME: &str = "config";
+/// The folder of user themes, beside the config file.
+pub const THEMES_DIR_NAME: &str = "themes";
 /// The pre-rename data dir, migrated on first launch.
 pub const LEGACY_DATA_DIR_NAME: &str = "Blygger";
 
@@ -54,6 +56,19 @@ impl ConfigFiles {
             .unwrap_or(&load[0])
             .clone();
         ConfigFiles { load, primary }
+    }
+
+    /// Where user themes live: `themes/` beside the first config file
+    /// (`~/.config/blygger/themes/`), or `BLYGGER_THEMES_DIR`.
+    pub fn themes_dir(&self) -> PathBuf {
+        if let Some(p) = std::env::var_os("BLYGGER_THEMES_DIR").filter(|p| !p.is_empty()) {
+            return PathBuf::from(p);
+        }
+        let first = self.load.first().unwrap_or(&self.primary);
+        first
+            .parent()
+            .unwrap_or(Path::new("."))
+            .join(THEMES_DIR_NAME)
     }
 
     pub fn single(path: PathBuf) -> ConfigFiles {

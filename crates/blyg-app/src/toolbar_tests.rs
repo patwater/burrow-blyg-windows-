@@ -335,10 +335,57 @@ fn setup<'a>(
     (view, fake, cx)
 }
 
+/// `selector`'s bounds once it has stopped moving. Sheets and panes slide
+/// in with animations timed on the real clock, so under a loaded test run
+/// an element can still be moving when a test goes to click it.
+pub(crate) fn settled_bounds(
+    cx: &mut VisualTestContext,
+    selector: &'static str,
+) -> gpui_kit::Bounds<gpui_kit::Pixels> {
+    let mut last = None;
+    for _ in 0..100 {
+        cx.update(|window, _| window.refresh());
+        cx.run_until_parked();
+        let b = cx
+            .debug_bounds(selector)
+            .unwrap_or_else(|| panic!("{selector} isn't on screen"));
+        if last == Some(b) {
+            return b;
+        }
+        last = Some(b);
+        std::thread::sleep(std::time::Duration::from_millis(16));
+    }
+    last.unwrap()
+}
+
+/// Scroll the Settings sheet until `selector` is inside the window, so a
+/// click lands on it whatever the runner's window height and font metrics.
+pub(crate) fn scroll_into_view(cx: &mut VisualTestContext, selector: &'static str) {
+    for _ in 0..40 {
+        let b = settled_bounds(cx, selector);
+        let view_h = cx.update(|window, _| window.viewport_size().height);
+        if b.bottom() <= view_h - gpui_kit::px(8.) {
+            return;
+        }
+        let sheet = cx.debug_bounds("settings-scroll").expect("settings sheet");
+        cx.simulate_event(gpui_kit::ScrollWheelEvent {
+            position: sheet.center(),
+            delta: gpui_kit::ScrollDelta::Pixels(gpui_kit::point(
+                gpui_kit::px(0.),
+                gpui_kit::px(-120.),
+            )),
+            ..Default::default()
+        });
+        // Bounds come from the last frame: draw one before reading them.
+        cx.run_until_parked();
+        cx.update(|window, _| window.refresh());
+        cx.run_until_parked();
+    }
+    panic!("couldn't scroll {selector} into view");
+}
+
 fn click(cx: &mut VisualTestContext, selector: &'static str) {
-    let b = cx
-        .debug_bounds(selector)
-        .unwrap_or_else(|| panic!("{selector} isn't on screen"));
+    let b = settled_bounds(cx, selector);
     cx.simulate_click(b.center(), Modifiers::none());
     cx.run_until_parked();
 }
@@ -463,6 +510,7 @@ fn settings_toggle_writes_show_buttons_and_reload_reads_it(cx: &mut TestAppConte
         }
         last = now;
     }
+    scroll_into_view(cx, "show-buttons-off");
     click(cx, "show-buttons-off");
     assert!(view.read_with(cx, |v, _| !v.prefs.show_buttons));
     let text = cx.update(|_, cx| {

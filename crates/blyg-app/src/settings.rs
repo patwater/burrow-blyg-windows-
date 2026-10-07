@@ -8,6 +8,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use blyg_core::ConfigStore;
+use blyg_core::config::theme::Registry;
 use blyg_core::config::{Change, Diagnostic, Loaded, Severity, TokenStore};
 use gpui_kit::{App, Global};
 
@@ -35,9 +36,26 @@ pub fn get(cx: &App) -> &AppConfig {
 }
 
 /// Everything wrong with the loaded config: the core's parse/value
-/// problems plus the app's own checks (fonts, hotkey).
-pub fn diagnostics(loaded: &Loaded) -> Vec<Diagnostic> {
+/// problems plus the app's own checks (fonts, hotkey, theme names), and
+/// the problems in the theme files.
+pub fn diagnostics(loaded: &Loaded, themes: &Registry) -> Vec<Diagnostic> {
     let mut out = loaded.diagnostics.clone();
+    out.extend(themes.diagnostics.iter().cloned());
+    for (file, line, key, v) in themes.user_fonts() {
+        let list = if key == "font-writing" {
+            prefs::WRITING_FONTS
+        } else {
+            prefs::UI_FONTS
+        };
+        if prefs::find(list, &v).is_none() {
+            out.push(Diagnostic {
+                file,
+                line,
+                severity: Severity::Warning,
+                message: format!("{key}: unknown font `{v}`. See `blygger +list-fonts`"),
+            });
+        }
+    }
     for e in &loaded.entries {
         let v = e.value.trim();
         if v.is_empty() {
@@ -62,6 +80,14 @@ pub fn diagnostics(loaded: &Loaded) -> Vec<Diagnostic> {
                 Severity::Error,
                 format!("capture-hotkey: `{v}` isn't a key combination I understand"),
             )),
+            "theme" | "theme-dark" if !themes.exists(&v.to_ascii_lowercase()) => Some((
+                Severity::Warning,
+                format!(
+                    "{}: unknown theme `{v}`; using {}. See `blygger +list-themes`",
+                    e.key,
+                    if e.key == "theme" { "system" } else { "dark" }
+                ),
+            )),
             _ => None,
         };
         if let Some((severity, message)) = problem {
@@ -78,7 +104,48 @@ pub fn diagnostics(loaded: &Loaded) -> Vec<Diagnostic> {
 }
 
 pub fn current_diagnostics(cx: &App) -> Vec<Diagnostic> {
-    diagnostics(get(cx).store.loaded())
+    diagnostics(get(cx).store.loaded(), &crate::theme::themes(cx).registry)
+}
+
+/// The files and folder whose changes reload the config: every config
+/// file that could be loaded, and the themes folder with its files.
+pub fn watched(cx: &App) -> Vec<PathBuf> {
+    let Some(c) = cx.try_global::<AppConfig>() else {
+        return Vec::new();
+    };
+    let mut v: Vec<PathBuf> = c.store.loaded().files.clone();
+    v.push(c.store.primary().to_path_buf());
+    if let Some(d) = c.store.themes_dir() {
+        v.push(d);
+    }
+    v
+}
+
+/// A fingerprint of `paths`: their modification times and sizes, and those
+/// of the files directly inside any that are folders (at most 256).
+pub fn watch_stamp(paths: &[PathBuf]) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    let stamp = |p: &std::path::Path, h: &mut std::collections::hash_map::DefaultHasher| {
+        p.hash(h);
+        if let Ok(m) = std::fs::metadata(p) {
+            m.len().hash(h);
+            m.modified().ok().hash(h);
+        }
+    };
+    for p in paths {
+        stamp(p, &mut h);
+        if p.is_dir()
+            && let Ok(rd) = std::fs::read_dir(p)
+        {
+            let mut entries: Vec<PathBuf> = rd.flatten().map(|e| e.path()).take(256).collect();
+            entries.sort();
+            for e in entries {
+                stamp(&e, &mut h);
+            }
+        }
+    }
+    h.finish()
 }
 
 pub fn prefs(cx: &App) -> Prefs {
@@ -138,17 +205,25 @@ pub fn validate_blyg_url(url: &str) -> Result<String, String> {
     }
 }
 
-/// Store the token in the Keychain, then point the config at the blyg.
-pub fn connect(url: &str, token: &str, cx: &mut App) -> Result<String, String> {
+/// Store the credential (password or token) in the Keychain, then point the
+/// config at the blyg.
+pub fn connect(
+    url: &str,
+    cred: &blyg_core::api::auth::Credential,
+    cx: &mut App,
+) -> Result<String, String> {
+    use blyg_core::api::auth::Credential;
     let url = validate_blyg_url(url)?;
-    let token = token.trim();
-    if token.is_empty() {
-        return Err("Paste the owner token from your blyg's settings".into());
+    let empty = match cred {
+        Credential::Token(t) => t.trim().is_empty(),
+        Credential::Password(p) => p.is_empty(),
+        Credential::OAuth(s) => s.grant().access.is_empty(),
+    };
+    if empty {
+        return Err("Enter the studio password or the owner token".into());
     }
-    get(cx)
-        .tokens
-        .set(&url, token)
-        .map_err(|e| format!("Couldn't save the token: {e}"))?;
+    blyg_core::config::save_credential(get(cx).tokens.as_ref(), &url, cred)
+        .map_err(|e| format!("Couldn't save it in the Keychain: {e}"))?;
     write(&[("blyg-url", Change::Set(url.clone()))], cx)?;
     Ok(url)
 }
@@ -197,7 +272,7 @@ mod tests {
         let s = ConfigStore::in_memory(&format!(
             "font-family-writing = Comic Sans\nfont-family-ui = {ui}\ncapture-hotkey = ctrl+alt+nope\nbogus = 1\n",
         ));
-        let d = diagnostics(s.loaded());
+        let d = diagnostics(s.loaded(), &Registry::builtin());
         let lines: Vec<(usize, Severity)> = d.iter().map(|d| (d.line, d.severity)).collect();
         assert_eq!(
             lines,
@@ -209,6 +284,52 @@ mod tests {
             "{d:#?}"
         );
         assert!(d[0].message.contains("+list-fonts"));
+    }
+
+    #[test]
+    fn unknown_themes_and_theme_fonts_are_reported() {
+        let s = ConfigStore::in_memory("theme = cutaway\ntheme-dark = midnight\ntheme = sepia\n");
+        let mut themes = Registry::builtin();
+        themes.add_user(
+            "mine",
+            "font-writing = Comic Sans\nfont-ui = Menlo\ncolor-bg = nope\n",
+            std::path::Path::new("/t/themes/mine"),
+        );
+        let d = diagnostics(s.loaded(), &themes);
+        let got: Vec<(String, usize)> = d
+            .iter()
+            .map(|d| (d.file.display().to_string(), d.line))
+            .collect();
+        assert_eq!(
+            got,
+            vec![
+                ("/t/themes/mine".to_string(), 1),
+                ("/t/themes/mine".to_string(), 3),
+                ("config".to_string(), 2),
+                ("config".to_string(), 3),
+            ],
+            "{d:#?}"
+        );
+        assert!(d[0].message.contains("unknown font `Comic Sans`"));
+        assert!(
+            d[2].message
+                .starts_with("theme-dark: unknown theme `midnight`")
+        );
+    }
+
+    #[test]
+    fn the_watch_stamp_changes_when_a_theme_file_does() {
+        let dir = tempfile::tempdir().unwrap();
+        let themes = dir.path().join("themes");
+        std::fs::create_dir_all(&themes).unwrap();
+        let paths = vec![dir.path().join("config"), themes.clone()];
+        let a = watch_stamp(&paths);
+        assert_eq!(a, watch_stamp(&paths));
+        std::fs::write(themes.join("mine"), "inherit = kumiko\n").unwrap();
+        let b = watch_stamp(&paths);
+        assert_ne!(a, b);
+        std::fs::write(themes.join("mine"), "inherit = kumiko\nradius = 3\n").unwrap();
+        assert_ne!(b, watch_stamp(&paths));
     }
 
     #[test]

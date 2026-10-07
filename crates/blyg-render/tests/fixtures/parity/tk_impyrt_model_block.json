@@ -1,0 +1,19 @@
+{
+  "name": "tk_impyrt_model_block",
+  "kind": "fragment",
+  "md": "Before.\n\n[TK]impyrt model-x=A block of pasted text.\n\nTwo paragraphs.[/TK]\n\nAfter.",
+  "html": "<p>Before.</p>\n<div class=\"blyg-tk-gen\"><p>A block of pasted text.</p>\n<p>Two paragraphs.</p>\n</div>\n<p>After.</p>\n",
+  "tk": {
+    "scopes": [
+      {
+        "instruction": "impyrt",
+        "generated": true,
+        "block": true,
+        "source_ids": []
+      }
+    ],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

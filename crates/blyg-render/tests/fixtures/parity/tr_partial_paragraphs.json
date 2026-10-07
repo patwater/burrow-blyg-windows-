@@ -1,0 +1,17 @@
+{
+  "name": "tr_partial_paragraphs",
+  "kind": "thread",
+  "md": "![[01j9zq3k4m5n6p7q8r9s0t1v3x]]\n> A thread about notebooks.\n>\n> Closing thought.",
+  "html": "<blockquote class=\"blyg-transclusion unresolved\"><p>⚠ unresolvable: quoted passage not found in the target&#39;s version 2</p></blockquote>",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": [
+    {
+      "directive": "![[01j9zq3k4m5n6p7q8r9s0t1v3x]]",
+      "reason": "quoted passage not found in the target's version 2"
+    }
+  ]
+}

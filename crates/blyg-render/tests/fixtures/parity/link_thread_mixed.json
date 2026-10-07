@@ -1,0 +1,17 @@
+{
+  "name": "link_thread_mixed",
+  "kind": "thread",
+  "md": "Intro [[01j9zq3k4m5n6p7q8r9s0t1v3x]] and [[02abcdefghjkmnpqrstvwxyz01]].\n\n![[01j9zq3k4m5n6p7q8r9s0t1v2w]]\n\nEnd [[01j9zq3k4m5n6p7q8r9s0t1v2w]].",
+  "html": "<p>Intro <a href=\"/blyg/t/01j9zq3k4m5n6p7q8r9s0t1v3x/\">“A thread about notebooks. An older quoted fragment. Closing…”</a> and <a href=\"https://blyg.example.com/f/02abcdefghjkmnpqrstvwxyz01/\">“Writing is thinking with a pencil.”</a>.</p>\n\n<blockquote class=\"blyg-transclusion\" data-blyg-id=\"01j9zq3k4m5n6p7q8r9s0t1v2w\" data-blyg-version=\"3\">\n<p>Small tools, used daily, beat big tools used rarely.</p>\n\n\n<p class=\"provenance\"><a href=\"/blyg/f/01j9zq3k4m5n6p7q8r9s0t1v2w/\">fragment ↗</a> · snapshot of v3</p></blockquote>\n<p>End <a href=\"/blyg/f/01j9zq3k4m5n6p7q8r9s0t1v2w/\">“Small tools, used daily, beat big tools used rarely.”</a>.</p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [
+    {
+      "id": "01j9zq3k4m5n6p7q8r9s0t1v2w",
+      "version": 3
+    }
+  ],
+  "errors": []
+}

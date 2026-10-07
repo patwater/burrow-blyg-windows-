@@ -30,6 +30,14 @@ fn setup(cx: &mut TestAppContext) -> (Entity<MainView>, &mut VisualTestContext) 
         );
     });
     let fake = Arc::new(FakeBackend::with_timing(Timing::instant()).without_media_cache());
+    // These are the panel's tests: the query typed in the picker's own box
+    // (`picker_typing = panel`; `auto` types it in the editor).
+    let settings = fake.settings().unwrap();
+    fake.save_settings(&blyg_core::Settings {
+        picker_typing: Some(blyg_core::PickerTyping::Panel),
+        ..settings
+    })
+    .unwrap();
     let backend: Arc<dyn Backend> = fake.clone();
     let (view, cx) = cx.add_window_view(move |window, cx| {
         MainView::new(

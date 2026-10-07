@@ -107,14 +107,36 @@ fn save_coalesces_into_one_op() {
 }
 
 #[test]
+fn a_kind_change_lands_in_place() {
+    let s = store();
+    let id = s.create_draft(Kind::Fragment, "a", 0).unwrap();
+    let seq = s.ops().unwrap()[0].seq;
+    s.op_created(seq, &id, "S1", "a", Kind::Fragment).unwrap();
+    s.set_kind(&id, Kind::Thread, 0).unwrap();
+    let ops = s.ops().unwrap();
+    assert_eq!(ops.len(), 1);
+    assert_eq!(ops[0].kind, OpKind::Recreate);
+    s.op_kind_saved(ops[0].seq, &id, "a", Kind::Thread).unwrap();
+    assert!(s.ops().unwrap().is_empty());
+    let it = s.item(&id).unwrap();
+    assert_eq!(it.server_id.unwrap().0, "S1", "same server draft");
+    assert_eq!(it.kind, Kind::Thread);
+    assert!(!it.pending_sync);
+}
+
+#[test]
 fn retirement_ops_are_not_local_edits() {
     let s = store();
     let id = s.create_draft(Kind::Fragment, "a", 0).unwrap();
     let seq = s.ops().unwrap()[0].seq;
-    s.op_created(seq, &id, "OLD", "a", Kind::Fragment).unwrap();
-    s.set_kind(&id, Kind::Thread, 0).unwrap();
-    let seq = s.ops().unwrap()[0].seq;
-    s.op_recreated(seq, &id, "NEW", "OLD", "a", Kind::Thread)
+    s.op_created(seq, &id, "NEW", "a", Kind::Fragment).unwrap();
+    // A retirement queued by a build from before studio 0.9, when a kind
+    // change made a new draft and deleted the old one.
+    s.conn()
+        .execute(
+            "INSERT INTO outbox (local_id, op, payload, not_before) VALUES (?1, 'delete_remote', 'OLD', 0)",
+            [&id.0],
+        )
         .unwrap();
     // only the delete of OLD is queued: not an unpushed edit
     let ops = s.ops().unwrap();
@@ -259,11 +281,7 @@ fn a_server_edit_forgets_tracked_provenance() {
         created: String::new(),
         updated: String::new(),
         content_md: "rewritten in the studio".into(),
-        stub_of: None,
-        forked_from: None,
-        permalink: None,
-        show_responses: false,
-        versions: None,
+        ..Default::default()
     };
     s.merge_all(&[w]).unwrap();
     assert_eq!(s.item(&id).unwrap().content_md, "rewritten in the studio");

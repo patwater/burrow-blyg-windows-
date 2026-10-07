@@ -326,6 +326,13 @@ pub struct Lineage {
     pub lead: &'static str,
     pub link: String,
     pub url: String,
+    // --- quote targets --- the name opens the profile (`url`); the rest
+    // of the line opens the post itself (`target`: origin, id, version).
+    /// The origin's short name (the start of `link`).
+    pub name: String,
+    /// What follows the name in `link` (` · “title”`, ` v3 📌`).
+    pub rest: String,
+    pub target: Option<(String, String, Option<u32>)>,
 }
 
 /// `item` is a post's lineage: the reading item's own fields, filled from
@@ -340,25 +347,36 @@ pub fn lineage(item: &blyg_core::Lineage, held: &[ReadingItem]) -> Vec<Lineage> 
         let title = s.id.as_deref().and_then(|id| {
             held.iter()
                 .find(|r| r.remote_id == id && same_origin(&r.origin, target))
-                .and_then(|r| blyg_core::profile::first_line(&r.content_md))
+                .and_then(|r| blyg_core::plain_title(&r.content_md))
         });
         let host = short(target);
+        let rest = match title {
+            Some(t) => format!(" · “{}”", clip(&t, 48)),
+            None => String::new(),
+        };
         out.push(Lineage {
             id: "pf-lineage-stub",
             lead: "↳ stub of",
-            link: match title {
-                Some(t) => format!("{host} · “{}”", clip(&t, 48)),
-                None => host,
-            },
+            link: format!("{host}{rest}"),
             url: target.to_string(),
+            name: host,
+            rest,
+            target: match (&s.origin, &s.id) {
+                (Some(o), Some(id)) => Some((o.clone(), id.clone(), s.version)),
+                _ => None,
+            },
         });
     }
     if let Some(f) = &item.forked_from {
+        let rest = format!(" v{} 📌", f.version);
         out.push(Lineage {
             id: "pf-lineage-fork",
             lead: "⑂ forked from",
-            link: format!("{} v{} 📌", short(&f.origin), f.version),
+            link: format!("{}{rest}", short(&f.origin)),
             url: f.origin.clone(),
+            name: short(&f.origin),
+            rest,
+            target: Some((f.origin.clone(), f.id.clone(), Some(f.version))),
         });
     }
     out
@@ -389,6 +407,7 @@ mod tests {
             title: id.into(),
             status: "active".into(),
             in_blogroll: blogroll,
+            title_follows_source: true,
         }
     }
 
@@ -529,6 +548,7 @@ mod tests {
                 version: 3,
             }),
             transclusions: vec![],
+            lineage_known: false,
         };
         let mut held = item.clone();
         held.origin = "https://ada.example.net/".into();

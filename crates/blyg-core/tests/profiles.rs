@@ -84,6 +84,8 @@ fn serve_full(f: &Mock, origin: &str) {
 fn owner(env: &Env, origin: &str, subscribed: bool) -> LiveBackend {
     {
         let mut st = env.mock.state();
+        // One row's `transclusions` is deliberately off-contract.
+        st.unchecked.push("/api/reading/imported".into());
         if subscribed {
             st.subs = vec![json!({ "id": SUB, "kind": "blyg", "origin": origin,
                 "feed_url": format!("{origin}feed.xml"), "title": "JD", "status": "active", "in_blogroll": false })];

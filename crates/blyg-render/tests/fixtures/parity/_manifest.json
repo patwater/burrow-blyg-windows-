@@ -1,9 +1,10 @@
 {
   "generator": "gen_parity.mjs",
-  "markdown_it": "14.3.0",
+  "studio": "0.32.2",
+  "markdown_it": "14.3.2",
   "linkify_it": "5.0.2",
-  "cases": 161,
+  "cases": 202,
   "commonmark_examples": 652,
   "linkify_vectors": 206,
-  "media_cases": 3
+  "media_cases": 4
 }

@@ -23,6 +23,9 @@ pub fn studio_css() -> String {
 .blyg-tk-gen { background: rgba(90,140,255,0.12); border-radius: 3px; box-shadow: 0 0 0 2px rgba(90,140,255,0.12); }
 div.blyg-tk-gen { padding: 0.1rem 0.4rem; }
 span.blyg-tk-gen { padding: 0.03rem 0.15rem; }
+/* Highlighting on (studio 0.27, `article.gen-on`): the public look, in the
+   theme's own tokens; the fallbacks are for a theme from before them. */
+.gen-on .blyg-tk-gen { background: var(--gen-bg, rgba(127,127,127,0.12)); box-shadow: inset 0 0 0 1px var(--gen-rule, rgba(127,127,127,0.45)); border-radius: 4px; }
 blockquote.blyg-transclusion.unresolved {
   border-left: 3px solid var(--alert, #b3261e); background: var(--alert-wash, rgba(179,38,30,0.08));
   color: var(--alert, #b3261e); font-style: italic;
@@ -230,15 +233,25 @@ pub struct Attachment {
     pub key: String,
     /// The stored alt text.
     pub alt: Option<String>,
+    /// The row's `inline` flag: the studio placed it in the text, so it
+    /// shows only where its line is.
+    pub inline: bool,
 }
 
-/// pages.ts `mediaHtml`: every attachment as a lazy image paragraph. Public
-/// pages put this after `.item-content`; since the Worker's patch 8 the
-/// studio preview shows it too (see [`preview_media`]). `src` is
+/// util.ts `placedIn`: the content already shows `key`.
+fn placed_in(html: &str, key: &str) -> bool {
+    html.contains(&format!("/{key}")) || html.contains(&format!("\"{key}"))
+}
+
+/// pages.ts `mediaHtml`: each attachment the content does not already show
+/// (util.ts `unplacedMedia`: not `inline`, not placed in `content_html`) as
+/// a lazy image paragraph. Public pages put this after `.item-content`; the
+/// desktop preview shows it too (see [`preview_media`]). `src` is
 /// HTML-escaped, where the Worker interpolates it raw.
-pub fn media_html(media: &[Attachment], mount: &str) -> String {
+pub fn media_html(media: &[Attachment], mount: &str, content_html: &str) -> String {
     media
         .iter()
+        .filter(|m| !m.inline && !placed_in(content_html, &m.key))
         .map(|m| {
             format!(
                 "<p><img src=\"{}\" alt=\"{}\" loading=\"lazy\"></p>",
@@ -250,12 +263,13 @@ pub fn media_html(media: &[Attachment], mount: &str) -> String {
         .join("\n")
 }
 
-/// attachments.ts `previewMedia`: the studio preview's attachment strip,
-/// placed right after the preview body.
-pub fn preview_media(media: &[Attachment], mount: &str) -> String {
+/// The preview's attachment strip, placed right after the preview body:
+/// [`media_html`] in `div#preview-media`, as the Worker's server-rendered
+/// studio drew it until studio 0.10 (attachments.ts `previewMedia`).
+pub fn preview_media(media: &[Attachment], mount: &str, content_html: &str) -> String {
     format!(
         "<div id=\"preview-media\">{}</div>",
-        media_html(media, mount)
+        media_html(media, mount, content_html)
     )
 }
 

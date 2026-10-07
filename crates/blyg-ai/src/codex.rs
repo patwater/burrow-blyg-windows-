@@ -177,6 +177,7 @@ impl Provider for LocalCodex {
             return Err(AiError::Provider("Codex returned no text".into()));
         }
         Ok(GenResult {
+            content_md: None,
             text,
             model: req
                 .model

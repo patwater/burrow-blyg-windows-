@@ -1,0 +1,28 @@
+# Ink: the app's original dark look (warm near-black, soft coral accent).
+name = Ink
+family = plain
+base = dark
+
+color-bg = #161513
+color-ink = #e4dfd3
+color-muted = #7f7a70
+color-line = #2a2824
+color-sel = #26231e
+color-accent = #e0775a
+color-bar = #1c1b18
+color-text-selection = #e0775a40
+color-warn = #c98a00
+color-over = #d23c2a
+color-green = #3aa655
+color-amber = #e0a100
+color-grey = #999999
+color-ins = #3aa6552e
+color-del = #d23c2a29
+color-shadow = #00000059
+color-edited = #8fb3d9
+color-edited-bg = #1f2e40
+color-edited-rule = #8fb3d9
+color-notice = #e7c070
+color-notice-bg = #e7c07022
+
+radius = 8

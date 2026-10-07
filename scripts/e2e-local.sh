@@ -4,8 +4,14 @@
 #   BLYG_WORKER_DIR=/path/to/worker scripts/e2e-local.sh [extra test args]
 #
 # BLYG_WORKER_DIR is the Worker's directory (the one with wrangler.jsonc and
-# node_modules; run `npm install` there first). The Worker must carry the
-# owner-API extensions in docs/SERVER.md.
+# node_modules; run `npm install && npm run build` there first): a
+# blygger-studio 0.9 or later.
+#
+#   BLYG_E2E_AUTH=password   sign in with the studio password, not the token
+#   BLYG_E2E_STOCK=1         a stock blygger-studio, without the extensions in
+#                            docs/SERVER.md: the tests of fork-only features
+#                            skip. Studio 0.28+ gets a minted manual token;
+#                            an older one, the password
 #
 # What it does:
 #   1. derives a local-only wrangler config and random dev secrets in a
@@ -51,8 +57,25 @@ printf 'e2e-local: starting the Worker on :%s and :%s…\n' "$PORT_A" "$PORT_B" 
 
 export BLYG_E2E_URL="http://127.0.0.1:$PORT_A"
 export BLYG_E2E_URL_B="http://127.0.0.1:$PORT_B"
-BLYG_E2E_TOKEN="$("$CTL" token)"
+# A studio 0.28+ mints manual tokens (one per instance); an older Worker
+# fork uses its BLYG_OWNER_TOKEN; an older stock studio, the password.
+BLYG_E2E_TOKEN="$("$CTL" mint-token "$PORT_A")"
+if [ -n "$BLYG_E2E_TOKEN" ]; then
+  BLYG_E2E_TOKEN_B="$("$CTL" mint-token "$PORT_B")"
+  export BLYG_E2E_TOKEN_B
+  [ "${BLYG_E2E_AUTH:-}" != password ] || BLYG_E2E_PASSWORD="$("$CTL" password)"
+else
+  BLYG_E2E_TOKEN="$("$CTL" token)"
+  if [ -n "${BLYG_E2E_STOCK:-}" ] || [ "${BLYG_E2E_AUTH:-}" = password ]; then
+    BLYG_E2E_PASSWORD="$("$CTL" password)"
+  fi
+fi
 export BLYG_E2E_TOKEN
+[ -z "${BLYG_E2E_PASSWORD:-}" ] || export BLYG_E2E_PASSWORD
+# The browser sign-in tests act as the owner in a browser (sign in to the
+# studio, then allow Burrow), whatever the rest of the suite signs in with.
+BLYG_E2E_OWNER_PASSWORD="$("$CTL" password)"
+export BLYG_E2E_OWNER_PASSWORD
 export BLYG_E2E_CTL="$CTL"
 
 cd "$ROOT"

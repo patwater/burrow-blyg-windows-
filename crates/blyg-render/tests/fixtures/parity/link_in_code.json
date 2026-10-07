@@ -1,0 +1,12 @@
+{
+  "name": "link_in_code",
+  "kind": "fragment",
+  "md": "`[[01j9zq3k4m5n6p7q8r9s0t1v2w]]` and\n\n```\n[[01j9zq3k4m5n6p7q8r9s0t1v2w]]\n```\n\n    [[01j9zq3k4m5n6p7q8r9s0t1v2w]]\n\nreal [[01j9zq3k4m5n6p7q8r9s0t1v2w]] and `[[0zzzzzzzzzzzzzzzzzzzzzzzzz]]`",
+  "html": "<p><code>[[01j9zq3k4m5n6p7q8r9s0t1v2w]]</code> and</p>\n<pre><code>[[01j9zq3k4m5n6p7q8r9s0t1v2w]]\n</code></pre>\n<pre><code>[[01j9zq3k4m5n6p7q8r9s0t1v2w]]\n</code></pre>\n<p>real <a href=\"/blyg/f/01j9zq3k4m5n6p7q8r9s0t1v2w/\">“Small tools, used daily, beat big tools used rarely.”</a> and <code>[[0zzzzzzzzzzzzzzzzzzzzzzzzz]]</code></p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

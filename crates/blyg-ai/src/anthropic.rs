@@ -146,7 +146,11 @@ impl Provider for AnthropicApi {
                 "provider returned no text content".into(),
             ));
         }
-        Ok(GenResult { text, model })
+        Ok(GenResult {
+            text,
+            model,
+            content_md: None,
+        })
     }
 
     fn list_models(&self) -> Result<Vec<ModelInfo>> {

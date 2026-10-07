@@ -59,6 +59,7 @@ fn sample_reading() -> ReadingItem {
         stub_of: None,
         forked_from: None,
         transclusions: vec![],
+        lineage_known: false,
     }
 }
 
@@ -126,6 +127,8 @@ struct State {
     rd: reading_seed::Seed,
     /// The server has the owner-API read extensions (test hook).
     read_ext: bool,
+    /// The "server" is older than blygger-studio 0.9 (test hook).
+    outdated: bool,
     // --- follow-ups --- (scratch media)
     /// `upload_media` calls that reached the "server" (tests).
     uploads: usize,
@@ -136,6 +139,10 @@ struct State {
     profiles: HashMap<String, Profile>,
     /// Profile fetches that reached the "network" (tests).
     profile_fetches: Vec<String>,
+    /// Public item documents fetched (`public_item`), for tests.
+    public_fetches: Vec<String>,
+    // --- reader folders --- ids handed out by `create_folder`.
+    folder_seq: u64,
 }
 
 pub struct FakeBackend {
@@ -240,8 +247,11 @@ impl FakeBackend {
                 stub_of: None,
                 forked_from: None,
                 show_responses: true,
+                responses_mode: Some(ResponsesMode::Show),
                 pending_sync: false,
                 conflict: false,
+                highlight: false,
+                highlight_mode: Some(HighlightMode::Default),
             });
         }
         for (id, vs) in &rd.own_versions {
@@ -267,10 +277,13 @@ impl FakeBackend {
                 rd,
                 // BLYGGER_FAKE_NO_READ=1: a server without the read extensions.
                 read_ext: std::env::var_os("BLYGGER_FAKE_NO_READ").is_none(),
+                outdated: false,
                 uploads: 0,
                 fail_uploads: false,
                 profiles: HashMap::new(),    // --- profiles ---
                 profile_fetches: Vec::new(), // --- profiles ---
+                public_fetches: Vec::new(),
+                folder_seq: 0,
             })),
             generation: Arc::new(AtomicU64::new(0)),
             timing,
@@ -332,6 +345,24 @@ impl FakeBackend {
             }
         }
         Ok(())
+    }
+
+    /// Tests: a reading pull finds a stock server (no extensions).
+    #[cfg(test)]
+    pub fn trigger_server_limited(&self) {
+        let sink = self.lock().sink.clone();
+        Self::emit(&sink, CoreEvent::ServerLimited);
+    }
+
+    /// Tests: sync finds the server older than blygger-studio 0.9.
+    #[cfg(test)]
+    pub fn trigger_server_outdated(&self) {
+        let sink = {
+            let mut st = self.lock();
+            st.outdated = true;
+            st.sink.clone()
+        };
+        Self::emit(&sink, CoreEvent::ServerOutdated);
     }
 
     /// Tests / fake mode: behave like a Worker that answers 404 to the
@@ -541,8 +572,11 @@ impl FakeBackend {
             stub_of: None,
             forked_from: None,
             show_responses: true,
+            responses_mode: Some(ResponsesMode::Show),
             pending_sync: status != Status::Scratch,
             conflict: false,
+            highlight: false,
+            highlight_mode: Some(HighlightMode::Default),
         });
         id
     }
@@ -576,6 +610,12 @@ impl FakeBackend {
     }
 
     // --- profiles ---
+
+    /// Tests: every public item document fetched, in order.
+    #[cfg(test)]
+    pub fn public_fetches(&self) -> Vec<String> {
+        self.lock().public_fetches.clone()
+    }
 
     /// Tests: every URL a profile was fetched for, in order.
     #[cfg(test)]
@@ -678,7 +718,7 @@ fn fake_preview(url: &str) -> Result<SubscribePreview> {
             site_mismatch: None,
         });
     }
-    let mut title = host.split('.').next().unwrap_or("blyg").to_string();
+    let mut title = host.split('.').next().unwrap_or(&host).to_string();
     if let Some(f) = title.get_mut(0..1) {
         f.make_ascii_uppercase();
     }
@@ -940,6 +980,8 @@ impl Backend for FakeBackend {
         let mut v = st.rd.reading.clone();
         // The full editor's sample thread quotes this imported post.
         v.push(sample_reading());
+        // Newest first by the post's own date, as the store sorts (#6).
+        v.sort_by_cached_key(|r| std::cmp::Reverse(r.sort_at()));
         v
     }
 
@@ -953,6 +995,7 @@ impl Backend for FakeBackend {
             title: "Shoreline Notes".into(),
             status: "active".into(),
             in_blogroll: false,
+            title_follows_source: true,
         });
         v
     }
@@ -1182,15 +1225,36 @@ impl Backend for FakeBackend {
         Ok(id)
     }
 
-    fn set_show_responses(&self, id: &LocalId, show: bool) -> Result<()> {
+    fn set_responses(&self, id: &LocalId, mode: ResponsesMode) -> Result<bool> {
         let mut st = self.lock();
+        let default = st.rd.settings.show_responses_default.unwrap_or(false);
         let it = st
             .items
             .iter_mut()
             .find(|i| &i.local_id == id)
             .ok_or(CoreError::NotFound)?;
-        it.show_responses = show;
-        Ok(())
+        it.responses_mode = Some(mode);
+        it.show_responses = shows_responses(mode, default);
+        Ok(it.show_responses)
+    }
+
+    fn set_highlight(&self, id: &LocalId, mode: HighlightMode) -> Result<bool> {
+        thread::sleep(self.timing.network);
+        self.remote_guard()?;
+        let mut st = self.lock();
+        let default = st.rd.settings.highlight_generated_default.unwrap_or(false);
+        let it = st
+            .items
+            .iter_mut()
+            .find(|i| &i.local_id == id)
+            .ok_or(CoreError::NotFound)?;
+        it.highlight_mode = Some(mode);
+        it.highlight = shows_responses(mode, default);
+        Ok(it.highlight)
+    }
+
+    fn picker_typing(&self) -> PickerTyping {
+        self.lock().rd.settings.picker_typing.unwrap_or_default()
     }
 
     fn sync_now(&self) -> Result<()> {
@@ -1222,12 +1286,85 @@ impl Backend for FakeBackend {
                     .to_string(),
                 status: "active".into(),
                 in_blogroll: false,
+                title_follows_source: true,
             };
             st.rd.subs.push(sub.clone());
             sub
         };
         self.reading_changed();
         Ok(sub)
+    }
+
+    // --- subscription names & checks --- (studio 0.30)
+    fn rename_subscription(&self, sub_id: &str, title: Option<&str>) -> Result<()> {
+        self.remote_guard()?;
+        {
+            let mut st = self.lock();
+            let s = st
+                .rd
+                .subs
+                .iter_mut()
+                .find(|s| s.id == sub_id)
+                .ok_or(CoreError::NotFound)?;
+            match title.map(str::trim) {
+                Some("") => {
+                    return Err(CoreError::Rejected {
+                        status: 400,
+                        message: "a name can't be empty".into(),
+                        details: vec![],
+                    });
+                }
+                Some(t) => {
+                    s.title = t.to_string();
+                    s.title_follows_source = false;
+                }
+                None => {
+                    // The source's own name: its host, here.
+                    s.title = crate::app::reading::vm::host(&s.origin);
+                    s.title_follows_source = true;
+                }
+            }
+        }
+        self.reading_changed();
+        Ok(())
+    }
+
+    fn poll_subscriptions(&self) -> Result<u32> {
+        self.remote_guard()?;
+        let st = self.lock();
+        Ok(st.rd.subs.iter().filter(|s| s.status != "paused").count() as u32 + 1)
+    }
+
+    fn check_subscription(&self, sub_id: &str) -> Result<bool> {
+        self.remote_guard()?;
+        let _ = sub_id;
+        Ok(false)
+    }
+
+    // --- read/unread ---
+    fn set_read(&self, rows: &[(String, String)], read: bool) -> Result<usize> {
+        let n = {
+            let mut st = self.lock();
+            let mut n = 0;
+            for r in st.rd.reading.iter_mut() {
+                if !rows
+                    .iter()
+                    .any(|(s, id)| *s == r.subscription_id && *id == r.remote_id)
+                {
+                    continue;
+                }
+                let want = read.then_some(r.version);
+                if r.read_version != want {
+                    r.read_version = want;
+                    n += 1;
+                }
+            }
+            n
+        };
+        if n > 0 {
+            self.reading_changed();
+        }
+        Ok(n)
     }
 
     fn unsubscribe(&self, sub_id: &str) -> Result<()> {
@@ -1328,7 +1465,19 @@ impl Backend for FakeBackend {
     fn save_settings(&self, settings: &Settings) -> Result<()> {
         thread::sleep(self.timing.network);
         self.remote_guard()?;
-        self.lock().rd.settings = settings.clone();
+        let mut st = self.lock();
+        st.rd.settings = settings.clone();
+        // Items without a choice of their own follow the new default.
+        let default = settings.show_responses_default.unwrap_or(false);
+        let highlight = settings.highlight_generated_default.unwrap_or(false);
+        for it in &mut st.items {
+            if let Some(m) = it.responses_mode {
+                it.show_responses = shows_responses(m, default);
+            }
+            if let Some(m) = it.highlight_mode {
+                it.highlight = shows_responses(m, highlight);
+            }
+        }
         Ok(())
     }
 
@@ -1450,6 +1599,208 @@ impl Backend for FakeBackend {
         let key = blyg_core::profile::clean_url(url)?;
         let p = self.lock().profiles.get(&key).cloned()?;
         Some(self.finish_profile(p))
+    }
+
+    // --- about --- The sample server syncs read state whenever it has the
+    // read extensions.
+    fn read_state_sync(&self) -> bool {
+        self.lock().read_ext
+    }
+
+    fn server_outdated(&self) -> bool {
+        self.lock().outdated
+    }
+
+    fn cached_profiles(&self) -> Vec<Profile> {
+        let mut out: Vec<Profile> = Vec::new();
+        for p in self.lock().profiles.values() {
+            if !out.iter().any(|o| o.origin == p.origin) {
+                out.push(p.clone());
+            }
+        }
+        out
+    }
+
+    // --- reader folders --- the same rules as the store (folders.rs).
+    fn folders(&self) -> Vec<Folder> {
+        let mut v = self.lock().rd.folders.clone();
+        v.sort_by_key(|f| f.position);
+        v
+    }
+
+    fn subscription_folders(&self) -> HashMap<String, String> {
+        self.lock().rd.filed.clone()
+    }
+
+    fn create_folder(&self, name: &str) -> Result<Folder> {
+        let name = fake_folder_name(name)?;
+        let mut st = self.lock();
+        fake_folder_unique(&st.rd.folders, &name, None)?;
+        st.folder_seq += 1;
+        let f = Folder {
+            id: format!("fld-{}", st.folder_seq),
+            name,
+            position: st.rd.folders.len() as u32,
+        };
+        st.rd.folders.push(f.clone());
+        Ok(f)
+    }
+
+    fn rename_folder(&self, id: &str, name: &str) -> Result<()> {
+        let name = fake_folder_name(name)?;
+        let mut st = self.lock();
+        fake_folder_unique(&st.rd.folders, &name, Some(id))?;
+        let f = st
+            .rd
+            .folders
+            .iter_mut()
+            .find(|f| f.id == id)
+            .ok_or(CoreError::NotFound)?;
+        f.name = name;
+        Ok(())
+    }
+
+    fn delete_folder(&self, id: &str) -> Result<()> {
+        let mut st = self.lock();
+        let before = st.rd.folders.len();
+        st.rd.folders.retain(|f| f.id != id);
+        if st.rd.folders.len() == before {
+            return Err(CoreError::NotFound);
+        }
+        st.rd.filed.retain(|_, f| f != id);
+        st.rd.folders.sort_by_key(|f| f.position);
+        for (i, f) in st.rd.folders.iter_mut().enumerate() {
+            f.position = i as u32;
+        }
+        Ok(())
+    }
+
+    fn move_folder(&self, id: &str, index: usize) -> Result<()> {
+        let mut st = self.lock();
+        st.rd.folders.sort_by_key(|f| f.position);
+        let from = st
+            .rd
+            .folders
+            .iter()
+            .position(|f| f.id == id)
+            .ok_or(CoreError::NotFound)?;
+        let f = st.rd.folders.remove(from);
+        let at = index.min(st.rd.folders.len());
+        st.rd.folders.insert(at, f);
+        for (i, f) in st.rd.folders.iter_mut().enumerate() {
+            f.position = i as u32;
+        }
+        Ok(())
+    }
+
+    fn set_subscription_folder(&self, sub_id: &str, folder: Option<&str>) -> Result<()> {
+        let mut st = self.lock();
+        match folder {
+            None => {
+                st.rd.filed.remove(sub_id);
+            }
+            Some(fid) => {
+                if !st.rd.folders.iter().any(|f| f.id == fid) {
+                    return Err(CoreError::NotFound);
+                }
+                st.rd.filed.insert(sub_id.to_string(), fid.to_string());
+            }
+        }
+        Ok(())
+    }
+
+    // --- responses --- the sample reading list's references, newest first.
+    fn responses(&self, origin: &str, id: &str) -> Vec<blyg_core::Response> {
+        let key = blyg_core::post_key(origin, id);
+        self.reading()
+            .into_iter()
+            .filter(|r| r.state != "tombstone" || r.thumb.is_some() || !r.hoppers.is_empty())
+            .flat_map(|r| {
+                r.references()
+                    .into_iter()
+                    .filter(|f| (f.origin.clone(), f.id.clone()) == key)
+                    .map(|f| blyg_core::Response {
+                        item: r.clone(),
+                        relation: f.relation,
+                        version: f.version,
+                        partial: f.partial,
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect()
+    }
+
+    // --- quote targets --- posts nobody here follows, "served" publicly.
+
+    fn public_item(&self, origin: &str, id: &str) -> Result<blyg_core::PublicItem> {
+        thread::sleep(self.timing.network);
+        self.remote_guard()?;
+        let mut st = self.lock();
+        st.public_fetches.push(format!("{origin}items/{id}.json"));
+        st.rd
+            .public
+            .iter()
+            .find(|p| {
+                blyg_core::profile::same_origin(&p.item.origin, origin) && p.item.remote_id == id
+            })
+            .cloned()
+            .ok_or(CoreError::NotFound)
+    }
+
+    fn public_pinned(&self, origin: &str, id: &str, version: u32) -> Result<PinnedVersion> {
+        thread::sleep(self.timing.network);
+        self.remote_guard()?;
+        self.lock()
+            .rd
+            .public_pins
+            .iter()
+            .find(|p| {
+                blyg_core::profile::same_origin(&p.origin, origin)
+                    && p.id == id
+                    && p.version == version
+            })
+            .cloned()
+            .ok_or(CoreError::Rejected {
+                status: 404,
+                message: "not pinned".into(),
+                details: vec![],
+            })
+    }
+}
+
+// --- reader folders --- the store's name rules (blyg-core `store/folders.rs`).
+fn fake_folder_name(name: &str) -> Result<String> {
+    let n = name.split_whitespace().collect::<Vec<_>>().join(" ");
+    if n.is_empty() {
+        return Err(CoreError::Rejected {
+            status: 400,
+            message: "A folder needs a name".into(),
+            details: vec![],
+        });
+    }
+    Ok(n)
+}
+
+fn fake_folder_unique(folders: &[Folder], name: &str, except: Option<&str>) -> Result<()> {
+    let clash = folders
+        .iter()
+        .any(|f| Some(f.id.as_str()) != except && f.name.to_lowercase() == name.to_lowercase());
+    if clash {
+        return Err(CoreError::Rejected {
+            status: 409,
+            message: format!("There's already a folder called “{name}”"),
+            details: vec![],
+        });
+    }
+    Ok(())
+}
+
+/// The studio's `itemShowsResponses`: the item's choice, else the default.
+fn shows_responses(mode: ResponsesMode, default: bool) -> bool {
+    match mode {
+        ResponsesMode::Default => default,
+        ResponsesMode::Show => true,
+        ResponsesMode::Hide => false,
     }
 }
 

@@ -23,6 +23,17 @@ impl Mapped {
         }
     }
 
+    /// The same line map over new text with the same number of lines.
+    pub fn with_text(&self, text: String) -> Self {
+        let starts = line_starts(&text);
+        debug_assert_eq!(starts.len(), self.lines.len());
+        Mapped {
+            text,
+            lines: self.lines.clone(),
+            starts,
+        }
+    }
+
     /// Source line of the byte at `offset` in `text`.
     pub fn line_at(&self, offset: usize) -> usize {
         self.lines[line_index(&self.starts, offset)]
@@ -71,11 +82,6 @@ impl<'a> MapBuilder<'a> {
             self.lines.push(line);
         }
         self.out.push_str(piece);
-    }
-
-    /// Length in bytes of the text built so far.
-    pub fn len(&self) -> usize {
-        self.out.len()
     }
 
     pub fn finish(mut self) -> Mapped {

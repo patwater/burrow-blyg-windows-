@@ -27,6 +27,9 @@ use blyg_core::{Backend, LocalId, RemoteMedia, SubscriptionKind};
 use blyg_render::{RenderOpts, ShellOpts};
 use gpui_kit::*;
 
+use crate::fonts::Bundle;
+use crate::prefs::FontChoice;
+
 use super::super::reading::View;
 use super::resolver::{StoreResolver, render_kind};
 use super::sanitize::sanitize;
@@ -70,6 +73,8 @@ pub struct Doc {
 struct Shown {
     doc: Doc,
     font_px: u32,
+    /// --- themes --- the theme the page was coloured with.
+    theme: String,
 }
 
 pub struct Reader {
@@ -82,6 +87,8 @@ pub struct Reader {
     active: bool,
     dark: Option<bool>,
     viewport_w: Pixels,
+    /// --- selection --- The page has a text selection (it says so).
+    selected: bool,
     /// Pages loaded (tests).
     #[cfg(test)]
     pub(crate) pages: Vec<String>,
@@ -90,6 +97,23 @@ pub struct Reader {
 impl Reader {
     pub(super) fn reclaim_keyboard(&self) {
         self.slot.borrow_mut().with(|s| s.reclaim_keyboard());
+    }
+
+    /// --- notes --- Ask the web view for its selected text (`false`: there's
+    /// no web view to ask).
+    pub fn selection(&self, reply: async_channel::Sender<String>) -> bool {
+        match self.slot.borrow_mut().surface.as_mut() {
+            Some(s) => {
+                s.selection(reply);
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// --- browser --- (`Studio::clip_webviews`)
+    pub(super) fn set_clip(&self, edge: Option<Pixels>) {
+        self.slot.borrow_mut().set_clip(edge);
     }
 
     pub fn new() -> Reader {
@@ -103,6 +127,7 @@ impl Reader {
             active: false,
             dark: None,
             viewport_w: px(0.),
+            selected: false,
             #[cfg(test)]
             pages: Vec::new(),
         }
@@ -110,6 +135,11 @@ impl Reader {
 
     pub fn active(&self) -> bool {
         self.active
+    }
+
+    /// --- selection --- The post on screen has text selected in it.
+    pub fn has_selection(&self) -> bool {
+        self.active && self.selected
     }
 
     #[cfg(test)]
@@ -171,49 +201,144 @@ pub fn attachments_html(media: &[RemoteMedia]) -> String {
 fn font_faces() -> &'static str {
     static CSS: OnceLock<String> = OnceLock::new();
     CSS.get_or_init(|| {
-        let face = |style: &str, bytes: &[u8]| {
-            format!(
-                "@font-face {{ font-family: \"Literata\"; font-style: {style}; font-weight: 400; \
-                 font-display: swap; src: url(data:font/ttf;base64,{}) format(\"truetype\"); }}\n",
-                super::local_media::base64(bytes)
-            )
-        };
         let files = crate::fonts::LITERATA;
-        format!("{}{}", face("normal", files[0]), face("italic", files[1]))
+        format!(
+            "{}{}",
+            face("Literata", "normal", 400, files[0]),
+            face("Literata", "italic", 400, files[1])
+        )
     })
+}
+
+/// One inlined `@font-face`.
+fn face(family: &str, style: &str, weight: u16, bytes: &[u8]) -> String {
+    format!(
+        "@font-face {{ font-family: \"{family}\"; font-style: {style}; font-weight: {weight}; \
+         font-display: swap; src: url(data:font/ttf;base64,{}) format(\"truetype\"); }}\n",
+        super::local_media::base64(bytes)
+    )
+}
+
+/// A bundled family's faces (regular, italic, bold), inlined once each.
+fn bundle_faces(b: Bundle, family: &str) -> &'static str {
+    static CSS: [OnceLock<String>; 5] = [const { OnceLock::new() }; 5];
+    let (slot, faces): (usize, &[(&str, u16, usize)]) = match b {
+        Bundle::Literata => (
+            0,
+            &[("normal", 400, 0), ("italic", 400, 1), ("normal", 700, 3)],
+        ),
+        Bundle::SourceSerif => (
+            1,
+            &[("normal", 400, 0), ("italic", 400, 1), ("normal", 700, 3)],
+        ),
+        Bundle::Quattro => (
+            2,
+            &[("normal", 400, 0), ("italic", 400, 1), ("normal", 700, 2)],
+        ),
+        Bundle::EtBook => (
+            3,
+            &[("normal", 400, 0), ("italic", 400, 1), ("normal", 700, 2)],
+        ),
+        Bundle::Inter => (
+            4,
+            &[("normal", 400, 0), ("italic", 400, 1), ("normal", 700, 4)],
+        ),
+    };
+    CSS[slot].get_or_init(|| {
+        let files = b.files();
+        faces
+            .iter()
+            .filter_map(|&(style, weight, i)| Some(face(family, style, weight, files.get(i)?)))
+            .collect()
+    })
+}
+
+/// The post's text font in the reader: the writing font (a theme's, e.g.
+/// Portolan's ET Book, unless the config sets one), bundled fonts inlined,
+/// macOS's by name. Literata, the stylesheet's own, adds nothing.
+pub fn text_font_css(font: Option<FontChoice>) -> String {
+    let Some(f) = font.filter(|f| f.family != "Literata") else {
+        return String::new();
+    };
+    let (faces, stack) = match (f.bundled, f.family) {
+        (Some(b), fam) => (bundle_faces(b, fam), format!("\"{fam}\"")),
+        (None, ".SystemUIFont") => ("", "-apple-system, system-ui".to_string()),
+        (None, "New York") => ("", "\"New York\", ui-serif".to_string()),
+        (None, fam) => ("", format!("\"{fam}\"")),
+    };
+    format!(
+        "{faces}body {{ font-family: {stack}, Literata, \"Iowan Old Style\", Charter, Georgia, serif; }}\n"
+    )
 }
 
 /// The reader's additions on top of the app theme (`BUILTIN_CSS`, the Tufte
 /// palette in light and dark): the fonts, the text size, a left-aligned
 /// column under the native header, and generated spans left unstyled as the
-/// public page leaves them (the tint is a studio authoring aid).
+/// public page leaves them (the tint is a studio authoring aid). Quote
+/// boxes, selection, highlights and diff marks take the theme's colours
+/// (`theme::reader_vars`), with the plain look's as fallbacks.
 pub fn reader_css(font_px: f32) -> String {
     format!(
-        "{faces}
+        "{faces}{text_font}
 body {{ padding: 4px 32px 44px; font-size: {font_px}px; }}
+blockquote {{ background: var(--quote-bg, var(--wash)); border-left-color: var(--quote-rule, var(--rule));
+  border-radius: 0 var(--radius, 4px) var(--radius, 4px) 0; }}
+::selection {{ background: var(--selection, rgba(164, 39, 27, 0.2)); }}
+mark {{ background: var(--mark, rgba(224, 161, 0, 0.3)); color: inherit; border-radius: 2px; }}
+ins {{ background: var(--ins, rgba(58, 166, 85, 0.18)); text-decoration: none; }}
+del {{ background: var(--del, rgba(210, 60, 42, 0.16)); text-decoration-color: var(--over, #d23c2a); }}
+hr {{ border-top-color: var(--rule); }}
 article {{ max-width: 38em; margin: 0; }}
 .blyg-tk-gen {{ background: none; box-shadow: none; padding: 0; border-radius: 0; }}
 blockquote.blyg-transclusion {{ font-family: inherit; }}
-blockquote.blyg-transclusion[data-blyg-origin] {{ cursor: pointer; }}
-blockquote.blyg-transclusion[data-blyg-origin]::after {{
-  content: 'quoted from ' attr(data-blyg-origin) ' · click for profile';
-  display: block; margin-top: .45em; opacity: .6;
+blockquote.blyg-transclusion[data-blyg-id] {{ cursor: pointer; }}
+.blyg-qfoot {{
+  display: block; margin-top: .45em; color: var(--muted, #888);
   font: 11.5px Inter, -apple-system, system-ui, sans-serif;
 }}
+.blyg-qorigin {{ color: inherit; border-bottom: 1px dashed currentColor; }}
+.blyg-qorigin:hover, .blyg-qopen:hover {{ color: var(--accent, #a4271b); }}
 .blyg-attachments {{ margin-top: 1.2em; }}
 .blyg-provenance, figcaption, .stub-cite {{ font-family: Inter, -apple-system, system-ui, sans-serif; }}
 ",
-        faces = font_faces()
+        faces = font_faces(),
+        text_font = text_font_css(crate::theme::reader_font())
     )
 }
 
 /// The complete page for the reader: `content` (untrusted) sanitized, the
 /// attachments after it, the item's `<article>`, the app theme, and the
 /// reader CSP with `<base href>` at the author's origin.
+#[cfg(test)]
 pub fn reader_page(content: &str, doc: &Doc, font_px: f32) -> String {
+    reader_page_named(content, doc, font_px, &|_| None)
+}
+
+/// [`reader_page`], naming quote origins with `name_of` (a subscription's
+/// title) in the quote boxes' footers; the host otherwise.
+pub fn reader_page_named(
+    content: &str,
+    doc: &Doc,
+    font_px: f32,
+    name_of: &dyn Fn(&str) -> Option<String>,
+) -> String {
     let clean = sanitize(&format!("{content}\n{}", attachments_html(&doc.media)));
+    let post_origin = match &doc.scope {
+        Scope::Remote { origin, .. } => Some(origin.clone()),
+        Scope::Own(_) => doc.base.clone(),
+    };
+    let clean = match post_origin {
+        Some(o) => quote_footers(&clean, &o, name_of),
+        None => clean,
+    };
     let body = blyg_render::article_html(doc.kind, &clean, None, None);
-    let css = format!("{BUILTIN_CSS}\n{}", reader_css(font_px));
+    // --- themes --- the theme's colours over the fallback stylesheet, and
+    // its quote-box shape last, so it wins over the reader's defaults.
+    let css = format!(
+        "{BUILTIN_CSS}\n{}{}",
+        reader_css(font_px),
+        crate::theme::reader_vars()
+    );
     blyg_render::page_shell_with(
         &css,
         &body,
@@ -223,6 +348,100 @@ pub fn reader_page(content: &str, doc: &Doc, font_px: f32) -> String {
             reader: true,
         },
     )
+}
+
+// --- quote targets ---
+
+fn attr<'a>(tag: &'a str, name: &str) -> Option<&'a str> {
+    let pat = format!(" {name}=\"");
+    let at = tag.find(&pat)? + pat.len();
+    let end = tag[at..].find('"')?;
+    Some(&tag[at..at + end])
+}
+
+/// Give each (resolved) quote box a footer: "quoted from <name> · v2 · open
+/// original". The name (`.blyg-qorigin`, carrying the origin) opens the
+/// profile; a click anywhere else in the box opens the original post (the
+/// host script, `webview::HOST_SCRIPT`). `html` is already sanitized; the
+/// footer's own text is escaped here. A quote without `data-blyg-origin` is
+/// from the post's own blyg (`post_origin`).
+pub fn quote_footers(
+    html: &str,
+    post_origin: &str,
+    name_of: &dyn Fn(&str) -> Option<String>,
+) -> String {
+    // Per open blockquote: the footer to put before its end tag, if any.
+    let mut stack: Vec<Option<String>> = Vec::new();
+    let mut inserts: Vec<(usize, String)> = Vec::new();
+    for (start, tag) in blockquote_tags(html) {
+        if tag.starts_with("</") {
+            if let Some(Some(footer)) = stack.pop() {
+                inserts.push((start, footer));
+            }
+            continue;
+        }
+        let quote = attr(tag, "class").is_some_and(|c| {
+            let mut cls = c.split_whitespace();
+            cls.clone().any(|x| x == "blyg-transclusion") && !cls.any(|x| x == "unresolved")
+        }) && attr(tag, "data-blyg-id").is_some();
+        stack.push(quote.then(|| {
+            let origin = attr(tag, "data-blyg-origin")
+                .map(unescape)
+                .filter(|o| o.starts_with("https://") || o.starts_with("http://"))
+                .unwrap_or_else(|| post_origin.to_string());
+            let name = name_of(&origin).unwrap_or_else(|| {
+                crate::vm::url_host(&origin).unwrap_or_else(|| origin.clone())
+            });
+            let version = attr(tag, "data-blyg-version")
+                .and_then(|v| v.parse::<u32>().ok())
+                .map(|v| format!(" · v{v}"))
+                .unwrap_or_default();
+            format!(
+                "<div class=\"blyg-qfoot\">quoted from <span class=\"blyg-qorigin\" \
+                 data-blyg-origin=\"{}\">{}</span>{version} · <span class=\"blyg-qopen\">open original</span></div>\n",
+                blyg_render::escape_html(&origin),
+                blyg_render::escape_html(&name),
+            )
+        }));
+    }
+    let mut out = html.to_string();
+    for (at, footer) in inserts.into_iter().rev() {
+        out.insert_str(at, &footer);
+    }
+    out
+}
+
+/// Every `<blockquote …>` and `</blockquote>` tag in `html`, with its offset.
+fn blockquote_tags(html: &str) -> Vec<(usize, &str)> {
+    let mut out = Vec::new();
+    let mut at = 0;
+    while let Some(i) = html[at..].find('<') {
+        let start = at + i;
+        let rest = &html[start..];
+        let lower = rest
+            .get(..12)
+            .map(str::to_ascii_lowercase)
+            .unwrap_or_default();
+        let open = lower.starts_with("<blockquote")
+            && rest[11..].starts_with(|c: char| c == '>' || c.is_whitespace());
+        let close = lower.starts_with("</blockquote");
+        if open || close {
+            let Some(end) = rest.find('>') else { break };
+            out.push((start, &rest[..=end]));
+            at = start + end + 1;
+        } else {
+            at = start + 1;
+        }
+    }
+    out
+}
+
+fn unescape(s: &str) -> String {
+    s.replace("&quot;", "\"")
+        .replace("&#39;", "'")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&amp;", "&")
 }
 
 /// Render a Markdown-only item of someone else's with `blyg-render`,
@@ -386,12 +605,21 @@ impl MainView {
             let shown = Shown {
                 font_px: self.prefs.font_size.round() as u32,
                 doc,
+                theme: self.theme.id.clone(), // --- themes ---
             };
             let has_surface = self.studio.reader.slot.borrow().surface.is_some();
             if has_surface && self.studio.reader.shown.as_ref() != Some(&shown) {
                 let content = self.reader_content(&shown.doc);
-                let page = reader_page(&content, &shown.doc, shown.font_px as f32);
+                let subs = self.backend.subscriptions();
+                let name_of = |o: &str| {
+                    subs.iter()
+                        .find(|s| blyg_core::profile::same_origin(&s.origin, o))
+                        .map(|s| s.title.clone())
+                        .filter(|t| !t.trim().is_empty())
+                };
+                let page = reader_page_named(&content, &shown.doc, shown.font_px as f32, &name_of);
                 self.studio.reader.slot.borrow_mut().with(|s| s.load(&page));
+                self.studio.reader.selected = false; // --- selection ---
                 #[cfg(test)]
                 self.studio.reader.pages.push(page);
                 self.studio.reader.shown = Some(shown);
@@ -407,7 +635,9 @@ impl MainView {
             || self.onboarding.tutorial.is_some()
             // Every GPUI overlay that can sit over the body belongs here (and
             // in `studio_frame`): a native view draws above all GPUI content.
-            || self.profile_sheet_open();
+            || self.profile_sheet_open()
+            // --- reader folders --- the sources pane's context menu.
+            || self.reading.src_menu.is_some();
         let active = self.studio.reader.active;
         let mut slot = self.studio.reader.slot.borrow_mut();
         slot.suppressed = suppressed;
@@ -416,7 +646,7 @@ impl MainView {
         }
     }
 
-    pub(super) fn reader_event(
+    pub(crate) fn reader_event(
         &mut self,
         ev: SurfaceEvent,
         window: &mut Window,
@@ -424,9 +654,20 @@ impl MainView {
     ) {
         match ev {
             SurfaceEvent::Ready => {
+                // --- selection --- the pill by a selection, for someone
+                // else's post (not your own, shown here from Posts).
+                if self.reader_selection_ui() {
+                    let js = webview::SELECTION_UI_JS;
+                    self.studio.reader.slot.borrow_mut().with(|s| s.eval(js));
+                }
                 if std::env::var_os("BLYGGER_TIMING").is_some() {
                     self.studio.reader.slot.borrow_mut().with(|s| s.probe());
                 }
+            }
+            // --- selection ---
+            SurfaceEvent::Selected(on) => self.studio.reader.selected = on,
+            SurfaceEvent::QuoteSelection => {
+                self.quote_from(Some(crate::app::notes::QuoteFrom::Reader), window, cx)
             }
             // A click in the page: the keyboard goes back to the list.
             SurfaceEvent::JumpToLine(_) | SurfaceEvent::Refocus => {
@@ -436,14 +677,49 @@ impl MainView {
                     .borrow_mut()
                     .with(|s| s.focus_parent());
                 if self.reading.view == View::Reading {
+                    // --- reader folders --- a click in the post: its pane.
+                    self.reading.pane = crate::app::reading::sources_vm::Pane::Post;
+                    cx.notify();
                     window.focus(&self.reading.focus, cx);
                 } else {
                     window.focus(&self.focus, cx);
                 }
             }
-            SurfaceEvent::OpenUrl(url) => cx.open_url(&url),
+            // --- browser --- a link: the browser pane, or the default browser
+            // (the click's modifiers and `open-links` decide).
+            SurfaceEvent::OpenUrl(url) => self.open_link(url, window, cx),
             SurfaceEvent::OpenOrigin(origin) => self.open_profile(origin, window, cx),
+            // --- quote targets --- the quote's original, in the reading pane.
+            SurfaceEvent::OpenQuote {
+                origin,
+                id,
+                version,
+            } => self.open_original(origin, id, version, window, cx),
+            // --- reader folders --- Space at the end of the page.
+            SurfaceEvent::PageEnd => self.open_next_unread(window, cx),
         }
+    }
+
+    /// --- selection --- Whether the page shows the pill by a selection
+    /// ("Quote in draft"): for someone else's post in the Reading screen.
+    /// Replying with a passage happens in the stub editor now (studio 0.31).
+    pub(crate) fn reader_selection_ui(&self) -> bool {
+        self.reading.view == View::Reading && self.reading.opened.is_some()
+    }
+
+    /// --- reader folders --- Run `js` in the reader's page. False when
+    /// there's no page to run it in (not created yet, or failed).
+    pub(crate) fn reader_eval(&self, js: &str) -> bool {
+        let r = &self.studio.reader;
+        if r.failed.is_some() || !r.active {
+            return false;
+        }
+        let mut slot = r.slot.borrow_mut();
+        if slot.surface.is_none() {
+            return false;
+        }
+        slot.with(|s| s.eval(js));
+        true
     }
 
     /// The body: the WebView is placed over this element's bounds.
@@ -481,7 +757,42 @@ impl MainView {
 
 #[cfg(test)]
 mod tests {
-    use super::{Body, Doc, RemoteMedia, Scope, body_of, origin_base, reader_page};
+    use super::{Body, Doc, RemoteMedia, Scope, body_of, origin_base, quote_footers, reader_page};
+
+    /// Issue #3: each resolved quote box gets "quoted from <name> · vN ·
+    /// open original"; the name carries the origin (profile), the rest of
+    /// the box opens the post. Nested quotes each get their own footer.
+    #[test]
+    fn quote_boxes_get_a_footer_naming_the_origin() {
+        let html = "<p>intro</p>\n<blockquote class=\"blyg-transclusion\" data-blyg-id=\"01aaa\" \
+                    data-blyg-version=\"2\" data-blyg-origin=\"https://ada.blyg.example.com/\">\n\
+                    <p>outer</p>\n<blockquote class=\"blyg-transclusion\" data-blyg-id=\"01bbb\" \
+                    data-blyg-version=\"1\">\n<p>inner</p>\n</blockquote>\n</blockquote>\n\
+                    <blockquote><p>plain</p></blockquote>\n\
+                    <blockquote class=\"blyg-transclusion unresolved\"><p>⚠</p></blockquote>";
+        let names = |o: &str| (o == "https://ada.blyg.example.com/").then(|| "Ada <3".to_string());
+        let out = quote_footers(html, "https://lin.blyg.example.com/", &names);
+        assert_eq!(out.matches("class=\"blyg-qfoot\"").count(), 2, "{out}");
+        // The inner quote (no origin: the post's own blyg) closes first.
+        let inner = out.find("<p>inner</p>").unwrap();
+        let inner_foot = out[inner..].find("blyg-qfoot").unwrap() + inner;
+        assert!(out[inner_foot..].starts_with(
+            "blyg-qfoot\">quoted from <span class=\"blyg-qorigin\" \
+             data-blyg-origin=\"https://lin.blyg.example.com/\">lin.blyg.example.com</span> · v1 · \
+             <span class=\"blyg-qopen\">open original</span></div>\n</blockquote>"
+        ));
+        assert!(out.contains(
+            "data-blyg-origin=\"https://ada.blyg.example.com/\">Ada &lt;3</span> · v2 · "
+        ));
+        assert!(!out.contains("click for profile"));
+        assert!(out.contains("<blockquote><p>plain</p></blockquote>"));
+        assert!(out.contains("unresolved\"><p>⚠</p></blockquote>"));
+        // Nothing to do: unchanged.
+        assert_eq!(
+            quote_footers("<p>x</p>", "https://a.example/", &|_| None),
+            "<p>x</p>"
+        );
+    }
 
     fn doc(html: &str, media: Vec<RemoteMedia>) -> Doc {
         Doc {

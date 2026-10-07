@@ -1,0 +1,12 @@
+{
+  "name": "link_emphasis_blocks",
+  "kind": "fragment",
+  "md": "# [[01j9zq3k4m5n6p7q8r9s0t1v2w]]\n\n*[[01j9zq3k4m5n6p7q8r9s0t1v2w]]* **x [[01j9zq3k4m5n6p7q8r9s0t1v3x]]**\n\n- a [[02abcdefghjkmnpqrstvwxyz01]]\n- b\n\n> quoted [[01j9zq3k4m5n6p7q8r9s0t1v2w]]",
+  "html": "<h1><a href=\"/blyg/f/01j9zq3k4m5n6p7q8r9s0t1v2w/\">“Small tools, used daily, beat big tools used rarely.”</a></h1>\n<p><em><a href=\"/blyg/f/01j9zq3k4m5n6p7q8r9s0t1v2w/\">“Small tools, used daily, beat big tools used rarely.”</a></em> <strong>x <a href=\"/blyg/t/01j9zq3k4m5n6p7q8r9s0t1v3x/\">“A thread about notebooks. An older quoted fragment. Closing…”</a></strong></p>\n<ul>\n<li>a <a href=\"https://blyg.example.com/f/02abcdefghjkmnpqrstvwxyz01/\">“Writing is thinking with a pencil.”</a></li>\n<li>b</li>\n</ul>\n<blockquote>\n<p>quoted <a href=\"/blyg/f/01j9zq3k4m5n6p7q8r9s0t1v2w/\">“Small tools, used daily, beat big tools used rarely.”</a></p>\n</blockquote>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

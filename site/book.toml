@@ -1,0 +1,18 @@
+[book]
+title = "Burrow"
+description = "Burrow is a blygger client: a fast, local-first macOS studio for Blygger blogs."
+authors = ["Blygger Desktop contributors"]
+language = "en"
+src = "src"
+
+[build]
+build-dir = "book"
+# A chapter listed in SUMMARY.md must exist; never create empty ones.
+create-missing = false
+
+[output.html]
+site-url = "/blygger-desktop/"
+git-repository-url = "https://github.com/aneeshsathe/blygger-desktop"
+edit-url-template = "https://github.com/aneeshsathe/blygger-desktop/edit/main/site/{path}"
+default-theme = "light"
+preferred-dark-theme = "ayu"

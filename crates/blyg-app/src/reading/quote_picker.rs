@@ -1,9 +1,14 @@
-//! The quote picker (⌘K): inserts `![[id]]` on its own line in a thread.
-//! It offers only what's already held (your own posts plus imported posts
-//! from blyg subscriptions) and never fetches anything by URL.
+//! The `[[` / `![[` picker as a panel with its own search box: ⌘K (a
+//! quote: `![[id]]` on its own line in a thread), and typing the brackets
+//! when the blyg's `picker_typing` is `panel` (with `auto` or `editor` the
+//! query is typed in the editor instead, `composer::assist`). It offers
+//! only what's already held (your own published posts plus imported posts
+//! from blyg subscriptions), searched locally (`Backend::pick_search`:
+//! every word, source, subscription, sort), and never fetches by URL.
 //!
-//! Typing `![[` at the start of a line in a thread opens it too (see
-//! [`transclusion_trigger`]); esc then puts the typed `![[` back.
+//! Typing `![[` at the start of a line in a thread opens it (see
+//! [`transclusion_trigger`]), and `[[` anywhere outside code opens the link
+//! picker (`picker::link_trigger`); esc then puts the typed brackets back.
 
 use gpui_kit::base::input::{Escape, InputEvent, InputState, MoveDown, MoveUp};
 use gpui_kit::prelude::FluentBuilder as _;
@@ -11,20 +16,21 @@ use gpui_kit::*;
 
 use std::ops::Range;
 
-use blyg_core::Item;
+use blyg_core::{Item, Pickable};
 
-use super::vm::{self, Quotable};
+use super::vm;
 use super::{RSheet, View};
 use crate::app::MainView;
+use crate::composer::picker::{self, Filters, PickKind};
 
 impl MainView {
-    pub(super) fn open_quote_picker(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn open_quote_picker(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if matches!(self.reading.sheet, Some(RSheet::Quote { .. })) {
             self.cancel_quote_picker(window, cx);
             return;
         }
         if let Some(item) = self.quote_target(cx) {
-            self.open_quote_sheet(item, None, window, cx);
+            self.open_quote_sheet(item, PickKind::Quote, None, window, cx);
         }
     }
 
@@ -52,19 +58,23 @@ impl MainView {
     fn open_quote_sheet(
         &mut self,
         item: Item,
+        kind: PickKind,
         typed: Option<(usize, String)>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let input = cx.new(|cx| {
-            InputState::new(window, cx).placeholder("Quote… (your posts and your reading)")
-        });
+        let placeholder = match kind {
+            PickKind::Quote => "Quote… (your posts and your reading)",
+            PickKind::Link => "Link to… (your posts and your reading)",
+        };
+        let input = cx.new(|cx| InputState::new(window, cx).placeholder(placeholder));
         let sub = cx.subscribe_in(&input, window, |this, _, ev, window, cx| match ev {
             InputEvent::PressEnter { .. } => this.pick_quote(window, cx),
             InputEvent::Change => {
                 if let Some(RSheet::Quote { sel, .. }) = this.reading.sheet.as_mut() {
                     *sel = 0;
                 }
+                this.search_quote_sheet(cx);
                 cx.notify();
             }
             _ => {}
@@ -77,23 +87,54 @@ impl MainView {
                 input,
                 sel: 0,
                 typed,
+                kind,
+                rows: Vec::new(),
             },
             cx,
         );
+        self.search_quote_sheet(cx);
     }
 
-    /// Did the edit that just happened type the `[` of a line-leading `![[`?
+    /// Search again for the box and the filters (local and quick: the
+    /// store's full-text index).
+    fn search_quote_sheet(&mut self, cx: &mut Context<Self>) {
+        let Some(RSheet::Quote { target, input, .. }) = self.reading.sheet.as_ref() else {
+            return;
+        };
+        let exclude = self
+            .backend
+            .item(target)
+            .and_then(|i| i.server_id)
+            .map(|s| s.0);
+        let q = Filters::get(cx).query(&input.read(cx).value(), exclude);
+        let found = self.backend.pick_search(&q);
+        if let Some(RSheet::Quote { rows, sel, .. }) = self.reading.sheet.as_mut() {
+            *sel = (*sel).min(found.len().saturating_sub(1));
+            *rows = found;
+        }
+    }
+
+    /// Did the edit that just happened type the `[` of a line-leading `![[`
+    /// (a quote) or of a `[[` (a link)? The brackets' range in the text.
     /// Call before `after_edit`, while `current` still holds the old text.
-    pub(crate) fn typed_transclusion(&self, cx: &App) -> Option<Range<usize>> {
+    pub(crate) fn typed_picker(&self, cx: &App) -> Option<(PickKind, Range<usize>)> {
         let old = &self.current.as_ref()?.content_md;
         let s = self.editor.read(cx);
-        transclusion_trigger(old, &s.value(), s.cursor())
+        let (new, cursor) = (s.value(), s.cursor());
+        if let Some(r) = transclusion_trigger(old, &new, cursor) {
+            return Some((PickKind::Quote, r));
+        }
+        picker::link_trigger(old, &new, cursor).map(|at| (PickKind::Link, at..cursor))
     }
 
-    /// Typing `![[` opens the picker: the typed text comes out of the editor
-    /// (the pick puts a whole `![[id]]` line there), and esc puts it back.
-    pub(crate) fn open_quote_picker_from_typing(
+    /// Typed brackets open the picker. With `picker_typing` in the editor
+    /// (`auto`, `editor`) the brackets stay and what's typed after them is
+    /// the query (`Assist`'s popup). As a panel, the typed text comes out
+    /// of the editor (the pick puts the whole directive there), and esc
+    /// puts it back.
+    pub(crate) fn open_picker_from_typing(
         &mut self,
+        kind: PickKind,
         typed: Range<usize>,
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -101,9 +142,23 @@ impl MainView {
         if self.reading.sheet.is_some() {
             return;
         }
-        let Some(item) = self.quote_target(cx) else {
-            return;
+        let item = match kind {
+            PickKind::Quote => match self.quote_target(cx) {
+                Some(item) => item,
+                None => return,
+            },
+            PickKind::Link => match self.current.clone() {
+                Some(item) => item,
+                None => return,
+            },
         };
+        if self.backend.picker_typing().in_editor() {
+            let at = typed.end - kind.open().len();
+            let exclude = item.server_id.map(|s| s.0);
+            self.assist
+                .update(cx, |a, cx| a.open_picker(kind, at, exclude, cx));
+            return;
+        }
         let text = self.editor.read(cx).value().to_string();
         let Some(removed) = text.get(typed.clone()).map(str::to_string) else {
             return;
@@ -111,7 +166,7 @@ impl MainView {
         let mut new_text = text.clone();
         new_text.replace_range(typed.clone(), "");
         self.splice_editor(&text, &new_text, Some(typed.start), window, cx);
-        self.open_quote_sheet(item, Some((typed.start, removed)), window, cx);
+        self.open_quote_sheet(item, kind, Some((typed.start, removed)), window, cx);
     }
 
     /// Esc (or ⌘K again): close the picker, putting back a typed `![[`.
@@ -135,22 +190,11 @@ impl MainView {
     }
 
     /// What the picker offers right now.
-    pub(crate) fn quote_candidates(&self, cx: &App) -> Vec<Quotable> {
-        let Some(RSheet::Quote { target, input, .. }) = self.reading.sheet.as_ref() else {
-            return vec![];
-        };
-        let exclude = self
-            .backend
-            .item(target)
-            .and_then(|i| i.server_id)
-            .map(|s| s.0);
-        vm::quotables(
-            &self.backend.items(),
-            &self.backend.reading(),
-            &self.backend.subscriptions(),
-            exclude.as_deref(),
-            &input.read(cx).value(),
-        )
+    pub(crate) fn quote_candidates(&self, _cx: &App) -> Vec<Pickable> {
+        match self.reading.sheet.as_ref() {
+            Some(RSheet::Quote { rows, .. }) => rows.clone(),
+            _ => vec![],
+        }
     }
 
     fn move_quote(&mut self, delta: isize, cx: &mut Context<Self>) {
@@ -165,13 +209,21 @@ impl MainView {
 
     pub(crate) fn pick_quote(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let cands = self.quote_candidates(cx);
-        let Some(RSheet::Quote { target, sel, .. }) = self.reading.sheet.as_ref() else {
+        let Some(RSheet::Quote {
+            target,
+            sel,
+            kind,
+            typed,
+            ..
+        }) = self.reading.sheet.as_ref()
+        else {
             return;
         };
         let Some(pick) = cands.get(*sel).cloned() else {
             return;
         };
-        let target = target.clone();
+        let (target, kind) = (target.clone(), *kind);
+        let typed_at = typed.as_ref().map(|(at, _)| *at);
         self.reading.sheet = None;
         if self.current.as_ref().map(|c| &c.local_id) != Some(&target) {
             self.open(&target, window, cx);
@@ -182,23 +234,56 @@ impl MainView {
             let s = self.editor.read(cx);
             (s.value().to_string(), s.cursor())
         };
-        let (new_text, caret) = vm::insert_transclusion(&text, cursor, &pick.id);
+        let (new_text, caret) = match kind {
+            PickKind::Quote => vm::insert_transclusion(&text, cursor, &pick.id),
+            // Where the typed `[[` was (it came out when the panel opened).
+            PickKind::Link => {
+                let at = typed_at.unwrap_or(cursor).min(text.len());
+                picker::insert(&text, at, at, PickKind::Link, &pick.id)
+            }
+        };
         self.splice_editor(&text, &new_text, Some(caret), window, cx);
-        self.show_toast(
-            format!("Quoted “{}”", pick.title),
-            Some(pick.source.into()),
-            cx,
-        );
+        let verb = match kind {
+            PickKind::Quote => "Quoted",
+            PickKind::Link => "Linked",
+        };
+        let from = pick
+            .source_title
+            .clone()
+            .unwrap_or_else(|| "yours".to_string());
+        self.show_toast(format!("{verb} “{}”", pick.title), Some(from.into()), cx);
         cx.notify();
     }
 
     pub(super) fn render_quote_sheet(&self, sheet: &RSheet, cx: &mut Context<Self>) -> AnyElement {
-        let p = self.palette;
-        let RSheet::Quote { input, sel, .. } = sheet else {
+        let p = self.palette.on_page();
+        let RSheet::Quote {
+            input, sel, kind, ..
+        } = sheet
+        else {
             return div().into_any_element();
         };
         let cands = self.quote_candidates(cx);
-        let sel = *sel;
+        let (sel, kind) = (*sel, *kind);
+        let weak = cx.entity().downgrade();
+        let set: picker::OnFilters = std::rc::Rc::new(move |f: Filters, _, cx: &mut App| {
+            f.set(cx);
+            let _ = weak.update(cx, |v, cx| {
+                v.search_quote_sheet(cx);
+                cx.notify();
+            });
+        });
+        let weak = cx.entity().downgrade();
+        let pick: picker::OnPick = std::rc::Rc::new(move |i, window, cx: &mut App| {
+            let _ = weak.update(cx, |v, cx| {
+                if let Some(RSheet::Quote { sel, .. }) = v.reading.sheet.as_mut() {
+                    *sel = i;
+                }
+                v.pick_quote(window, cx);
+            });
+        });
+        let subs = picker::blyg_subs(&self.backend.subscriptions());
+        let filters = Filters::get(cx);
         div()
             .capture_action(cx.listener(|this, _: &Escape, window, cx| {
                 cx.stop_propagation();
@@ -212,11 +297,12 @@ impl MainView {
                 cx.stop_propagation();
                 this.move_quote(1, cx);
             }))
-            .child(self.sheet_heading("Quote in this thread"))
+            .child(self.sheet_heading(kind.heading()))
             .child(self.input_box(
                 gpui_kit::base::input::Input::new(input).into_any_element(),
                 false,
             ))
+            .child(div().mt(px(8.)).child(picker::filter_row(p, &filters, &subs, set)))
             .child(
                 div()
                     .id("quote-list")
@@ -225,32 +311,14 @@ impl MainView {
                     .overflow_y_scroll()
                     .when(cands.is_empty(), |d| {
                         d.child(div().p(px(8.)).italic().text_color(p.muted).child(
-                            "Nothing held matches. Quotes come from your posts and your reading.",
+                            "Nothing held matches. Links and quotes come from your published posts and your blyg subscriptions.",
                         ))
                     })
-                    .children(cands.into_iter().enumerate().map(|(i, q)| {
-                        div()
-                            .id(("quote", i))
-                            .px(px(8.))
-                            .py(px(5.))
-                            .rounded(px(6.))
-                            .cursor_pointer()
-                            .when(i == sel, |d| d.bg(p.sel))
-                            .hover(|s| s.bg(p.sel))
-                            .on_click(cx.listener(move |this, _, window, cx| {
-                                if let Some(RSheet::Quote { sel, .. }) = this.reading.sheet.as_mut()
-                                {
-                                    *sel = i;
-                                }
-                                this.pick_quote(window, cx);
-                            }))
-                            .child(div().truncate().child(q.title))
-                            .child(div().text_size(px(11.)).text_color(p.muted).child(q.source))
-                    })),
+                    .children(picker::rows(p, &cands, sel, pick)),
             )
             .child(self.keys_row(vec![
                 self.key_hint("↑↓", "choose"),
-                self.key_hint("⏎", "insert ![[…]] on its own line"),
+                self.key_hint("⏎", kind.enter_hint()),
                 self.key_hint("esc", "cancel"),
             ]))
             .into_any_element()

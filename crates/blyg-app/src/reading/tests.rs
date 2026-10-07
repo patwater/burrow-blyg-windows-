@@ -42,6 +42,11 @@ fn setup(cx: &mut TestAppContext) -> (Entity<MainView>, Arc<FakeBackend>, &mut V
         )
     });
     cx.run_until_parked();
+    // These tests are about the list + post layout (Reader); the stream,
+    // the default, has its own in `stream_tests.rs`.
+    view.update(cx, |v, _| {
+        v.reading.mode = super::stream_vm::ReadMode::Reader
+    });
     (view, fake, cx)
 }
 
@@ -111,6 +116,21 @@ fn cmd_r_shows_reading_edited_on_top_tombstones_hidden(cx: &mut TestAppContext) 
 }
 
 #[gpui_kit::test]
+fn enter_opens_the_selected_subscription(cx: &mut TestAppContext) {
+    let (view, _fake, cx) = setup(cx);
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-shift-s"));
+    cx.run_until_parked();
+    cx.simulate_keystrokes("down");
+    cx.run_until_parked();
+    let origin = view.read_with(cx, |v, _| v.reading.subs[v.reading.sub_sel].origin.clone());
+    cx.simulate_keystrokes("enter");
+    settle(cx);
+    view.read_with(cx, |v, _| {
+        assert_eq!(v.profiles.page().map(|p| p.url.clone()), Some(origin));
+    });
+}
+
+#[gpui_kit::test]
 fn opening_marks_read_and_arrows_move(cx: &mut TestAppContext) {
     let (view, fake, cx) = setup(cx);
     cx.simulate_keystrokes(&crate::keymap::keys("cmd-r"));
@@ -159,7 +179,15 @@ fn others_posts_show_only_current_and_pinned_versions(cx: &mut TestAppContext) {
     assert_eq!(listed, ["v5 · current", "📌 v3", "📌 v1"]);
     assert_eq!(
         pm.actions,
-        ["Quote", "Reply", "AI reply", "Fork", "Open on web"]
+        [
+            "Quote",
+            "Reply",
+            "AI reply",
+            "Fork",
+            "Link post",
+            "Open on web",
+            "Notes"
+        ]
     );
     // Step through every version the pill allows; unpinned never render.
     for _ in 0..4 {
@@ -169,7 +197,8 @@ fn others_posts_show_only_current_and_pinned_versions(cx: &mut TestAppContext) {
                 "unpinned leaked: {s}"
             );
         }
-        cx.simulate_keystrokes("left");
+        // --- reader folders --- [ steps back (←/→ now move between panes).
+        cx.simulate_keystrokes("[");
         settle(cx);
     }
     view.read_with(cx, |v, _| {
@@ -305,6 +334,38 @@ fn restore_loads_a_version_into_the_editor(cx: &mut TestAppContext) {
 }
 
 #[gpui_kit::test]
+fn a_post_can_hand_its_responses_back_to_the_site_setting(cx: &mut TestAppContext) {
+    let (view, fake, cx) = setup(cx);
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-shift-m"));
+    settle(cx);
+    let first = |view: &Entity<MainView>, cx: &mut VisualTestContext| {
+        view.read_with(cx, |v, _| {
+            let (_, id, r, _) = v.mention_groups().into_iter().next().unwrap();
+            (id.unwrap(), r)
+        })
+    };
+    let (id, r) = first(&view, cx);
+    assert_eq!(r.mode, Some(blyg_core::ResponsesMode::Show));
+    assert!(r.show);
+    view.update(cx, |v, cx| {
+        v.set_responses(id.clone(), blyg_core::ResponsesMode::Default, cx)
+    });
+    settle(cx);
+    // The fake's site default is off, so following it hides them.
+    let it = fake.item(&id).unwrap();
+    assert_eq!(it.responses_mode, Some(blyg_core::ResponsesMode::Default));
+    assert!(!it.show_responses);
+    let (_, r) = first(&view, cx);
+    assert!(!r.show);
+    assert_eq!(r.mode, Some(blyg_core::ResponsesMode::Default));
+    let strings = view.read_with(cx, |v, _| v.mentions_screen_strings());
+    assert!(
+        strings.contains(&"responses hidden from the page · site setting".to_string()),
+        "{strings:?}"
+    );
+}
+
+#[gpui_kit::test]
 fn mentions_are_a_list_without_counts(cx: &mut TestAppContext) {
     let (view, _, cx) = setup(cx);
     cx.simulate_keystrokes(&crate::keymap::keys("cmd-shift-m"));
@@ -393,7 +454,10 @@ fn quote_picker_offers_only_held_items_and_only_in_threads(cx: &mut TestAppConte
         !ids.contains(&OMAR_YEAR.to_string()),
         "RSS items aren't transcludable"
     );
-    assert!(!ids.contains(&RUE_KEPT.to_string()) && !ids.contains(&ADA_GONE.to_string()));
+    // A withdrawn post only through its retained pin (studio 0.29's search
+    // offers what publish accepts: current, or a pinned version kept).
+    assert!(!ids.contains(&ADA_GONE.to_string()));
+    assert!(ids.contains(&RUE_KEPT.to_string()));
     // Filter, then ⏎ inserts ![[id]] on its own line.
     cx.simulate_input("hyperlink");
     cx.run_until_parked();
@@ -431,7 +495,7 @@ fn reply_makes_a_stub_and_fork_needs_a_pin(cx: &mut TestAppContext) {
     assert!(!view.read_with(cx, |v, _| {
         v.pill_model().unwrap().actions.contains(&"Fork this pin")
     }));
-    cx.simulate_keystrokes("left");
+    cx.simulate_keystrokes("["); // --- reader folders --- (was ←)
     settle(cx);
     view.update_in(cx, |v, window, cx| {
         v.reading_action_for_test("Fork this pin", window, cx)
@@ -491,13 +555,18 @@ fn site_settings_load_and_save(cx: &mut TestAppContext) {
     settle(cx);
     view.update_in(cx, |v, window, cx| {
         let Some(RSheet::Site {
-            title, links, load, ..
+            title,
+            links,
+            timezone,
+            load,
+            ..
         }) = &v.reading.sheet
         else {
             panic!("sheet");
         };
         assert!(matches!(load, Load::Ready(_)));
         assert_eq!(title.read(cx).value().as_ref(), "Harbour notes");
+        assert_eq!(timezone.read(cx).value().as_ref(), "Europe/Lisbon");
         title.update(cx, |s, cx| s.set_value("Harbour notebook", window, cx));
         links.update(cx, |s, cx| {
             s.set_value(
@@ -506,11 +575,17 @@ fn site_settings_load_and_save(cx: &mut TestAppContext) {
                 cx,
             )
         });
+        timezone.update(cx, |s, cx| s.set_value("Asia/Tokyo", window, cx));
+        v.toggle_accept_mentions(cx);
+        v.toggle_responses_default(cx);
         v.save_site_settings(window, cx);
     });
     settle(cx);
     let s = fake.saved_settings();
+    assert_eq!(s.timezone.as_deref(), Some("Asia/Tokyo"));
+    assert_eq!(s.show_responses_default, Some(true));
     assert_eq!(s.site_title.as_deref(), Some("Harbour notebook"));
+    assert_eq!(s.accept_mentions, Some(false));
     assert_eq!(s.author_links.len(), 2);
     assert_eq!(
         s.author_bio.as_deref(),
@@ -727,9 +802,12 @@ fn actions_name_the_primitive_and_fork_waits_for_a_pin(cx: &mut TestAppContext) 
             "Reply · new stub",
             "AI reply · new stub",
             "Fork",
-            "Open on web"
+            "Link post · new fragment",
+            "Open on web",
+            "→ Notes" // --- notes ---
         ]
     );
+    assert!(tip(&row, "Link post").contains("no stub_of"));
     for c in &row {
         assert!(!c.tip.is_empty(), "{} has a tooltip", c.label);
         assert_eq!(c.enabled, c.id != "Fork", "{}", c.label);
@@ -750,7 +828,7 @@ fn actions_name_the_primitive_and_fork_waits_for_a_pin(cx: &mut TestAppContext) 
     assert!(fake.items().iter().all(|i| i.forked_from.is_none()));
 
     // On a pin, Fork this pin is live and says what it makes.
-    cx.simulate_keystrokes("left");
+    cx.simulate_keystrokes("["); // --- reader folders --- (was ←)
     settle(cx);
     let row = chips(&view, cx);
     assert!(row.iter().all(|c| c.enabled));
@@ -763,4 +841,64 @@ fn actions_name_the_primitive_and_fork_waits_for_a_pin(cx: &mut TestAppContext) 
     // A feed post can't be transcluded: Quote says what it does instead.
     open_row(&view, OMAR_YEAR, cx);
     assert!(tip(&chips(&view, cx), "Quote").contains("feed posts"));
+    // ...and has no id to link, so no Link post.
+    assert!(!chips(&view, cx).iter().any(|c| c.id == "Link post"));
+}
+
+/// Studio 0.8.0's `link post`: a new fragment holding `[[id]]`, a plain
+/// link, never a stub.
+#[gpui_kit::test]
+fn link_post_starts_a_fragment_that_is_not_a_reply(cx: &mut TestAppContext) {
+    let (view, fake, cx) = setup(cx);
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-r"));
+    open_row(&view, RUE_TRUST, cx);
+    let before = fake.items().len();
+    view.update_in(cx, |v, window, cx| {
+        v.reading_action_for_test("Link post", window, cx)
+    });
+    settle(cx);
+    let items = fake.items();
+    assert_eq!(items.len(), before + 1);
+    let post = items
+        .iter()
+        .find(|i| i.content_md == format!("[[{RUE_TRUST}]]\n\n"))
+        .expect("a link post");
+    assert_eq!(post.kind, Kind::Fragment);
+    assert!(post.stub_of.is_none() && post.forked_from.is_none());
+    assert_eq!(view.read_with(cx, |v, _| v.reading.view), View::Posts);
+}
+
+/// Studio 0.31: a reply quotes the whole post however long it is, the
+/// caret below the quote (0.8.1 prefilled an empty quote line for a long one).
+#[gpui_kit::test]
+fn reply_quotes_the_whole_post_however_long(cx: &mut TestAppContext) {
+    let (view, fake, cx) = setup(cx);
+    // The seeded posts are all short: one is made long for this test.
+    let long_html = format!("<p>{}</p>", "The tide comes in. ".repeat(40));
+    for (id, want_quote) in [(LIN_BENCH, true), (ADA_FINISHED, false)] {
+        cx.simulate_keystrokes(&crate::keymap::keys("cmd-r"));
+        open_row(&view, id, cx);
+        view.update_in(cx, |v, window, cx| {
+            if want_quote {
+                v.reading.opened.as_mut().unwrap().item.content_html = long_html.clone();
+            }
+            v.reading_action_for_test("Reply", window, cx)
+        });
+        settle(cx);
+        let stub = fake
+            .items()
+            .into_iter()
+            .find(|i| i.stub_of.as_ref().is_some_and(|s| s.id == id))
+            .expect("a stub");
+        let (text, cursor) = view.read_with(cx, |v, cx| {
+            let e = v.editor.read(cx);
+            (e.value().to_string(), e.cursor())
+        });
+        assert_eq!(text, stub.content_md);
+        // Studio 0.31: long or short, the stub quotes the whole post, the
+        // caret below it (a passage is chosen in the stub editor).
+        let _ = want_quote;
+        assert_eq!(stub.content_md, format!("![[{id}]]\n\n"));
+        assert_eq!(cursor, text.len());
+    }
 }

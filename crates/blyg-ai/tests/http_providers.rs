@@ -342,6 +342,7 @@ fn blyg_server_generate() {
     assert_eq!(
         res.unwrap(),
         GenResult {
+            content_md: None,
             text: "server text".into(),
             model: "claude-opus-5".into()
         }

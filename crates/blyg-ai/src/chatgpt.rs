@@ -461,14 +461,14 @@ impl BrowserLogin {
             _ => match q("code") {
                 Some(c) => (
                     "200 OK",
-                    "OpenAI authentication completed. You can close this window and return to Blygger.",
+                    "OpenAI authentication completed. You can close this window and return to Burrow.",
                     Some(c),
                 ),
                 None => ("400 Bad Request", "Missing authorization code.", None),
             },
         };
         let body = format!(
-            "<!doctype html><meta charset=utf-8><title>Blygger</title><p style=\"font:16px system-ui;margin:3em\">{msg}</p>"
+            "<!doctype html><meta charset=utf-8><title>Burrow</title><p style=\"font:16px system-ui;margin:3em\">{msg}</p>"
         );
         let _ = write!(
             stream,

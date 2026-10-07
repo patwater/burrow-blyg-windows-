@@ -57,7 +57,8 @@
 - `BLYGGER_DEMO=studio|studio-edit`: the sample thread (quote, TK, video, unresolved quote) in the full editor (⌘3); `studio-edit` also types into it.
 - `BLYGGER_TIMING=1` also prints `preview-ready frame=…`, whether the WebView holds the keyboard, and a JSON probe of what the page rendered.
 - `BLYGGER_DEMO=search|create|edit|publish|published|long|preview|conflict|offline|settings|capture|image`
-- `BLYGGER_THEME=light|dark` (not persisted).
+- `BLYGGER_THEME=<theme>`: any theme name, e.g. `light`, `dark`, `cutaway`, `konkan` (not persisted; beats `theme-dark`).
+- `BLYGGER_THEMES_DIR=<dir>`: read user themes from here instead of `themes/` beside the config file.
 - `BLYGGER_CONFIG=<file>`: use this config file instead of `~/.config/blygger/config` + `~/Library/Application Support/org.blygger.desktop/config`.
 - `BLYGGER_DATA_DIR=<dir>`: app state (db, media) goes here instead of `~/Library/Application Support/org.blygger.desktop/` (also skips the old-dir migration).
 - `BLYGGER_FAKE=1`: sample data, and the token store is in memory (the Connect sheet never touches the Keychain or the network).

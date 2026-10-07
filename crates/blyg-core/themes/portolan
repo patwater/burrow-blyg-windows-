@@ -1,0 +1,36 @@
+# Portolan: writing as navigation. Every post is a bearing, not a
+# destination. After portolan charts, compass roses and depth soundings.
+name = Portolan
+family = oceanic
+base = light
+
+color-bg = #f4ecd8
+color-ink = #2c2418
+color-muted = #76674c
+color-line = #d8c9a4
+color-accent = #a3301f
+color-sel = #fbf5e6
+color-bar = #e8dab6
+color-bar-ink = #2c2418
+color-bar-line = #b89e67
+color-side = #efe3c4
+color-quote-bg = #fbf4e2
+color-quote-rule = #cdb887
+color-toast = #2c2418
+color-toast-ink = #f4ecd8
+
+font-writing = ET Book
+font-ui = ET Book
+font-chrome = ET Book
+radius = 0
+sheet.radius = 2
+toast.radius = 2
+chip.radius = 12
+sheet.border = double
+
+titlebar.band = gradient(#e8dab6 #efe3c4 #e8dab6)
+row.selected = outline(#c9b27d)
+editor.frame = rhumb-lines(#a3301f #2c2418, opacity=0.5)
+quote.frame = double-rule(#cdb887)
+texture = soundings(#8a7a5a, opacity=0.6)
+empty.art = compass-rose(#a3301f #2c2418)

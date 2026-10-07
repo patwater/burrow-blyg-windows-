@@ -1,0 +1,37 @@
+{
+  "name": "link_unresolved_fragment",
+  "kind": "fragment",
+  "md": "draft [[01j9zq3k4m5n6p7q8r9s0t1v4y]]\nwithdrawn [[01j9zq3k4m5n6p7q8r9s0t1v5z]]\nunknown [[0zzzzzzzzzzzzzzzzzzzzzzzzz]]\nambiguous [[02abcdefghjkmnpqrstvwxyz03]]\nfeed [[02abcdefghjkmnpqrstvwxyz04]]\ngone [[02abcdefghjkmnpqrstvwxyz05]]",
+  "html": "<p>draft <span class=\"blyg-link-unresolved\" style=\"color:#b3412b\">⚠ item is a draft, not published</span>\nwithdrawn <span class=\"blyg-link-unresolved\" style=\"color:#b3412b\">⚠ item is withdrawn</span>\nunknown <span class=\"blyg-link-unresolved\" style=\"color:#b3412b\">⚠ unknown item</span>\nambiguous <span class=\"blyg-link-unresolved\" style=\"color:#b3412b\">⚠ ambiguous id: imported from more than one origin</span>\nfeed <span class=\"blyg-link-unresolved\" style=\"color:#b3412b\">⚠ source is a plain RSS (L0) item, not a blyg item</span>\ngone <span class=\"blyg-link-unresolved\" style=\"color:#b3412b\">⚠ source withdrawn by origin</span></p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": [
+    {
+      "directive": "[[01j9zq3k4m5n6p7q8r9s0t1v4y]]",
+      "reason": "item is a draft, not published"
+    },
+    {
+      "directive": "[[01j9zq3k4m5n6p7q8r9s0t1v5z]]",
+      "reason": "item is withdrawn"
+    },
+    {
+      "directive": "[[0zzzzzzzzzzzzzzzzzzzzzzzzz]]",
+      "reason": "unknown item"
+    },
+    {
+      "directive": "[[02abcdefghjkmnpqrstvwxyz03]]",
+      "reason": "ambiguous id: imported from more than one origin"
+    },
+    {
+      "directive": "[[02abcdefghjkmnpqrstvwxyz04]]",
+      "reason": "source is a plain RSS (L0) item, not a blyg item"
+    },
+    {
+      "directive": "[[02abcdefghjkmnpqrstvwxyz05]]",
+      "reason": "source withdrawn by origin"
+    }
+  ]
+}

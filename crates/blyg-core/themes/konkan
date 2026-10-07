@@ -1,0 +1,41 @@
+# Konkan harbour: open space all around, one warm place to write. Your base,
+# with the sea right there. After the Ghats coast, where the sea meets hills.
+name = Konkan harbour
+family = oceanic
+base = light
+
+color-bg = #fdf6e9
+color-ink = #2a2217
+color-muted = #7a6a53
+color-line = #e5d6bb
+color-accent = #c4661b
+color-sel = #173e4a
+color-sel-ink = #e3f0f0
+color-sel-muted = #9cc3c7
+color-bar = #0c222a
+color-bar-ink = #cfe3e4
+color-bar-line = #0c222a
+color-side = #0f2a33
+color-side-ink = #cfe3e4
+color-side-muted = #7fa9ae
+color-side-accent = #f0a560
+color-side-line = #0a1d24
+color-status = #0c222a
+color-status-ink = #7fa9ae
+color-status-line = #0c222a
+color-quote-bg = #f6ead3
+color-quote-rule = #d97a2b
+color-toast = #0f2a33
+color-toast-ink = #fdf6e9
+
+font-writing = Literata
+font-ui = Inter
+radius = 10
+sheet.radius = 12
+toast.radius = 8
+
+sidebar.ground = contours(#4d8a92 #0f2a33 #0a1d24, opacity=0.55)
+row.selected = lantern(#2b6470 #d97a2b)
+editor.frame = harbour-glow(#0a1d24 #d97a2b)
+status.ornament = tide-sparkline(#d97a2b #fdf6e9)
+empty.art = compass-rose(#4d8a92 #d97a2b)

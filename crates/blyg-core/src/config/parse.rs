@@ -98,7 +98,7 @@ pub fn parse_line(line: &str) -> Result<Option<(String, String)>, String> {
     }
     if !k
         .chars()
-        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.')
     {
         return Err(format!("`{k}` isn't a valid key name"));
     }
@@ -326,14 +326,6 @@ pub fn resolve_path(p: &str, dir: &Path) -> PathBuf {
 // ------------------------------------------------------------------ Config
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum Theme {
-    #[default]
-    System,
-    Light,
-    Dark,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Layout {
     #[default]
     Side,
@@ -485,12 +477,14 @@ impl Config {
         self.get("blyg-url")
     }
 
-    pub fn theme(&self) -> Theme {
-        match self.get("theme") {
-            Some("light") => Theme::Light,
-            Some("dark") => Theme::Dark,
-            _ => Theme::System,
-        }
+    /// `theme`: `system`, `light`, `dark`, a built-in or a user theme's name.
+    pub fn theme(&self) -> &str {
+        self.get("theme").unwrap_or(super::theme::SYSTEM)
+    }
+
+    /// `theme-dark`: the theme to use while macOS is dark, if set.
+    pub fn theme_dark(&self) -> Option<&str> {
+        self.get("theme-dark")
     }
 
     pub fn layout(&self) -> Layout {
@@ -503,6 +497,11 @@ impl Config {
     // --- buttons ---
     pub fn show_buttons(&self) -> bool {
         self.get("show-buttons") != Some("false")
+    }
+
+    // --- spellcheck ---
+    pub fn spellcheck(&self) -> bool {
+        self.get("spellcheck") != Some("false")
     }
 
     pub fn font_family_writing(&self) -> &str {
@@ -646,6 +645,17 @@ pub fn validate(spec: &KeySpec, raw: &str) -> Result<(Option<String>, Option<Str
             ok(parts.join("+").to_ascii_lowercase())
         }
         ValueKind::Path => ok(v.to_string()),
+        ValueKind::ThemeName => {
+            let l = v.to_ascii_lowercase();
+            if super::theme::valid_name(&l) {
+                ok(l)
+            } else {
+                Err(format!(
+                    "`{v}` isn't a theme name (system, light, dark, a built-in such as \
+                     cutaway, or a file in the themes folder)"
+                ))
+            }
+        }
         ValueKind::ProviderModel => {
             let Some((p, m)) = v.split_once('=') else {
                 return Err(format!("`{v}` must be provider=model"));
@@ -683,7 +693,7 @@ fn suggest(unknown: &str) -> Option<&'static str> {
         .map(|(_, n)| n)
 }
 
-fn levenshtein(a: &str, b: &str) -> usize {
+pub(crate) fn levenshtein(a: &str, b: &str) -> usize {
     let b: Vec<char> = b.chars().collect();
     let mut prev: Vec<usize> = (0..=b.len()).collect();
     for (i, ca) in a.chars().enumerate() {

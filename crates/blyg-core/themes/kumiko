@@ -1,0 +1,36 @@
+# Kumiko: building as joinery. Quiet and precise, and repaired in gold, not
+# replaced. After Kyoto's kumiko lattices, shoji screens and kintsugi.
+name = Kumiko
+family = woody
+base = light
+
+color-bg = #f7f1e3
+color-editor = #fbf7ee
+color-ink = #2a2622
+color-muted = #75695a
+color-line = #d9ccb2
+color-accent = #2e4a78
+color-sel = #fffaf0
+color-bar = #e2cfa6
+color-bar-ink = #2a2622
+color-bar-line = #9c7b4c
+color-side = #efe4cc
+color-quote-bg = #fffdf7
+color-quote-rule = #e3d6bb
+color-toast = #2a2622
+color-toast-ink = #f7f1e3
+
+font-writing = Source Serif 4
+font-ui = Inter
+radius = 3
+sheet.radius = 4
+toast.radius = 3
+chip.radius = 3
+
+titlebar.band = lattice(#785a32, variant=asanoha, opacity=0.14)
+sidebar.ground = woodgrain(#967346, opacity=0.08)
+row.selected = outline(#d9ccb2)
+editor.frame = shoji-grid(#d9ccb2)
+quote.frame = outline(#e3d6bb)
+divider = kintsugi(#c9a23a)
+empty.art = lattice(#9c7b4c, variant=kumiko)

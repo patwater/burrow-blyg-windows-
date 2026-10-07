@@ -8,31 +8,31 @@
 //! the item afterwards rather than splicing locally. Not streamed: the text
 //! arrives as a single delta.
 
-use serde_json::{Value, json};
+use blyg_core::CoreError;
+use blyg_core::api::Api;
+use blyg_core::api::auth::Credential;
 
 use crate::error::{AiError, Result};
-use crate::http;
 use crate::provider::{GenRequest, GenResult, Provider, ProviderKind};
 
+/// Owns an owner-API client, so it signs in the same way the app does (a
+/// token, or the studio password) and reaches the host-rooted `/api`.
 pub struct BlygServer {
-    base_url: String,
-    token: String,
+    api: Api,
 }
 
 impl std::fmt::Debug for BlygServer {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("BlygServer")
-            .field("base_url", &self.base_url)
-            .field("token", &"<redacted>")
+            .field("api", &self.api)
             .finish()
     }
 }
 
 impl BlygServer {
-    pub fn new(base_url: &str, owner_token: impl Into<String>) -> Self {
+    pub fn new(base_url: &str, cred: impl Into<Credential>) -> Self {
         BlygServer {
-            base_url: base_url.trim_end_matches('/').to_string(),
-            token: owner_token.into(),
+            api: Api::new(base_url, cred),
         }
     }
 }
@@ -49,46 +49,41 @@ impl Provider for BlygServer {
                 "the blyg server can only fill TK scopes in items that have synced".into(),
             ));
         };
-        let id: String = url::form_urlencoded::byte_serialize(scope.item_id.as_bytes()).collect();
-        let res = http::agent()
-            .post(&format!("{}/api/items/{id}/generate", self.base_url))
-            .set("authorization", &format!("Bearer {}", self.token))
-            .set("accept", "application/json")
-            .send_json(json!({ "scope": scope.scope }));
-        let v = match res {
-            Err(ureq::Error::Status(404, _)) => {
+        let (text, model, content_md) = match self.api.generate(&scope.item_id, scope.scope as u32)
+        {
+            // `content_md` (studio 0.27.2+) is the whole body as stored: the
+            // caller puts it in the editor instead of pulling.
+            Ok(r) => (r.text, r.model, r.content_md),
+            Err(CoreError::NotFound) => {
                 return Err(AiError::Provider(
                     "item not found on the server (or the server has no /generate)".into(),
                 ));
             }
-            Err(ureq::Error::Status(401, _)) => {
+            Err(CoreError::Unauthorized) => {
                 return Err(AiError::Unauthorized {
                     provider: "your blyg".into(),
                 });
             }
-            Err(ureq::Error::Status(code, r)) => {
-                let body = r.into_string().unwrap_or_default();
-                let msg = http::error_message(&body);
-                return Err(if msg.contains("declined") {
-                    AiError::Refused(msg)
+            Err(CoreError::Offline) => {
+                return Err(AiError::Provider("couldn't reach your blyg".into()));
+            }
+            Err(CoreError::Rejected {
+                status, message, ..
+            }) => {
+                return Err(if message.contains("declined") {
+                    AiError::Refused(message)
                 } else {
-                    AiError::Provider(format!("blyg server: {msg} ({code})"))
+                    AiError::Provider(format!("blyg server: {message} ({status})"))
                 });
             }
-            r => http::read_json("blyg server", r)?,
+            Err(e) => return Err(AiError::Provider(format!("blyg server: {e}"))),
         };
         req.cancel.check()?;
-        let text = v
-            .get("text")
-            .and_then(Value::as_str)
-            .ok_or_else(|| AiError::Provider("blyg server returned no text".into()))?
-            .to_string();
-        let model = v
-            .get("model")
-            .and_then(Value::as_str)
-            .unwrap_or("unknown")
-            .to_string();
         on_delta(&text);
-        Ok(GenResult { text, model })
+        Ok(GenResult {
+            text,
+            model,
+            content_md,
+        })
     }
 }

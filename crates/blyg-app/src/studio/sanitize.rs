@@ -15,7 +15,7 @@
 use std::borrow::Cow;
 use std::sync::OnceLock;
 
-use ammonia::Builder;
+use ammonia::{Builder, UrlRelative};
 
 const YOUTUBE_EMBEDS: [&str; 2] = [
     "https://www.youtube-nocookie.com/embed/",
@@ -40,7 +40,12 @@ pub fn is_youtube_embed(src: &str) -> bool {
 
 fn builder() -> &'static Builder<'static> {
     static B: OnceLock<Builder<'static>> = OnceLock::new();
-    B.get_or_init(|| {
+    B.get_or_init(allowlist)
+}
+
+/// The allowlist, as a fresh builder.
+fn allowlist() -> Builder<'static> {
+    {
         let mut b = Builder::default();
         b.add_tags(["iframe"])
             // Dropped with everything inside them (not just the tags).
@@ -87,12 +92,32 @@ fn builder() -> &'static Builder<'static> {
                 }
             });
         b
-    })
+    }
 }
 
 /// Clean `html` for the reading view.
 pub fn sanitize(html: &str) -> String {
     drop_empty_iframes(&builder().clean(html).to_string())
+}
+
+/// [`sanitize`], with relative `src`/`href` made absolute against `base`
+/// (the origin of the post the HTML belongs to). For HTML shown on a page
+/// whose `<base>` is another blyg: a quoted post, say. Versions published
+/// before studio 0.11 carry relative media paths (`/blyg/media/x.png`).
+pub fn sanitize_at(html: &str, base: &str) -> String {
+    let base = if base.ends_with('/') {
+        base.to_string()
+    } else {
+        format!("{base}/")
+    };
+    match url::Url::parse(&base) {
+        Ok(u) if matches!(u.scheme(), "http" | "https") => {
+            let mut b = allowlist();
+            b.url_relative(UrlRelative::RewriteWithBase(u));
+            drop_empty_iframes(&b.clean(html).to_string())
+        }
+        _ => sanitize(html),
+    }
 }
 
 /// An `<iframe>` whose `src` the filter refused would be an empty frame:
@@ -261,6 +286,31 @@ mod tests {
         );
         assert!(!out.contains("unsafe-url"), "{out}");
         assert!(out.contains("src=\"media/a.png\""), "relative kept: {out}");
+    }
+
+    #[test]
+    fn relative_urls_resolve_against_the_posts_origin() {
+        let html = r#"<p><img src="/blyg/media/a.png" alt=""> <a href="t/X/">x</a> <img src="https://cdn.example.org/b.png" alt=""></p>"#;
+        let out = sanitize_at(html, "https://ada.example.net/blyg");
+        assert!(
+            out.contains(r#"src="https://ada.example.net/blyg/media/a.png""#),
+            "{out}"
+        );
+        assert!(
+            out.contains(r#"href="https://ada.example.net/blyg/t/X/""#),
+            "{out}"
+        );
+        assert!(
+            out.contains(r#"src="https://cdn.example.org/b.png""#),
+            "{out}"
+        );
+        // Still the same allowlist.
+        assert!(
+            !sanitize_at("<script>x</script><p>ok</p>", "https://ada.example.net/")
+                .contains("script")
+        );
+        // No usable base: relative URLs are left as they are.
+        assert!(sanitize_at(html, "not a url").contains(r#"src="/blyg/media/a.png""#));
     }
 
     #[test]

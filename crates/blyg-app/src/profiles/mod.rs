@@ -190,7 +190,8 @@ impl MainView {
     fn fetch_profile(&mut self, url: String, refresh: bool, cx: &mut Context<Self>) {
         let backend = self.backend.clone();
         let u = url.clone();
-        let task = cx.background_spawn(async move { backend.profile(&u, refresh) });
+        let task =
+            cx.background_spawn(async move { crate::guarded(|| backend.profile(&u, refresh)) });
         cx.spawn(async move |this, cx| {
             let r = task.await;
             let _ = this.update(cx, |v, cx| {

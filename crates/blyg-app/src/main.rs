@@ -1,4 +1,4 @@
-//! Blygger Desktop: a Notational-Velocity-style GPUI client for a blyg.
+//! Burrow: a Notational-Velocity-style GPUI client for a blyg.
 //!
 //! With a `blyg-url` in the config and its owner token in the Keychain, the
 //! app runs on `LiveBackend` (local SQLite + sync with the blyg). With none,
@@ -16,19 +16,25 @@
     windows_subsystem = "windows"
 )]
 
+mod about; // --- about ---
 mod ai;
 mod app;
 mod capture;
 mod cli;
+mod composer; // --- composer --- (@-mentions and spellcheck)
 mod connection;
 mod fake;
 mod fonts;
 mod images;
 mod keymap;
+#[cfg(test)]
+mod keymap_docs;
+mod ornament; // --- themes ---
 mod platform;
 mod prefs;
 mod settings;
 mod theme;
+mod theme_ext; // --- themes --- (chrome surfaces: sheets, popovers, fields)
 mod update;
 mod vm;
 #[cfg(target_os = "windows")]
@@ -66,17 +72,14 @@ fn main() -> ExitCode {
 
     let files = ConfigFiles::discover();
     let notice = settings::migrate_on_launch(&files.primary);
+    let themes_dir = files.themes_dir();
     let store = ConfigStore::open(files);
-    for d in settings::diagnostics(store.loaded()) {
+    let themes = theme::Themes::load(Some(themes_dir));
+    for d in settings::diagnostics(store.loaded(), &themes.registry) {
         eprintln!("blygger: {d}");
     }
     let mut prefs = Prefs::from_config(store.config());
-    // Dev/screenshot override; not persisted unless a setting is changed.
-    match std::env::var("BLYGGER_THEME").as_deref() {
-        Ok("light") => prefs.theme = prefs::ThemePref::Light,
-        Ok("dark") => prefs.theme = prefs::ThemePref::Dark,
-        _ => {}
-    }
+    prefs.apply_theme_override();
     // Fake mode never touches the real Keychain.
     let fake_mode = std::env::var_os("BLYGGER_FAKE").is_some();
     // BLYGGER_TEST_TOKEN (automation against a local `wrangler dev`): an
@@ -107,7 +110,7 @@ fn main() -> ExitCode {
     }
     let (inner, mode): (Arc<dyn Backend>, Mode) = match (&fake, store.config().blyg_url()) {
         (Some(f), _) => (f.clone(), Mode::Fake),
-        (None, Some(url)) => match connection::open_live(&data_dir, url, &*tokens) {
+        (None, Some(url)) => match connection::open_live(&data_dir, url, &tokens) {
             Ok(Some(live)) => (live, Mode::Live),
             Ok(None) => {
                 eprintln!("blygger: no owner token for {url} in the Keychain; connect again");
@@ -131,7 +134,7 @@ fn main() -> ExitCode {
         verify: if fake_mode {
             connection::fake_verifier
         } else {
-            blyg_core::api::verify_connection
+            connection::live_verifier
         },
     };
 
@@ -154,6 +157,7 @@ fn main() -> ExitCode {
         gpui_kit::init(cx);
         platform::set_dock_icon_unless_bundled();
         settings::init(store, tokens, notice, cx);
+        cx.set_global(themes); // --- themes ---
         ai::init(cx);
         cx.set_global(connection);
         // A remote image (a profile avatar) landed in the cache: repaint.
@@ -177,10 +181,18 @@ fn main() -> ExitCode {
         app::bind_keys(cx);
         cx.on_action(|_: &app::Quit, cx| cx.quit());
         cx.on_action(|_: &app::ShowCapture, cx| capture::toggle(cx));
-        cx.set_menus(menus());
+        // --- composer --- the system spell checker, on unless `spellcheck = false`.
+        composer::init(composer::system_engine(), prefs.spellcheck, cx);
+        cx.on_action(|_: &composer::ToggleSpellcheck, cx| {
+            if let Err(e) = composer::toggle_spellcheck(cx) {
+                eprintln!("blygger: {e}");
+            }
+        });
+        cx.set_menus(menus(prefs.spellcheck));
         capture::init(backend.clone(), &prefs, cx);
         // --- auto-update --- (off in fake mode, tests and BLYGGER_NO_UPDATE)
         update::init(state_dir, cx);
+        about::init(cx); // --- about ---
 
         open_main(backend.clone(), fake.clone(), prefs.clone(), launched, cx);
         // Polite activation in automation: don't steal focus from the user.
@@ -237,7 +249,7 @@ fn install_crash_log() {
         let dir = blyg_core::config::data_dir();
         let path = dir.join("crash.log");
         let report = format!(
-            "Blygger {} crashed at {}\n\n{info}\n\n{}\n",
+            "Burrow {} crashed at {}\n\n{info}\n\n{}\n",
             env!("CARGO_PKG_VERSION"),
             chrono::Utc::now().to_rfc3339(),
             std::backtrace::Backtrace::force_capture()
@@ -251,14 +263,25 @@ fn install_crash_log() {
         }
         let wide = |s: &str| s.encode_utf16().chain(Some(0)).collect::<Vec<u16>>();
         let text = wide(&format!(
-            "Blygger hit a bug and has to close.\n\nWhat happened is saved in {}",
+            "Burrow hit a bug and has to close.\n\nWhat happened is saved in {}",
             path.display()
         ));
-        let caption = wide("Blygger");
+        let caption = wide("Burrow");
         const MB_ICONERROR: u32 = 0x10;
         // SAFETY: two NUL-terminated UTF-16 strings that outlive the call.
         unsafe { MessageBoxW(0, text.as_ptr(), caption.as_ptr(), MB_ICONERROR) };
     }));
+}
+
+/// Run a backend call that parses other people's content (profiles, public
+/// items) on a background thread, turning a parser panic into an error. A
+/// panic that escapes a background task aborts the whole app.
+pub(crate) fn guarded<T>(f: impl FnOnce() -> blyg_core::Result<T>) -> blyg_core::Result<T> {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)).unwrap_or_else(|_| {
+        Err(blyg_core::CoreError::Other(
+            "couldn't read that page (it has something Burrow didn't expect)".into(),
+        ))
+    })
 }
 
 /// `BLYGGER_NO_ACTIVATE=1`: never take focus from the frontmost app (used by
@@ -293,12 +316,20 @@ pub fn order_front_regardless(window: &Window) {
     }
 }
 
-fn menus() -> Vec<Menu> {
+/// --- composer --- Rebuild the menu bar (the Spelling item's check mark).
+pub(crate) fn refresh_menus(cx: &mut App) {
+    cx.set_menus(menus(composer::spellcheck_enabled(cx)));
+}
+
+fn menus(spellcheck: bool) -> Vec<Menu> {
     use gpui_kit::base::input::{Copy, Cut, Paste, Redo, SelectAll, Undo};
     vec![
         Menu {
-            name: "Blygger".into(),
+            name: "Burrow".into(),
             items: vec![
+                // --- about --- (also in Help)
+                MenuItem::action("About Burrow", about::ShowAbout),
+                MenuItem::separator(),
                 MenuItem::action("Settings…", app::OpenSettings),
                 MenuItem::action("Check for Updates…", update::CheckForUpdates), // --- auto-update ---
                 MenuItem::action("Open Config File", app::OpenConfigFile),
@@ -307,7 +338,7 @@ fn menus() -> Vec<Menu> {
                 MenuItem::separator(),
                 MenuItem::action("Disconnect…", app::Disconnect),
                 MenuItem::separator(),
-                MenuItem::action("Quit Blygger", app::Quit),
+                MenuItem::action("Quit Burrow", app::Quit),
             ],
             disabled: false,
         },
@@ -321,6 +352,16 @@ fn menus() -> Vec<Menu> {
                 MenuItem::action("Copy", Copy),
                 MenuItem::action("Paste", Paste),
                 MenuItem::action("Select All", SelectAll),
+                // --- composer ---
+                MenuItem::separator(),
+                MenuItem::submenu(Menu {
+                    name: "Spelling".into(),
+                    items: vec![
+                        MenuItem::action("Check Spelling While Typing", composer::ToggleSpellcheck)
+                            .checked(spellcheck),
+                    ],
+                    disabled: false,
+                }),
             ],
             disabled: false,
         },
@@ -340,7 +381,9 @@ fn menus() -> Vec<Menu> {
                 // --- reading & versions ---
                 MenuItem::separator(),
                 MenuItem::action("Versions…", app::reading::ShowVersions),
+                MenuItem::action("Lineage…", app::reading::ShowLineage),
                 MenuItem::action("Quote…", app::reading::QuotePicker),
+                MenuItem::action("Quote Selection in Draft", app::notes::QuoteToDraft),
                 // --- delete & withdraw ---
                 MenuItem::separator(),
                 MenuItem::action("Delete Draft…", app::discard::DeleteDraft),
@@ -353,6 +396,13 @@ fn menus() -> Vec<Menu> {
             name: "Blyg".into(),
             items: vec![
                 MenuItem::action("Reading", app::reading::ShowReading),
+                // --- stream ---
+                MenuItem::action("Stream", app::reading::stream::StreamMode),
+                MenuItem::action("Reader", app::reading::stream::ReaderMode),
+                // --- reader folders ---
+                MenuItem::action("Sources Pane", app::reading::sources::ToggleSources),
+                MenuItem::action("New Folder…", app::reading::sources::NewFolder),
+                MenuItem::action("Check All Feeds Now", app::reading::sources::CheckFeeds),
                 MenuItem::action("Mentions", app::reading::ShowMentions),
                 MenuItem::action("Subscriptions", app::reading::ShowSubscriptions),
                 MenuItem::separator(),
@@ -378,16 +428,22 @@ fn menus() -> Vec<Menu> {
                 MenuItem::action("Bigger", app::FontBigger),
                 MenuItem::action("Smaller", app::FontSmaller),
                 MenuItem::action("Actual Size", app::FontReset),
+                // --- browser ---
+                MenuItem::separator(),
+                MenuItem::action("Browser Pane", app::browser::ToggleBrowser),
+                MenuItem::action("Notes", app::notes::ToggleNotes), // --- notes ---
             ],
             disabled: false,
         },
         // --- onboarding ---
         Menu {
             name: "Help".into(),
-            items: vec![MenuItem::action(
-                "Blygger Tutorial",
-                app::onboarding::ShowTutorial,
-            )],
+            items: vec![
+                MenuItem::action("Burrow Tutorial", app::onboarding::ShowTutorial),
+                // --- about --- (also in the Burrow menu)
+                MenuItem::separator(),
+                MenuItem::action("About Burrow", about::ShowAbout),
+            ],
             disabled: false,
         },
     ]
@@ -405,13 +461,28 @@ mod menu_tests {
     fn menus_match_the_keymap_table() {
         let table = crate::keymap::table();
         let mut shown = Vec::new();
-        for menu in super::menus() {
-            if menu.name == "Edit" {
-                continue; // the standard text-editing items (gpui-base's actions)
-            }
-            for item in menu.items {
+        for menu in super::menus(true) {
+            let items: Vec<(String, MenuItem)> = if menu.name == "Edit" {
+                // The standard text-editing items are gpui-base's actions;
+                // only its submenus (Spelling) are ours.
+                menu.items
+                    .into_iter()
+                    .filter_map(|i| match i {
+                        MenuItem::Submenu(sub) => Some(sub),
+                        _ => None,
+                    })
+                    .flat_map(|sub| {
+                        let prefix = format!("Edit › {}", sub.name);
+                        sub.items.into_iter().map(move |i| (prefix.clone(), i))
+                    })
+                    .collect()
+            } else {
+                let name = menu.name.to_string();
+                menu.items.into_iter().map(|i| (name.clone(), i)).collect()
+            };
+            for (menu_name, item) in items {
                 if let MenuItem::Action { name, action, .. } = item {
-                    let path = format!("{} › {}", menu.name, name);
+                    let path = format!("{menu_name} › {name}");
                     let action = action.name().rsplit("::").next().unwrap_or_default();
                     assert!(
                         table

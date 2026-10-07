@@ -203,6 +203,7 @@ impl Provider for LocalClaudeCode {
                     return Err(AiError::Provider("Claude Code returned no text".into()));
                 }
                 Ok(GenResult {
+                    content_md: None,
                     text,
                     model: model.unwrap_or_else(|| "claude-code".into()),
                 })

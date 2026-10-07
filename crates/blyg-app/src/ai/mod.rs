@@ -316,6 +316,7 @@ pub mod tests_support {
             let text = next?;
             on_delta(&text);
             Ok(GenResult {
+                content_md: None,
                 text,
                 model: self.model.clone(),
             })

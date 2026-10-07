@@ -1,4 +1,4 @@
-//! `![[id]]` → a quote, from the local store only: your own items
+//! `![[id]]` → a quote and `[[id]]` → a link, from the local store only: your own items
 //! (`Backend::items`) first, then imported reading items
 //! (`Backend::reading`), in the Worker's `resolveTarget` order. Nothing is
 //! ever fetched (SPEC § Protocol philosophy 3).
@@ -79,7 +79,7 @@ impl StoreResolver {
         Self::new(backend.items(), backend.reading(), &rss, mount)
     }
 
-    /// Resolves nothing (a document without `![[`: no snapshot needed).
+    /// Resolves nothing (a document without `[[`: no snapshot needed).
     pub fn empty(mount: &str) -> Self {
         Self::new(Vec::new(), Vec::new(), &[], mount)
     }
@@ -149,8 +149,9 @@ impl StoreResolver {
             version,
             kind: item_kind(r.kind),
             // Stored verbatim (spec §14: sanitize at render); the page CSP
-            // is the backstop.
-            content_html: super::sanitize::sanitize(&r.content_html),
+            // is the backstop. Relative URLs belong to the quoted post's
+            // blyg, not the page it's quoted into.
+            content_html: super::sanitize::sanitize_at(&r.content_html, &r.origin),
             author: r
                 .author
                 .as_ref()
@@ -169,6 +170,42 @@ impl Resolver for StoreResolver {
         match self.remote.get(id) {
             Some(rows) if !rows.is_empty() => self.imported(id, rows),
             _ => Resolution::NotFound,
+        }
+    }
+
+    /// A `[[id]]` link bakes nothing, so the cycle and depth guards that
+    /// stop a quote from containing itself don't apply: a guarded post is
+    /// still linked, its excerpt taken from its own text.
+    fn resolve_link(&self, id: &str) -> Resolution {
+        match self.resolve(id) {
+            Resolution::Unavailable(UnresolvedReason::Circular | UnresolvedReason::Other(_))
+                if self.own.contains_key(id) =>
+            {
+                let item = &self.own[id];
+                let opts = RenderOpts {
+                    data_line: false,
+                    provenance: false,
+                    mount: self.mount.clone(),
+                    self_id: Some(id.to_string()),
+                };
+                let empty = StoreResolver::empty(&self.mount);
+                Resolution::Found(Found {
+                    origin: None,
+                    id: id.to_string(),
+                    version: item.version,
+                    kind: item_kind(item.kind),
+                    content_html: render_preview(
+                        &item.content_md,
+                        render_kind(item.kind),
+                        &empty,
+                        &opts,
+                    )
+                    .html,
+                    author: None,
+                    page: None,
+                })
+            }
+            r => r,
         }
     }
 }
@@ -197,8 +234,11 @@ mod tests {
             stub_of: None,
             forked_from: None,
             show_responses: true,
+            responses_mode: None,
             pending_sync: false,
             conflict: false,
+            highlight: false,
+            highlight_mode: None,
         }
     }
 
@@ -228,6 +268,7 @@ mod tests {
             stub_of: None,
             forked_from: None,
             transclusions: vec![],
+            lineage_known: false,
         }
     }
 
@@ -338,5 +379,31 @@ mod tests {
     fn empty_resolves_nothing() {
         let r = StoreResolver::empty("/blyg");
         assert_eq!(r.resolve(OWN), Resolution::NotFound);
+    }
+
+    #[test]
+    fn links_resolve_to_anchors_even_in_a_cycle() {
+        let own = item(OWN, Status::Public, &format!("Loops back to [[{OWN}]]."));
+        let r = StoreResolver::new(vec![own], vec![], &[], "https://blyg.example.com/blyg");
+        let opts = RenderOpts {
+            data_line: false,
+            mount: "https://blyg.example.com/blyg".into(),
+            ..RenderOpts::default()
+        };
+        let out = render_preview(
+            &format!("See [[{OWN}]]."),
+            blyg_render::Kind::Fragment,
+            &r,
+            &opts,
+        );
+        assert!(
+            out.html.contains(&format!(
+                "<a href=\"https://blyg.example.com/blyg/f/{OWN}/\">“Loops back to"
+            )),
+            "{}",
+            out.html
+        );
+        assert_eq!(out.stats.links, 1);
+        assert!(out.stats.unresolved.is_empty());
     }
 }

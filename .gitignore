@@ -8,3 +8,6 @@
 /docs/private/
 /CLAUDE.local.md
 /dist
+
+# The documentation site build (mdbook build site)
+/site/book/

@@ -55,7 +55,7 @@ static ET_BOOK: &[&[u8]] = &[
 ];
 
 impl Bundle {
-    fn files(self) -> &'static [&'static [u8]] {
+    pub(crate) fn files(self) -> &'static [&'static [u8]] {
         match self {
             Bundle::Literata => LITERATA,
             Bundle::Inter => INTER,

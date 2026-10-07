@@ -1,0 +1,28 @@
+# Paper: the app's original light look (Tufte-style cream paper, red ink).
+name = Paper
+family = plain
+base = light
+
+color-bg = #fffff8
+color-ink = #111111
+color-muted = #8a867c
+color-line = #ebe6d6
+color-sel = #f2ecd8
+color-accent = #a4271b
+color-bar = #f6f3e7
+color-text-selection = #a4271b33
+color-warn = #c98a00
+color-over = #d23c2a
+color-green = #3aa655
+color-amber = #e0a100
+color-grey = #999999
+color-ins = #3aa6552e
+color-del = #d23c2a29
+color-shadow = #00000059
+color-edited = #2f5f8f
+color-edited-bg = #dfe9f4
+color-edited-rule = #8fb3d9
+color-notice = #8a6a10
+color-notice-bg = #e7c07022
+
+radius = 8

@@ -64,7 +64,7 @@ pub fn valid_name(name: &str) -> bool {
 /// `blyg-local:<sha256>.<ext>`. Local: no network.
 pub fn store(dir: &Path, bytes: &[u8], mime: &str) -> Result<String> {
     let ext = ext_for(mime)
-        .ok_or_else(|| CoreError::Other(format!("{mime} isn't an image type Blygger can keep")))?;
+        .ok_or_else(|| CoreError::Other(format!("{mime} isn't an image type Burrow can keep")))?;
     let name = format!("{}.{ext}", crate::util::hex(&crate::util::sha256(bytes)));
     let path = dir.join(&name);
     if !path.exists() {

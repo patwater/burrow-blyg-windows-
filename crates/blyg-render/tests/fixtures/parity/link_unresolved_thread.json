@@ -1,0 +1,25 @@
+{
+  "name": "link_unresolved_thread",
+  "kind": "thread",
+  "md": "bad link [[0zzzzzzzzzzzzzzzzzzzzzzzzz]]\n\n![[0zzzzzzzzzzzzzzzzzzzzzzzzz]]\n\nand [[01j9zq3k4m5n6p7q8r9s0t1v4y]]",
+  "html": "<p>bad link <span class=\"blyg-link-unresolved\" style=\"color:#b3412b\">⚠ unknown item</span></p>\n\n<blockquote class=\"blyg-transclusion unresolved\"><p>⚠ unresolvable: unknown item</p></blockquote>\n<p>and <span class=\"blyg-link-unresolved\" style=\"color:#b3412b\">⚠ item is a draft, not published</span></p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": [
+    {
+      "directive": "![[0zzzzzzzzzzzzzzzzzzzzzzzzz]]",
+      "reason": "unknown item"
+    },
+    {
+      "directive": "[[0zzzzzzzzzzzzzzzzzzzzzzzzz]]",
+      "reason": "unknown item"
+    },
+    {
+      "directive": "[[01j9zq3k4m5n6p7q8r9s0t1v4y]]",
+      "reason": "item is a draft, not published"
+    }
+  ]
+}

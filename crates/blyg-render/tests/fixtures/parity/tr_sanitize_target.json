@@ -1,0 +1,17 @@
+{
+  "name": "tr_sanitize_target",
+  "kind": "thread",
+  "md": "Quoting a stranger:\n\n![[01j9zq3k4m5n6p7q8r9s0t1vss]]\n\nAnd [[01j9zq3k4m5n6p7q8r9s0t1vss]] as a link.",
+  "html": "<p>Quoting a stranger:</p>\n\n<blockquote class=\"blyg-transclusion\" data-blyg-id=\"01j9zq3k4m5n6p7q8r9s0t1vss\" data-blyg-version=\"2\">\n<p class=\"lead\">Markup from <a title=\"t\">a stranger</a>, <a href=\"https://site.example.net/a?b=1&amp;c=2\">a link</a> and <a href=\"tel:+15550100\">a phone</a>.</p>\n\n\n<p><img alt=\"inline data\"><img src=\"https://images.example.org/k.png\" alt=\"kite\" width=\"10\"></p>\nunwrapped <b data-blyg-note=\"kept\">bold</b>\n\n<table><tr><td colspan=\"2\">cell</td></tr></table>\n<p>Sneaky <a>entity</a>.</p>\n\n\n<p class=\"provenance\"><a href=\"/blyg/f/01j9zq3k4m5n6p7q8r9s0t1vss/\">fragment ↗</a> · snapshot of v2</p></blockquote>\n<p>And <a href=\"/blyg/f/01j9zq3k4m5n6p7q8r9s0t1vss/\">“Markup from a stranger, a link and a phone. unwrapped bold c…”</a> as a link.</p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [
+    {
+      "id": "01j9zq3k4m5n6p7q8r9s0t1vss",
+      "version": 2
+    }
+  ],
+  "errors": []
+}

@@ -1,7 +1,14 @@
 name: Release
 
-# Push a tag like v0.1.0 (matching `version` in Cargo.toml, with a matching
-# `## [0.1.0]` section in CHANGELOG.md) to build, sign and publish a release.
+# Merging a version bump to main releases it: when `version` in Cargo.toml
+# has no `v<version>` tag yet (and CHANGELOG.md has its `## [x.y.z]`
+# section), this builds, signs, tags that commit and publishes the release.
+# Otherwise a cheap Linux check skips it. Run it by hand (workflow_dispatch)
+# to retry a failed release.
+#
+# It runs on main, not on the tag, so Swatinem/rust-cache saves the build in
+# main's cache scope and the next release reuses it: a cache saved on one
+# tag can't be read from another, which made every tag build cold.
 #
 # Required repository secret:
 #   UPDATE_SIGNING_KEY            PEM Ed25519 private key; signs SHA256SUMS as
@@ -20,20 +27,52 @@ name: Release
 
 on:
   push:
-    tags: ["v*"]
+    branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release
   cancel-in-progress: false
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # Is there a version to release? (No Mac time spent when there isn't.)
+  decide:
+    # Windows port: upstream's macOS release is upstream's alone. This fork
+    # releases Windows builds from windows.yml instead.
+    if: github.repository == 'aneeshsathe/blygger-desktop'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      release: ${{ steps.v.outputs.release }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: v
+        env:
+          REPO: ${{ github.repository }}
+        run: |
+          version="$(sed -n '/^\[workspace.package\]/,/^\[/s/^version = "\(.*\)"/\1/p' Cargo.toml)"
+          [ -n "$version" ] || { echo "::error::no version in Cargo.toml"; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if git ls-remote --exit-code --tags "https://github.com/$REPO.git" "refs/tags/v$version" >/dev/null; then
+            echo "v$version is already released"
+            echo "release=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "v$version isn't tagged yet: releasing it"
+            echo "release=true" >> "$GITHUB_OUTPUT"
+          fi
+
   release:
+    needs: decide
+    if: needs.decide.outputs.release == 'true'
     runs-on: macos-latest
     timeout-minutes: 90
     permissions:
@@ -55,7 +94,7 @@ jobs:
       - name: Check the tag, Cargo version, repo name and changelog agree
         id: meta
         env:
-          TAG: ${{ github.ref_name }}
+          TAG: v${{ needs.decide.outputs.version }}
           REPO: ${{ github.repository }}
         run: |
           version="$(cargo pkgid -p blyg-app | sed -E 's/.*[#@]//')"
@@ -77,6 +116,19 @@ jobs:
         run: |
           if [ "$HAS_KEY" != "true" ]; then
             echo "::error::the UPDATE_SIGNING_KEY secret is missing; in-app updates need a signed SHA256SUMS"
+            exit 1
+          fi
+
+      # crates/blyg-app/build.rs embeds `git rev-parse --short HEAD` (plus
+      # "-dirty" when `git status --porcelain` lists anything) for the About
+      # window. The checkout above is a git repository, so the SHA is real;
+      # make sure it isn't marked dirty.
+      - name: Check the commit the About window will show
+        run: |
+          git rev-parse --short HEAD
+          if [ -n "$(git status --porcelain)" ]; then
+            git status --porcelain
+            echo "::error::the tree is dirty before the build; the app would say <sha>-dirty"
             exit 1
           fi
 
@@ -114,31 +166,39 @@ jobs:
           ---
           This build isn't notarized by Apple. The easiest way to install it is the
           one-line Terminal installer in the README, which Gatekeeper doesn't block.
-          If you download it in a browser, macOS 15 and later say "Blygger" Not
+          If you download it in a browser, macOS 15 and later say "Burrow" Not
           Opened. Try opening it once, then click **Open Anyway** in System Settings ›
           Privacy & Security, or run
-          `xattr -dr com.apple.quarantine /Applications/Blygger.app`.
+          `xattr -dr com.apple.quarantine /Applications/Burrow.app`.
           EOF
           fi
 
+      # The Blygger-… zips are the same signed app under its old name (see
+      # "the old name" in scripts/bundle.sh): 0.6.0 and earlier only update
+      # from Blygger-<version>-macos-universal.zip holding Blygger.app, and
+      # SHA256SUMS (signed above) covers them like every other asset. Keep
+      # uploading them until 0.6.0 and earlier are rare.
       - name: Create the GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          TAG: ${{ github.ref_name }}
+          TAG: v${{ needs.decide.outputs.version }}
           VERSION: ${{ steps.meta.outputs.version }}
           PRERELEASE: ${{ steps.meta.outputs.prerelease }}
         run: |
           flags=()
           [ "$PRERELEASE" = "true" ] && flags+=(--prerelease)
+          # Tags the commit this run built.
           gh release create "$TAG" \
-            --title "Blygger $VERSION" \
+            --target "$GITHUB_SHA" \
+            --title "Burrow $VERSION" \
             --notes-file "$RUNNER_TEMP/notes.md" \
-            --verify-tag \
             "${flags[@]}" \
-            dist/Blygger-"$VERSION"-macos-universal.dmg \
+            dist/Burrow-"$VERSION"-macos-universal.dmg \
+            dist/Burrow-"$VERSION"-macos-universal.zip \
+            dist/Burrow-macos-universal.dmg \
+            dist/Burrow-macos-universal.zip \
             dist/Blygger-"$VERSION"-macos-universal.zip \
-            dist/Blygger-macos-universal.dmg \
             dist/Blygger-macos-universal.zip \
             dist/SHA256SUMS \
             dist/SHA256SUMS.sig

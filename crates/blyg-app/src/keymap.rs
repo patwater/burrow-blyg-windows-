@@ -30,9 +30,13 @@ use crate::app::studio::{ViewSplit, ViewStudio, ViewWrite};
 use crate::app::onboarding::{ShowTutorial, TutorialBack, TutorialNext};
 // --- reading & versions ---
 use crate::app::reading::{
-    QuotePicker, ShowMentions, ShowReading, ShowSubscriptions, ShowVersions, SiteSettings,
-    SubscribeTo,
+    QuotePicker, ShowLineage, ShowMentions, ShowReading, ShowSubscriptions, ShowVersions,
+    SiteSettings, SubscribeTo,
 };
+// --- stream --- (the reading screen's Stream | Reader toggle)
+use crate::app::reading::stream::{ReaderMode, StreamMode};
+// --- reader folders ---
+use crate::app::reading::sources::{CheckFeeds, NewFolder, ToggleSources};
 
 // --- profiles ---
 use crate::app::profiles::{MyProfile, OpenProfile, ShowProfile};
@@ -40,6 +44,16 @@ use crate::app::profiles::{MyProfile, OpenProfile, ShowProfile};
 use crate::app::discard::{DeleteDraft, Withdraw};
 // --- auto-update ---
 use crate::update::CheckForUpdates;
+// --- about ---
+use crate::about::ShowAbout;
+// --- composer ---
+use crate::composer::ToggleSpellcheck;
+// --- notes ---
+use crate::app::notes::{QuoteToDraft, ToggleNotes};
+// --- browser ---
+use crate::app::browser::{
+    BrowserAddress, BrowserBack, BrowserForward, BrowserReload, ToggleBrowser,
+};
 
 pub const MAIN: &str = crate::app::CONTEXT;
 /// Our own inputs inside the main window (deeper than gpui-base's `Input`).
@@ -47,12 +61,17 @@ pub const MAIN_INPUT: &str = "Blygger > Input";
 /// A context that never matches: bindings here exist only so the native
 /// menu shows the right key equivalent (see `Keybind::menu_key`).
 const MENU_ONLY: &str = "BlyggerMenuKeyEquivalent";
+/// --- browser --- The browser pane (its own place: its keys may reuse
+/// main-window keys, which it out-ranks while it has focus).
+pub const BROWSER: &str = "Blygger > Browser";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Scope {
     Global,
     Main,
     MainInput,
+    /// --- browser --- `Blygger > Browser`: the browser pane.
+    Browser,
 }
 
 impl Scope {
@@ -61,6 +80,7 @@ impl Scope {
             Scope::Global => None,
             Scope::Main => Some(MAIN),
             Scope::MainInput => Some(MAIN_INPUT),
+            Scope::Browser => Some(BROWSER), // --- browser ---
         }
     }
 
@@ -68,7 +88,10 @@ impl Scope {
     /// window counts as one place.
     #[cfg(test)]
     fn place(self) -> &'static str {
-        "main window"
+        match self {
+            Scope::Browser => "browser pane", // --- browser ---
+            _ => "main window",
+        }
     }
 }
 
@@ -143,10 +166,17 @@ macro_rules! button {
     };
 }
 
-/// The one table. Order matters only for display. Keys are written in
-/// macOS terms; `platform_keys` respells them for Windows.
+/// The one table, as this platform binds it. Order matters only for
+/// display. Keys are written in macOS terms (`mac_table`); `platform_keys`
+/// respells them for Windows.
 pub fn table() -> Vec<Keybind> {
-    platform_keys(vec![
+    platform_keys(mac_table())
+}
+
+/// The table in macOS terms, unrespelled: what the documentation site's
+/// shortcut reference shows (`keymap_docs`).
+pub fn mac_table() -> Vec<Keybind> {
+    vec![
         kb!(
             "cmd-l",
             Main,
@@ -200,6 +230,16 @@ pub fn table() -> Vec<Keybind> {
             "Preview on/off, in place",
             Some("View › Preview")
         ),
+        // --- composer --- (@-mentions and spellcheck in the editor and quick
+        // capture). The mention popup's ↑/↓/⏎/⇥/esc and the spelling menu
+        // (right-click or ctrl-click a flagged word) are the popups' own keys,
+        // like the quote picker's; the toggle has no key.
+        menu_only!(
+            ToggleSpellcheck,
+            "Check spelling while typing (on/off; the spellcheck config key)",
+            "Edit › Spelling › Check Spelling While Typing"
+        ),
+        // --- end composer ---
         kb!(
             "cmd-o",
             Main,
@@ -234,14 +274,14 @@ pub fn table() -> Vec<Keybind> {
             Global,
             OpenSettings,
             "Settings",
-            Some("Blygger › Settings…")
+            Some("Burrow › Settings…")
         ),
         kb!(
             "cmd-shift-,",
             Global,
             ReloadConfig,
             "Reload the config file",
-            Some("Blygger › Reload Config")
+            Some("Burrow › Reload Config")
         ),
         kb!(
             "cmd-<",
@@ -250,13 +290,7 @@ pub fn table() -> Vec<Keybind> {
             "Reload the config file",
             None
         ),
-        kb!(
-            "cmd-q",
-            Global,
-            Quit,
-            "Quit",
-            Some("Blygger › Quit Blygger")
-        ),
+        kb!("cmd-q", Global, Quit, "Quit", Some("Burrow › Quit Burrow")),
         kb!(
             "ctrl-alt-cmd-o",
             Main,
@@ -310,18 +344,18 @@ pub fn table() -> Vec<Keybind> {
         menu_only!(
             Disconnect,
             "Disconnect from this blyg",
-            "Blygger › Disconnect…"
+            "Burrow › Disconnect…"
         ),
         menu_only!(
             OpenConfigFile,
             "Open the config file",
-            "Blygger › Open Config File"
+            "Burrow › Open Config File"
         ),
         // --- auto-update ---
         menu_only!(
             CheckForUpdates,
             "Check for a new release now (whatever auto-update says)",
-            "Blygger › Check for Updates…"
+            "Burrow › Check for Updates…"
         ),
         // --- buttons --- The quick-capture hotkey is `capture-hotkey`, not a
         // binding here; its button's tooltip shows the configured one.
@@ -329,7 +363,7 @@ pub fn table() -> Vec<Keybind> {
             menu_only!(
                 ShowCapture,
                 "Quick capture (the global hotkey, capture-hotkey)",
-                "Blygger › Quick Capture"
+                "Burrow › Quick Capture"
             ),
             "zap",
             "Capture"
@@ -415,6 +449,13 @@ pub fn table() -> Vec<Keybind> {
             "Versions"
         ),
         kb!(
+            "cmd-j",
+            Main,
+            ShowLineage,
+            "Lineage: what this post draws on and what draws on it",
+            Some("Post › Lineage…")
+        ),
+        kb!(
             "cmd-k",
             Main,
             QuotePicker,
@@ -431,6 +472,48 @@ pub fn table() -> Vec<Keybind> {
             "The blyg's site settings (title, bio, links)",
             "Blyg › Site Settings…"
         ),
+        // --- stream --- (issue #1) the reading screen's two modes; the
+        // stream's own keys (j/k, ⏎/Space, esc) live in reading_key_down.
+        kb!(
+            "alt-cmd-1",
+            Main,
+            StreamMode,
+            "Reading as a stream (the default)",
+            Some("Blyg › Stream")
+        ),
+        kb!(
+            "alt-cmd-2",
+            Main,
+            ReaderMode,
+            "Reading as a list with the post beside it",
+            Some("Blyg › Reader")
+        ),
+        // --- end stream ---
+        // --- reader folders --- the Reader's sources pane. Its own keys
+        // (←/→ between panes, ↑/↓, j/k, Space, [ ], esc) live in
+        // reading_key_down / sources::reader_key.
+        kb!(
+            "alt-cmd-s",
+            Main,
+            ToggleSources,
+            "Show or hide the Reader's sources pane (smart feeds, folders)",
+            Some("Blyg › Sources Pane")
+        ),
+        menu_only!(
+            NewFolder,
+            "A new folder for your subscriptions (on this Mac only)",
+            "Blyg › New Folder…"
+        ),
+        // --- subscription checks --- (studio 0.30; one subscription's
+        // "Check Now" is in its menu in the sources pane)
+        kb!(
+            "cmd-shift-r",
+            Main,
+            CheckFeeds,
+            "Check all feeds now (your blyg polls every subscription)",
+            Some("Blyg › Check All Feeds Now")
+        ),
+        // --- end reader folders ---
         // --- end reading & versions ---
         // --- delete & withdraw --- (docs/SPEC.md rule 5: published work is
         // withdrawn, never deleted). ⇧⌘⌫, not ⌘⌫: that's delete-to-line-start
@@ -496,10 +579,72 @@ pub fn table() -> Vec<Keybind> {
         menu_only!(
             ShowTutorial,
             "The interactive tutorial (on sample data)",
-            "Help › Blygger Tutorial"
+            "Help › Burrow Tutorial"
         ),
         // --- end onboarding ---
-    ])
+        // --- about --- One action, two menus (the standard app-menu place
+        // and Help), so two rows.
+        menu_only!(
+            ShowAbout,
+            "Version, build, updates and connection info",
+            "Burrow › About Burrow"
+        ),
+        menu_only!(
+            ShowAbout,
+            "Version, build, updates and connection info",
+            "Help › About Burrow"
+        ),
+        // --- end about ---
+        // --- browser --- (esc, which closes the pane, is the pane's own key)
+        kb!(
+            "cmd-shift-b",
+            Main,
+            ToggleBrowser,
+            "Browser pane: close it, or bring back the last page",
+            Some("View › Browser Pane")
+        ),
+        kb!("cmd-[", Browser, BrowserBack, "Browser pane: back", None),
+        kb!(
+            "cmd-]",
+            Browser,
+            BrowserForward,
+            "Browser pane: forward",
+            None
+        ),
+        kb!(
+            "cmd-r",
+            Browser,
+            BrowserReload,
+            "Browser pane: reload (or stop)",
+            None
+        ),
+        kb!(
+            "cmd-l",
+            Browser,
+            BrowserAddress,
+            "Browser pane: edit the address",
+            None
+        ),
+        // --- end browser ---
+        // --- notes --- (esc, which closes the drawer, is the drawer's own key)
+        kb!(
+            "cmd-shift-n",
+            Main,
+            ToggleNotes,
+            "Notes drawer: open or close it (quotes a selected passage)",
+            Some("View › Notes")
+        ),
+        // Universal quoting: from the browser pane, the reading pane or the
+        // drawer, into the draft.
+        kb!(
+            "cmd-shift-d",
+            Main,
+            QuoteToDraft,
+            "Quote the highlighted passage (a page, a post or your notes) in the draft",
+            Some("Post › Quote Selection in Draft")
+        ),
+        // --- end notes ---
+    ]
 }
 
 /// The table as this platform spells it. On Windows GPUI's `cmd` is the
@@ -679,6 +824,7 @@ const WINDOWS_WORDS: &[(&str, &str)] = &[
     ("your Mac", "your PC"),
     ("another Mac", "another PC"),
     // Windows has no menu bar; the Menu button lists the same items.
+    ("the Burrow menu", "the Menu button"),
     ("the Blygger menu", "the Menu button"),
 ];
 
@@ -741,6 +887,7 @@ pub fn bind_keys(cx: &mut App) {
     let _ = ShowTutorial; // --- onboarding ---
     let _ = MyProfile; // --- profiles ---
     let _ = Withdraw; // --- delete & withdraw ---
+    let _ = ToggleSpellcheck; // --- composer ---
 }
 
 /// `Ctrl+Shift+,` for `ctrl-shift-,` (Windows spells keys out).
@@ -786,6 +933,13 @@ pub fn windows_label(key: &str) -> String {
 /// `⌘⇧,` for `cmd-shift-,`.
 #[cfg(not(target_os = "windows"))]
 pub fn glyphs(key: &str) -> String {
+    mac_glyphs(key)
+}
+
+/// `⌘⇧,` for `cmd-shift-,` on every platform (the documentation site's
+/// shortcut reference describes the macOS app).
+#[cfg_attr(all(target_os = "windows", not(test)), allow(dead_code))]
+pub fn mac_glyphs(key: &str) -> String {
     if key.is_empty() {
         return "—".into();
     }
@@ -1000,6 +1154,7 @@ pub fn list() -> String {
             Scope::Global => "anywhere",
             Scope::Main => "main window",
             Scope::MainInput => "text fields",
+            Scope::Browser => "browser", // --- browser ---
         };
         let mut line = format!(
             "{:<12} {:<19} {:<12} {}",
@@ -1067,7 +1222,12 @@ mod tests {
             })
         };
         assert!(!input_keys.is_empty(), "read gpui-base's bindings");
-        for k in live().iter().filter(|k| k.scope != Scope::Global) {
+        // --- browser --- The pane's keys (⌘[ ⌘] ⌘R ⌘L) yield to its address
+        // field on purpose while you type an address, so they're exempt.
+        for k in live()
+            .iter()
+            .filter(|k| k.scope != Scope::Global && k.scope != Scope::Browser)
+        {
             let shadowed = input_keys.contains(&normalize(k.key));
             let deliberate = OUTRANKS_INPUT.contains(&k.key);
             assert!(

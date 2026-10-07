@@ -39,5 +39,20 @@ jobs:
       - name: Clippy
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
+      # Also fails when site/src/generated/ is out of date with the config
+      # keys or the keymap (run scripts/gen-docs.sh).
       - name: Test
         run: cargo test --workspace --locked
+
+  docs:
+    name: docs site
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The pinned mdBook; fails on mdBook errors or broken links.
+      - name: Build the book
+        run: scripts/build-site.sh

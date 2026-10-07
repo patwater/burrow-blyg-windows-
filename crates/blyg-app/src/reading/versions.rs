@@ -10,6 +10,7 @@ use gpui_kit::*;
 use super::vm::{self, Pill};
 use super::{Load, OwnVersions, RSheet, View};
 use crate::app::MainView;
+use crate::theme::Rule; // --- themes --- dividers
 
 impl MainView {
     /// The pill for the open reading item, from the shown versions only.
@@ -24,7 +25,7 @@ impl MainView {
         o: &super::Opened,
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
-        let p = self.palette;
+        let p = self.palette.on_page();
         let pm = match &o.shown {
             Load::Loading => {
                 return Some(div().child("versions…").into_any_element());
@@ -32,7 +33,7 @@ impl MainView {
             Load::Ready(_) => self.pill_model()?,
             _ => return None,
         };
-        let pin_color: Hsla = gpui_kit::rgb(if p.dark { 0xe7c070 } else { 0x9a7414 }).into();
+        let pin_color: Hsla = p.notice;
         let arrow = |id: &'static str, glyph: &'static str, enabled: bool, delta: isize| {
             div()
                 .id(id)
@@ -60,8 +61,8 @@ impl MainView {
                 .left_0()
                 .min_w(px(190.))
                 .p(px(4.))
-                .rounded(px(8.))
-                .bg(p.bar)
+                .rounded(px(self.theme.radius))
+                .bg(p.panel())
                 .border_1()
                 .border_color(p.line)
                 .shadow_lg()
@@ -71,7 +72,7 @@ impl MainView {
                         .id(("pill-entry", ix))
                         .px(px(8.))
                         .py(px(5.))
-                        .rounded(px(6.))
+                        .rounded(px(self.theme.corner(6.)))
                         .flex()
                         .justify_between()
                         .gap(px(10.))
@@ -120,6 +121,10 @@ impl MainView {
 
     /// ⌘Y: your post's history (Posts), or the version list (Reading).
     pub(super) fn toggle_versions(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        // --- responses --- your own post's verified mentions, listed under it.
+        if matches!(self.reading.mentions, Load::Idle) && self.reading.available {
+            self.load_mentions(cx);
+        }
         if self.reading.view == View::Reading {
             if let Some(o) = self.reading.opened.as_mut() {
                 o.dropdown = !o.dropdown;
@@ -332,11 +337,11 @@ impl MainView {
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
         let own = self.reading.own.as_ref()?;
-        let p = self.palette;
+        let p = self.palette.on_page();
         let item = self.backend.item(&own.id)?;
         let host = crate::vm::url_host(self.base_url.as_deref().unwrap_or("")).unwrap_or_default();
         let kind = crate::vm::kind_label(item.kind);
-        let pin_color: Hsla = gpui_kit::rgb(if p.dark { 0xe7c070 } else { 0x9a7414 }).into();
+        let pin_color: Hsla = p.notice;
 
         let side: AnyElement = match &own.list {
             Load::Ready(list) => {
@@ -352,12 +357,13 @@ impl MainView {
                     .children(rows.into_iter().map(|r| {
                         let v = r.version;
                         let on = Some(v) == sel;
+                        let pinned = r.badge == "📌";
                         div()
                             .id(("own-v", v as usize))
                             .flex()
                             .gap(px(8.))
                             .p(px(8.))
-                            .rounded(px(8.))
+                            .rounded(px(self.theme.radius))
                             .cursor_pointer()
                             .when(on, |d| d.bg(p.sel).border_l_2().border_color(p.accent))
                             .hover(|s| s.bg(p.sel))
@@ -405,6 +411,16 @@ impl MainView {
                                         })
                                         .child(r.badge),
                                 )
+                            })
+                            // --- themes --- `marker.pinned` beside a pin, as
+                            // on the posts list (Fortress's ☼).
+                            .when(pinned, |d| {
+                                d.children(crate::ornament::marker(
+                                    &self.theme,
+                                    blyg_core::config::theme::Slot::MarkerPinned,
+                                    p.accent,
+                                    self.chrome(),
+                                ))
                             })
                     }))
                     .when_some(actions, |d, (v, a)| {
@@ -460,7 +476,7 @@ impl MainView {
             .items_center()
             .gap(px(8.))
             .mb(px(12.))
-            .font_family("Inter")
+            .font_family(self.chrome())
             .text_size(px(12.))
             .text_color(p.muted)
             .child(format!("{host} · {kind}"))
@@ -503,7 +519,7 @@ impl MainView {
         let dirty_note = (is_current && item.dirty).then(|| {
             div()
                 .mb(px(10.))
-                .font_family("Inter")
+                .font_family(self.chrome())
                 .text_size(px(11.5))
                 .text_color(p.muted)
                 .child("The working copy, with unpublished edits")
@@ -553,8 +569,7 @@ impl MainView {
                         .flex()
                         .flex_col()
                         .pt(px(22.))
-                        .border_r_1()
-                        .border_color(p.line)
+                        .rule_r(&p)
                         .font_family(body_font.clone())
                         .text_size(px(size))
                         .line_height(relative(1.6))
@@ -565,7 +580,13 @@ impl MainView {
                                 .child(doc_header)
                                 .children(dirty_note),
                         )
-                        .child(body),
+                        .child(body)
+                        // --- responses --- who quoted, stubbed or forked it.
+                        .children(item.server_id.as_ref().and_then(|sid| {
+                            let origin = self.backend.base_url()?;
+                            let network = self.backend.responses(&origin, &sid.0);
+                            self.render_responses(&origin, &sid.0, &network, cx)
+                        })),
                 )
                 .child(
                     div()
@@ -574,7 +595,7 @@ impl MainView {
                         .flex_none()
                         .overflow_y_scroll()
                         .p(px(14.))
-                        .font_family("Inter")
+                        .font_family(self.chrome())
                         .text_size(px(13.))
                         .child(
                             div()
@@ -598,7 +619,7 @@ impl MainView {
         sheet: &RSheet,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let p = self.palette;
+        let p = self.palette.on_page();
         match sheet {
             RSheet::Pin {
                 version,

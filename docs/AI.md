@@ -1,6 +1,6 @@
 # blyg-ai: providers, sign-in and prompts
 
-`crates/blyg-ai` is everything AI in Blygger Desktop: the provider
+`crates/blyg-ai` is everything AI in Burrow: the provider
 abstraction, sign-in and credentials, and the TK / helper prompts. It
 doesn't depend on the UI. The app calls it on a background thread.
 

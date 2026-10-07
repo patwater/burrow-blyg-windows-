@@ -31,14 +31,53 @@ base64 = "0.22"
 semver = "1"
 url = "2"
 ed25519-dalek = { version = "2", default-features = false, features = ["std", "fast", "zeroize"] }
-
-[build-dependencies]
-# Windows resources (icon, manifest); build.rs does nothing on other targets.
-embed-resource = "3.0"
+# --- browser --- (the in-app browser pane; src/browser/). Brave's filter
+# parser turns uBlock Origin / EasyList syntax into WebKit content-blocker
+# JSON (MPL-2.0, used unmodified).
+adblock = { version = "=0.13.3", default-features = false, features = ["content-blocking"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 # AppKit calls for the Dock icon, window ordering and webview focus.
 objc2 = "0.6"
+# --- browser --- WKContentRuleListStore, the web view's configuration and its
+# navigation delegate (the same versions wry already pulls in).
+objc2-web-kit = { version = "0.3.2", default-features = false, features = [
+    "std",
+    "block2",
+    "objc2-app-kit",
+    "WKContentRuleList",
+    "WKContentRuleListStore",
+    "WKUserContentController",
+    "WKWebView",
+    "WKWebViewConfiguration",
+    "WKWebsiteDataStore",
+    "WKPreferences",
+    "WKWebpagePreferences",
+    "WKNavigationAction",
+    "WKNavigationDelegate",
+    "WKFrameInfo",
+] }
+objc2-foundation = { version = "0.3.2", default-features = false, features = [
+    "std",
+    "NSString",
+    "NSURL",
+    "NSError",
+    "NSUUID",
+    "NSArray",
+    "NSEnumerator",
+    "NSProcessInfo",
+    # --- spellcheck ---
+    "NSRange",
+    "NSTextCheckingResult",
+] }
+block2 = "0.6"
+
+# --- spellcheck --- (the system spell checker: NSSpellChecker)
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSSpellChecker"] }
+
+[build-dependencies]
+# Windows resources (icon, manifest); build.rs does nothing on other targets.
+embed-resource = "3.0"
 
 [dev-dependencies]
 # --- full editor ---

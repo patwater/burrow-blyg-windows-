@@ -75,6 +75,16 @@ pub fn cache_path(dir: &Path, url: &str) -> PathBuf {
     dir.join(format!("{hash}.{ext}"))
 }
 
+/// --- reader folders --- The cached file for `url`, if it's already on
+/// disk. Never fetches (the sources pane shows only avatars already here).
+pub fn cached(url: &str) -> Option<PathBuf> {
+    if !(url.starts_with("http://") || url.starts_with("https://")) {
+        return None;
+    }
+    let path = cache_path(&images()?.dir, url);
+    path.exists().then_some(path)
+}
+
 /// Where `url` stands; starts a background fetch the first time.
 pub fn state(url: &str) -> ImageState {
     if !(url.starts_with("http://") || url.starts_with("https://")) {
@@ -145,6 +155,107 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     let tmp = path.with_extension("part");
     std::fs::write(&tmp, bytes)?;
     std::fs::rename(&tmp, path)
+}
+
+// ------------------------------------------------- the blyg's own media
+
+/// Since studio 0.28 an upload no public version uses yet is private: an
+/// anonymous `GET {base}/media/<file>` is a 404. The preview's WebView
+/// fetches images anonymously, so for those the app fetches the bytes with
+/// the owner credential (`Backend::fetch_own_media`, which sends it only to
+/// the blyg's own origin) and the preview inlines them (`data:`). Published
+/// media stays a plain URL the WebView loads itself.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum OwnMedia {
+    /// Anonymous reads work (published), or not checked yet: use the URL.
+    Public,
+    /// Private, and cached here: inline this file.
+    Private(PathBuf),
+    /// Neither read worked.
+    Missing,
+}
+
+#[derive(Default)]
+struct Own {
+    known: std::collections::HashMap<String, OwnMedia>,
+    inflight: HashSet<String>,
+}
+
+fn own() -> &'static Mutex<Own> {
+    static O: OnceLock<Mutex<Own>> = OnceLock::new();
+    O.get_or_init(Mutex::default)
+}
+
+/// Bumped whenever a private image lands, so the preview renders again.
+static OWN_GEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+pub fn own_media_gen() -> u64 {
+    OWN_GEN.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// The owner's authenticated read of the blyg's own media.
+pub type OwnFetch =
+    std::sync::Arc<dyn Fn(&str) -> Result<(Vec<u8>, Option<String>), String> + Send + Sync>;
+
+/// What the preview should do with the blyg's own `url`. The first time,
+/// it answers `Public` and checks in the background: an anonymous read
+/// first, then (on a 404) `fetch`. A private image lands in the cache,
+/// bumps [`own_media_gen`] and calls the `on_loaded` hook.
+pub fn own_media(url: &str, fetch: &OwnFetch) -> OwnMedia {
+    let Some(im) = images() else {
+        return OwnMedia::Public;
+    };
+    {
+        let mut o = own().lock().unwrap_or_else(|p| p.into_inner());
+        if let Some(k) = o.known.get(url) {
+            return k.clone();
+        }
+        if !o.inflight.insert(url.to_string()) {
+            return OwnMedia::Public;
+        }
+    }
+    let url = url.to_string();
+    let fetch = fetch.clone();
+    let path = cache_path(&im.dir, &url);
+    std::thread::spawn(move || {
+        let state = check_own(&url, &path, &fetch);
+        let private = matches!(state, OwnMedia::Private(_));
+        {
+            let mut o = own().lock().unwrap_or_else(|p| p.into_inner());
+            o.inflight.remove(&url);
+            o.known.insert(url, state);
+        }
+        if private {
+            OWN_GEN.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            let hook = im
+                .on_loaded
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .clone();
+            if let Some(h) = hook {
+                h();
+            }
+        }
+    });
+    OwnMedia::Public
+}
+
+fn check_own(url: &str, path: &Path, fetch: &OwnFetch) -> OwnMedia {
+    match blyg_core::api::public::PublicClient::new().get_bytes(url, MAX_BYTES) {
+        Ok(_) => return OwnMedia::Public,
+        Err(blyg_core::CoreError::NotFound) => {}
+        // Offline or refused: leave it to the WebView, try again next launch.
+        Err(_) => return OwnMedia::Public,
+    }
+    match fetch(url) {
+        Ok((bytes, mime)) if mime.as_deref().unwrap_or("image/").starts_with("image/") => {
+            match write_atomic(path, &bytes) {
+                Ok(()) => OwnMedia::Private(path.to_path_buf()),
+                Err(_) => OwnMedia::Missing,
+            }
+        }
+        _ => OwnMedia::Missing,
+    }
 }
 
 #[cfg(test)]

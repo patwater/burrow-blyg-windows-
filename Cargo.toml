@@ -4,7 +4,7 @@ members = ["crates/blyg-core", "crates/blyg-ai", "crates/blyg-render", "crates/b
 
 [workspace.package]
 edition = "2024"
-version = "0.3.0"
+version = "0.9.0"
 license = "MIT"
 description = "A fast, local-first macOS studio for Blygger blogs"
 # Placeholder repo; set it with scripts/set-repo.sh (see packaging/config.env).

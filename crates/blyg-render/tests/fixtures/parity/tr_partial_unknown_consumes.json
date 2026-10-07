@@ -1,0 +1,17 @@
+{
+  "name": "tr_partial_unknown_consumes",
+  "kind": "thread",
+  "md": "![[03zzzzzzzzzzzzzzzzzzzzzzzz]]\n> anything at all\nAfter.",
+  "html": "<blockquote class=\"blyg-transclusion unresolved\"><p>⚠ unresolvable: unknown item</p></blockquote>\n<p>After.</p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": [
+    {
+      "directive": "![[03zzzzzzzzzzzzzzzzzzzzzzzz]]",
+      "reason": "unknown item"
+    }
+  ]
+}

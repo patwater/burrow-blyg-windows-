@@ -1,0 +1,22 @@
+{
+  "name": "tr_partial_found",
+  "kind": "thread",
+  "md": "Intro.\n![[01j9zq3k4m5n6p7q8r9s0t1v2w]]\n> used daily, beat big tools\n\nMine.",
+  "html": "<p>Intro.</p>\n\n<blockquote class=\"blyg-transclusion blyg-partial\" data-blyg-id=\"01j9zq3k4m5n6p7q8r9s0t1v2w\" data-blyg-version=\"3\">\n<p>used daily, beat big tools</p>\n\n<p class=\"provenance\"><a href=\"/blyg/f/01j9zq3k4m5n6p7q8r9s0t1v2w/\">fragment ↗</a> · excerpt of v3</p></blockquote>\n<p>Mine.</p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [
+    {
+      "id": "01j9zq3k4m5n6p7q8r9s0t1v2w",
+      "version": 3,
+      "selector": {
+        "exact": "used daily, beat big tools",
+        "prefix": "Small tools, ",
+        "suffix": " used rarely."
+      }
+    }
+  ],
+  "errors": []
+}

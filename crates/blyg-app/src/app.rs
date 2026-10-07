@@ -4,6 +4,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use blyg_core::api::auth::Credential;
 use blyg_core::{Backend, CoreError, CoreEvent, Item, Kind, LocalId, Resolution, SyncStatus};
 use gpui_kit::base::input::{
     Enter, Escape, InputEvent, InputState, MoveDown, MoveUp, Paste, TextareaState,
@@ -12,8 +13,8 @@ use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
 use crate::fake::FakeBackend;
-use crate::prefs::{self, LayoutPref, Prefs, ThemePref};
-use crate::theme::Palette;
+use crate::prefs::{self, LayoutPref, Prefs};
+use crate::theme::{Palette, Rule, Theme};
 use crate::vm::{self, DiffOp, EnterAction, ListModel, PublishDecision};
 
 gpui_kit::actions!(
@@ -42,9 +43,20 @@ gpui_kit::actions!(
 #[cfg(test)]
 #[path = "ui_tests.rs"]
 mod ui_tests;
+// --- themes ---
+#[cfg(test)]
+#[path = "theme_tests.rs"]
+mod theme_tests;
+// --- composer --- (its GPUI tests need MainView's insides)
+#[cfg(test)]
+#[path = "composer/assist_tests.rs"]
+mod composer_tests;
 
 #[path = "demo.rs"]
 mod demo;
+// --- composer --- (the cm-* demo scenarios)
+#[path = "composer/demo.rs"]
+mod composer_demo;
 
 #[path = "scratch.rs"]
 pub(crate) mod scratch;
@@ -71,8 +83,19 @@ pub(crate) mod profiles;
 #[path = "discard.rs"]
 pub(crate) mod discard;
 // --- auto-update --- (the status-bar notice; logic in crate::update)
+#[path = "server_notice.rs"]
+pub(crate) mod server_notice;
 #[path = "update/view.rs"]
 mod update_view;
+// --- browser --- (the in-app browser pane; hooks marked the same way)
+#[path = "browser/mod.rs"]
+// The pane is macOS only for now (a WKWebView); elsewhere links open in
+// the default browser, which leaves its machinery unused.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+pub(crate) mod browser;
+// --- notes --- (the notes drawer; hooks marked the same way)
+#[path = "notes/mod.rs"]
+pub(crate) mod notes;
 
 pub const CONTEXT: &str = "Blygger";
 
@@ -85,6 +108,26 @@ pub fn bind_keys(cx: &mut App) {
 enum Mode {
     Search,
     Edit,
+}
+
+/// How the Connect sheet signs in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ConnectWay {
+    /// OAuth in the system browser (studio 0.28+; the default).
+    Browser,
+    /// A Studio API token, or a server's owner token.
+    Token,
+    /// The studio password (any studio; the fallback).
+    Password,
+}
+
+/// Sets its flag when dropped: cancels a waiting browser sign-in.
+pub(crate) struct CancelOnDrop(Arc<std::sync::atomic::AtomicBool>);
+
+impl Drop for CancelOnDrop {
+    fn drop(&mut self) {
+        self.0.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
 }
 
 enum Sheet {
@@ -105,17 +148,25 @@ enum Sheet {
         hotkey_error: Option<String>,
         focus: FocusHandle,
     },
-    /// First run (no `blyg-url`): URL + owner token, verified with
-    /// `GET /api/items`, then → Keychain → config.
+    /// First run (no `blyg-url`): URL + a way in (browser sign-in, API
+    /// token or studio password), verified with `GET /api/items`, then →
+    /// Keychain → config.
     Connect {
         url: Entity<InputState>,
+        /// The studio password, or the API token (`way`).
         token: Entity<InputState>,
+        way: ConnectWay,
         error: Option<String>,
-        /// The check is running.
+        /// The check (or the browser sign-in) is running.
         busy: bool,
+        /// A browser sign-in waiting for the owner: dropping it (closing or
+        /// replacing the sheet, choosing another way) cancels the wait.
+        waiting: Option<CancelOnDrop>,
     },
     /// Forget this blyg: `1` keeps the local copy, `2` deletes it too.
     Disconnect { host: String, focus: FocusHandle },
+    /// What's limited on a stock blygger-studio (`server_notice`).
+    ServerLimits { focus: FocusHandle },
     // --- delete & withdraw --- (discard.rs)
     /// ⇧⌘⌫ on a draft or scratch note: `⏎` deletes it, `esc` keeps it.
     DeleteDraft {
@@ -145,6 +196,8 @@ pub struct MainView {
     focus: FocusHandle,
     omni: Entity<InputState>,
     editor: Entity<TextareaState>,
+    /// --- composer --- @-mentions and spellcheck over the editor.
+    assist: Entity<crate::composer::Assist>,
     list: ListModel,
     list_scroll: UniformListScrollHandle,
     current: Option<Item>,
@@ -172,11 +225,16 @@ pub struct MainView {
     /// Problems in the config file, shown as a dismissible banner.
     config_problems: Vec<blyg_core::config::Diagnostic>,
     problems_dismissed: bool,
-    /// `Blygger — <host>` from the config's `blyg-url`.
+    /// `Burrow — <host>` from the config's `blyg-url`.
     title: String,
     /// The title last given to the native window (Window menu, Mission Control).
     native_title: String,
     palette: Palette,
+    /// The resolved theme (`palette` is `theme.palette`), for ornaments.
+    theme: Arc<Theme>,
+    /// The config files' and themes folder's state when last read, so an
+    /// edit on disk reloads (see `watch_config`).
+    watch_stamp: u64,
     now: chrono::DateTime<chrono::Utc>,
     first_frame: Option<std::time::Instant>,
     /// --- AI --- ⌘G jobs, the helper palette, proposals, Settings › AI.
@@ -187,6 +245,10 @@ pub struct MainView {
     onboarding: onboarding::State,
     // --- profiles ---
     profiles: profiles::State,
+    // --- browser ---
+    browser: browser::Browser,
+    // --- notes ---
+    notes: notes::Notes,
     _tasks: Vec<Task<()>>,
     _subs: Vec<Subscription>,
 }
@@ -202,13 +264,22 @@ impl MainView {
     ) -> Self {
         let omni = cx.new(|cx| InputState::new(window, cx).placeholder("Search or start writing…"));
         let editor = cx.new(|cx| TextareaState::new(window, cx).soft_wrap(true));
-        let palette = Palette::resolve(prefs.theme, window.appearance());
+        let mut prefs = prefs;
+        let theme = crate::theme::resolve(&prefs, window.appearance(), cx);
+        prefs.adopt_theme_fonts(&theme);
+        let palette = theme.palette;
+        crate::theme::set_reader_theme(&theme, prefs.writing());
+        // --- composer ---
+        let assist = {
+            let (editor, backend) = (editor.clone(), backend.clone());
+            cx.new(|cx| crate::composer::Assist::new(editor, backend, palette, window, cx))
+        };
 
         let mut subs = Vec::new();
         subs.push(cx.subscribe_in(&omni, window, Self::on_omni_event));
         subs.push(cx.subscribe_in(&editor, window, Self::on_editor_event));
         subs.push(cx.observe_window_appearance(window, |this, window, cx| {
-            this.palette = Palette::resolve(this.prefs.theme, window.appearance());
+            this.apply_theme(window, cx);
             cx.notify();
         }));
         // A WebView can end up holding (or dropping) the keyboard while the
@@ -216,6 +287,7 @@ impl MainView {
         subs.push(cx.observe_window_activation(window, |this, window, _| {
             if window.is_window_active() {
                 this.studio.reclaim_keyboard();
+                this.browser.reclaim_lost_keyboard(); // --- browser ---
             }
         }));
 
@@ -262,7 +334,20 @@ impl MainView {
         let notice = cx.global_mut::<crate::settings::AppConfig>().notice.take();
         // --- reading & versions ---
         let reading = reading::State::new(&*backend, cx);
+        // --- browser ---
+        let browser = browser::Browser::new(
+            cx.try_global::<crate::connection::Connection>()
+                .map(|c| c.data_dir.clone()),
+            prefs.content_blocking,
+        );
+        // --- notes ---
+        let notes = notes::Notes::new(
+            cx.try_global::<crate::connection::Connection>()
+                .map(|c| c.data_dir.clone()),
+        );
         let mut this = Self {
+            browser, // --- browser ---
+            notes,   // --- notes ---
             reading,
             onboarding: onboarding::State::new(cx), // --- onboarding ---
             profiles: Default::default(),           // --- profiles ---
@@ -271,6 +356,7 @@ impl MainView {
             focus: cx.focus_handle(),
             omni,
             editor,
+            assist, // --- composer ---
             list: ListModel::default(),
             list_scroll: UniformListScrollHandle::new(),
             current: None,
@@ -297,6 +383,8 @@ impl MainView {
             title,
             native_title: String::new(),
             palette,
+            theme,
+            watch_stamp: 0,
             now: chrono::Utc::now(),
             first_frame: Some(launched),
             ai: Default::default(), // --- AI ---
@@ -307,6 +395,8 @@ impl MainView {
         this.list.set_query("", results);
         this.load_selected(window, cx);
         this.studio_init(window, cx);
+        this.browser_init(window, cx); // --- browser ---
+        this.watch_config(window, cx);
         this.omni.update(cx, |s, cx| s.focus(window, cx));
         if let Some(n) = notice {
             this.show_toast(n, None, cx);
@@ -372,6 +462,16 @@ impl MainView {
                         Some("Changes sync when the blyg is reachable".into()),
                         cx,
                     ),
+                    // An ended browser sign-in: ask for a new one (the
+                    // sheet says why) rather than retrying.
+                    (Err(CoreError::Unauthorized), _) if v.sheet.is_none() => {
+                        v.show_toast(
+                            "Your blyg signed Burrow out",
+                            Some("Sign in again to sync".into()),
+                            cx,
+                        );
+                        v.open_connect(window, cx);
+                    }
                     (Err(e), _) => {
                         v.show_toast(format!("Couldn't load from the blyg: {e}"), None, cx)
                     }
@@ -393,10 +493,16 @@ impl MainView {
                 let mut p = self.persisted.clone();
                 for (key, _) in &changes {
                     match *key {
-                        "font-family-writing" => p.writing_font = self.prefs.writing_font.clone(),
-                        "font-family-ui" => p.ui_font = self.prefs.ui_font.clone(),
+                        "font-family-writing" => {
+                            p.writing_font = self.prefs.writing_font.clone();
+                            p.writing_font_set = self.prefs.writing_font_set;
+                        }
+                        "font-family-ui" => {
+                            p.ui_font = self.prefs.ui_font.clone();
+                            p.ui_font_set = self.prefs.ui_font_set;
+                        }
                         "font-size" => p.font_size = self.prefs.font_size,
-                        "theme" => p.theme = self.prefs.theme,
+                        "theme" => p.theme = self.prefs.theme.clone(),
                         "layout" => p.layout = self.prefs.layout,
                         "capture-hotkey" => p.hotkey = self.prefs.hotkey.clone(),
                         "show-buttons" => p.show_buttons = self.prefs.show_buttons, // --- buttons ---
@@ -405,6 +511,8 @@ impl MainView {
                 }
                 self.persisted = p;
                 self.refresh_problems(cx);
+                // Our own write isn't an edit to reload.
+                self.watch_stamp = crate::settings::watch_stamp(&crate::settings::watched(cx));
             }
             Err(e) => self.show_toast(e, None, cx),
         }
@@ -422,7 +530,46 @@ impl MainView {
     /// ⌘⇧, — re-read the config file and apply fonts, theme, layout and the
     /// hotkey without a restart.
     fn reload_config(&mut self, _: &ReloadConfig, window: &mut Window, cx: &mut Context<Self>) {
+        self.reload_config_now(window, cx);
+    }
+
+    /// Poll the config files and the themes folder (cheap `stat`s, once a
+    /// second, off the main thread) and reload when one changes on disk.
+    fn watch_config(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let paths = crate::settings::watched(cx);
+        self.watch_stamp = crate::settings::watch_stamp(&paths);
+        if cfg!(test) {
+            return;
+        }
+        cx.spawn_in(window, async move |this, cx| {
+            loop {
+                cx.background_executor()
+                    .timer(Duration::from_millis(1000))
+                    .await;
+                let Ok(paths) = this.update(cx, |_, cx| crate::settings::watched(cx)) else {
+                    break;
+                };
+                let stamp = cx
+                    .background_spawn(async move { crate::settings::watch_stamp(&paths) })
+                    .await;
+                let alive = this.update_in(cx, |v, window, cx| {
+                    if stamp != v.watch_stamp {
+                        v.watch_stamp = stamp;
+                        v.reload_config_now(window, cx);
+                    }
+                });
+                if alive.is_err() {
+                    break;
+                }
+            }
+        })
+        .detach();
+    }
+
+    fn reload_config_now(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         crate::settings::reload(cx);
+        crate::theme::reload(cx);
+        self.watch_stamp = crate::settings::watch_stamp(&crate::settings::watched(cx));
         let fresh = crate::settings::prefs(cx);
         let hotkey_changed = fresh.hotkey != self.prefs.hotkey;
         self.persisted = fresh.clone();
@@ -433,6 +580,9 @@ impl MainView {
         }
         self.problems_dismissed = false;
         self.refresh_problems(cx);
+        // --- composer ---
+        crate::composer::set_spellcheck(self.prefs.spellcheck, cx);
+        crate::refresh_menus(cx);
         if !self.config_problems.is_empty() {
             let n = self.config_problems.len();
             msg = format!("{msg} · {n} problem{}", if n == 1 { "" } else { "s" });
@@ -461,42 +611,109 @@ impl MainView {
         let token = cx.new(|cx| {
             InputState::new(window, cx)
                 .masked(true)
-                .placeholder("Owner token")
+                .placeholder("API token")
         });
         let t2 = token.clone();
-        self._subs
-            .push(cx.subscribe_in(&url, window, move |_, _, ev, window, cx| {
+        self._subs.push(
+            cx.subscribe_in(&url, window, move |this, _, ev, window, cx| {
                 if let InputEvent::PressEnter { .. } = ev {
-                    t2.update(cx, |s, cx| s.focus(window, cx));
+                    // Signing in with the browser needs only the address.
+                    if matches!(
+                        this.sheet,
+                        Some(Sheet::Connect {
+                            way: ConnectWay::Browser,
+                            ..
+                        })
+                    ) {
+                        this.submit_connect(window, cx);
+                    } else {
+                        t2.update(cx, |s, cx| s.focus(window, cx));
+                    }
                 }
-            }));
+            }),
+        );
         self._subs
             .push(cx.subscribe_in(&token, window, |this, _, ev, window, cx| {
                 if let InputEvent::PressEnter { .. } = ev {
                     this.submit_connect(window, cx);
                 }
             }));
-        // A configured blyg without a token (e.g. after the Keychain entry
-        // went away): offer its address.
+        // A configured blyg without a usable credential (the Keychain entry
+        // went away, or its browser sign-in ended): offer its address.
+        let mut error = None;
         if let Some(u) = crate::settings::blyg_url(cx) {
+            let tokens = crate::settings::get(cx).tokens.clone();
+            if let Ok(Some(g)) = blyg_core::config::load_grant(tokens.as_ref(), &u)
+                && g.ended()
+            {
+                error = Some(format!(
+                    "Your browser sign-in to {} has ended. Sign in again.",
+                    vm::url_host(&u).unwrap_or(u.clone())
+                ));
+            }
             url.update(cx, |s, cx| s.set_value(u, window, cx));
-            token.update(cx, |s, cx| s.focus(window, cx));
-        } else {
-            url.update(cx, |s, cx| s.focus(window, cx));
         }
+        url.update(cx, |s, cx| s.focus(window, cx));
         self.sheet_gen += 1;
         self.sheet = Some(Sheet::Connect {
             url,
             token,
-            error: None,
+            way: ConnectWay::Browser,
+            error,
             busy: false,
+            waiting: None,
         });
+        cx.notify();
+    }
+
+    /// The Connect sheet's way in: browser sign-in, API token or password.
+    pub(crate) fn set_connect_way(
+        &mut self,
+        pick: ConnectWay,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(Sheet::Connect {
+            url,
+            token,
+            way,
+            error,
+            busy,
+            waiting,
+        }) = self.sheet.as_mut()
+        {
+            *way = pick;
+            *error = None;
+            // Choosing another way cancels a browser sign-in in progress.
+            if waiting.take().is_some() {
+                *busy = false;
+            }
+            match pick {
+                ConnectWay::Browser => url.update(cx, |s, cx| s.focus(window, cx)),
+                ConnectWay::Token | ConnectWay::Password => {
+                    let hint = if pick == ConnectWay::Password {
+                        "Studio password"
+                    } else {
+                        "API token"
+                    };
+                    token.update(cx, |s, cx| {
+                        s.set_value("", window, cx);
+                        s.set_placeholder(hint, window, cx);
+                        s.focus(window, cx);
+                    });
+                }
+            }
+        }
         cx.notify();
     }
 
     fn submit_connect(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(Sheet::Connect {
-            url, token, busy, ..
+            url,
+            token,
+            way,
+            busy,
+            ..
         }) = &self.sheet
         else {
             return;
@@ -504,16 +721,34 @@ impl MainView {
         if *busy {
             return;
         }
+        let way = *way;
         let (u, t) = (
             url.read(cx).value().to_string(),
             token.read(cx).value().to_string(),
         );
+        if way == ConnectWay::Browser {
+            match crate::settings::validate_blyg_url(&u) {
+                Ok(u) => self.start_browser_sign_in(u, window, cx),
+                Err(e) => self.set_connect_state(Some(e), false, cx),
+            }
+            return;
+        }
+        let by_password = way == ConnectWay::Password;
         let checked = crate::settings::validate_blyg_url(&u).and_then(|u| {
-            let t = t.trim().to_string();
-            if t.is_empty() {
-                Err("Paste the owner token from your blyg's settings".to_string())
+            // A password is taken as typed; a pasted token is trimmed.
+            let secret = if by_password {
+                t.clone()
             } else {
-                Ok((u, t))
+                t.trim().to_string()
+            };
+            match (secret.is_empty(), by_password) {
+                (true, true) => Err("Type your blyg's studio password".to_string()),
+                (true, false) => Err(
+                    "Paste an API token: make one in Studio → More → Client access, or use your server's owner token"
+                        .to_string(),
+                ),
+                (false, true) => Ok((u, Credential::Password(secret))),
+                (false, false) => Ok((u, Credential::Token(secret))),
             }
         });
         let (u, t) = match checked {
@@ -523,7 +758,7 @@ impl MainView {
                 return;
             }
         };
-        // Verify before saving anything: GET /api/items with the token.
+        // Verify before saving anything: sign in, then GET /api/items.
         self.set_connect_state(None, true, cx);
         let verify = crate::connection::verifier(cx);
         let task = cx.background_spawn({
@@ -540,6 +775,111 @@ impl MainView {
         .detach();
     }
 
+    /// Sign in with the browser: discover and register (in the
+    /// background), open the authorize page, wait for the loopback
+    /// callback, exchange the code, verify, then save like any credential.
+    fn start_browser_sign_in(&mut self, url: String, window: &mut Window, cx: &mut Context<Self>) {
+        // Only against a real blyg: never from tests or BLYGGER_FAKE's
+        // sample data (registering a client writes to the server).
+        let real = cx
+            .try_global::<crate::connection::Connection>()
+            .is_some_and(|c| {
+                c.switch.mode() != crate::connection::Mode::Fake
+                    || cx.has_global::<crate::connection::SampleSession>()
+            });
+        if !real {
+            return self.set_connect_state(
+                Some("Browser sign-in needs a real blyg; use a token or password here.".into()),
+                false,
+                cx,
+            );
+        }
+        let cancel = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        if let Some(Sheet::Connect {
+            error,
+            busy,
+            waiting,
+            ..
+        }) = self.sheet.as_mut()
+        {
+            *error = None;
+            *busy = true;
+            *waiting = Some(CancelOnDrop(cancel.clone()));
+        }
+        cx.notify();
+        let tokens = crate::settings::get(cx).tokens.clone();
+        let verify = crate::connection::verifier(cx);
+        let start = cx.background_spawn({
+            let url = url.clone();
+            async move { blyg_core::api::oauth::BrowserSignIn::start(&url, tokens.as_ref()) }
+        });
+        cx.spawn_in(window, async move |this, cx| {
+            let started = start.await;
+            if cancel.load(std::sync::atomic::Ordering::Relaxed) {
+                return; // the sheet closed, or another way was chosen
+            }
+            let sign_in = match started {
+                Ok(Some(s)) => s,
+                other => {
+                    let _ = this.update_in(cx, |v, window, cx| {
+                        let msg = match other {
+                            Ok(_) => {
+                                // A studio older than 0.28: the password works.
+                                v.set_connect_way(ConnectWay::Password, window, cx);
+                                "This blyg has no browser sign-in (its studio is older than 0.28). Use its studio password, or an owner token.".to_string()
+                            }
+                            Err(CoreError::Offline) => {
+                                "Couldn't reach that address. Check the URL and your connection."
+                                    .into()
+                            }
+                            Err(e) => e.to_string(),
+                        };
+                        v.set_connect_state(Some(msg), false, cx);
+                        v.clear_connect_wait();
+                    });
+                    return;
+                }
+            };
+            let _ = this.update(cx, |_, cx| cx.open_url(&sign_in.authorize_url));
+            let task = cx.background_spawn({
+                let (url, cancel) = (url.clone(), cancel.clone());
+                async move {
+                    let grant =
+                        sign_in.finish(&cancel, blyg_core::api::oauth::SIGN_IN_TIMEOUT)?;
+                    let cred = Credential::OAuth(blyg_core::api::oauth::OAuthSession::new(grant));
+                    verify(&url, &cred)
+                        .map(|_| cred)
+                        .map_err(|e| CoreError::Other(e.to_string()))
+                }
+            });
+            let verdict = task.await;
+            if cancel.load(std::sync::atomic::Ordering::Relaxed) {
+                return; // the sheet closed, or another way was chosen
+            }
+            let _ = this.update_in(cx, |v, window, cx| {
+                v.clear_connect_wait();
+                match verdict {
+                    Ok(cred) => v.finish_connect(&url, &cred, window, cx),
+                    Err(CoreError::Offline) => v.set_connect_state(
+                        Some("Couldn't reach that address. Check the URL and your connection.".into()),
+                        false,
+                        cx,
+                    ),
+                    Err(e) => v.set_connect_state(Some(e.to_string()), false, cx),
+                }
+            });
+        })
+        .detach();
+    }
+
+    /// The browser sign-in is over: drop its cancel flag (nothing waits on
+    /// it any more).
+    fn clear_connect_wait(&mut self) {
+        if let Some(Sheet::Connect { waiting, .. }) = self.sheet.as_mut() {
+            waiting.take();
+        }
+    }
+
     fn set_connect_state(&mut self, err: Option<String>, is_busy: bool, cx: &mut Context<Self>) {
         if let Some(Sheet::Connect { error, busy, .. }) = self.sheet.as_mut() {
             *error = err;
@@ -548,16 +888,16 @@ impl MainView {
         cx.notify();
     }
 
-    /// The check passed: save the token and URL, switch to the live
+    /// The check passed: save the credential and URL, switch to the live
     /// backend, and load everything once.
     fn finish_connect(
         &mut self,
         url: &str,
-        token: &str,
+        cred: &Credential,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let url = match crate::settings::connect(url, token, cx) {
+        let url = match crate::settings::connect(url, cred, cx) {
             Ok(u) => u,
             Err(e) => return self.set_connect_state(Some(e), false, cx),
         };
@@ -577,7 +917,14 @@ impl MainView {
                 self.focus_after_sheet(window, cx);
                 self.show_toast(
                     format!("Connected to {host}"),
-                    Some(crate::keymap::hint("The token is in your Keychain").into()),
+                    Some(
+                        crate::keymap::hint(match cred {
+                            Credential::Password(_) => "The password is in your Keychain",
+                            Credential::Token(_) => "The token is in your Keychain",
+                            Credential::OAuth(_) => "Your sign-in is in your Keychain",
+                        })
+                        .into(),
+                    ),
                     cx,
                 );
             }
@@ -638,6 +985,7 @@ impl MainView {
         self.editor
             .update(cx, |s, cx| s.set_value(text.to_string(), window, cx));
         self.loading_editor = false;
+        self.assist.update(cx, |a, cx| a.reset(cx)); // --- composer ---
     }
 
     /// Load the selected row into the editor (NV preview-as-you-move).
@@ -807,11 +1155,22 @@ impl MainView {
     }
 
     fn apply_prefs_live(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        crate::fonts::ensure(self.prefs.writing().bundled, cx);
-        crate::fonts::ensure(self.prefs.ui().bundled, cx);
-        self.palette = Palette::resolve(self.prefs.theme, window.appearance());
+        self.apply_theme(window, cx);
         crate::capture::prefs_changed(&self.prefs, cx);
         cx.notify();
+    }
+
+    /// Resolve the theme for the prefs and this window's appearance, and
+    /// take its palette and suggested fonts.
+    fn apply_theme(&mut self, window: &Window, cx: &mut Context<Self>) {
+        let theme = crate::theme::resolve(&self.prefs, window.appearance(), cx);
+        self.prefs.adopt_theme_fonts(&theme);
+        crate::fonts::ensure(self.prefs.writing().bundled, cx);
+        crate::fonts::ensure(self.prefs.ui().bundled, cx);
+        crate::fonts::ensure(theme.font_chrome.and_then(|f| f.bundled), cx);
+        self.palette = theme.palette;
+        crate::theme::set_reader_theme(&theme, self.prefs.writing());
+        self.theme = theme;
     }
 
     // ------------------------------------------------------------ events
@@ -859,11 +1218,12 @@ impl MainView {
                 }
             }
             InputEvent::Change if !self.loading_editor => {
-                // Typing `![[` at the start of a line opens the quote picker.
-                let typed = self.typed_transclusion(cx);
+                // Typing `![[` at the start of a line opens the quote picker,
+                // and `[[` the link picker.
+                let typed = self.typed_picker(cx);
                 self.after_edit(cx);
-                if let Some(typed) = typed {
-                    self.open_quote_picker_from_typing(typed, window, cx);
+                if let Some((kind, typed)) = typed {
+                    self.open_picker_from_typing(kind, typed, window, cx);
                 }
             }
             _ => {}
@@ -912,6 +1272,8 @@ impl MainView {
                 cx.notify();
             }
             CoreEvent::Error(msg) => self.show_toast(msg, None, cx),
+            CoreEvent::ServerOutdated => self.server_outdated(cx),
+            CoreEvent::ServerLimited => self.server_limited(window, cx),
         }
     }
 
@@ -1143,7 +1505,7 @@ impl MainView {
     fn apply_hotkey(&mut self, text: String, window: &mut Window, cx: &mut Context<Self>) {
         let clash = crate::keymap::clash_with_hotkey(&text).map(|k| {
             format!(
-                "{} is already {} in Blygger",
+                "{} is already {} in Burrow",
                 crate::keymap::glyphs(k.key),
                 k.label
             )
@@ -1527,6 +1889,8 @@ impl Render for MainView {
 
         // --- full editor: which panes are on screen (⌘1/⌘2/⌘3/⌘E) ---
         self.studio_frame(window, cx);
+        self.browser_frame(window, cx); // --- browser ---
+        self.notes_frame(cx); // --- notes ---
         let show_list = self.studio.view.list_visible();
         let show_preview = self.studio.view.preview_visible();
         let viewport = window.viewport_size();
@@ -1552,11 +1916,16 @@ impl Render for MainView {
         let side_pad = ((pane_w - measure) / 2.).max(px(34.));
 
         // Project the palette + measure onto the editor each frame (cheap: copies).
+        let assist_font = self.prefs.ui().family;
+        self.assist.update(cx, |a, _| {
+            a.set_palette(p); // --- composer ---
+            a.set_ui_font(assist_font);
+        });
         self.editor.update(cx, |s, _| {
             s.set_editor_style(gpui_kit::base::input::InputEditorStyle {
                 foreground: p.ink,
                 muted_foreground: p.muted,
-                background: p.bg,
+                background: p.editor,
                 border: p.line,
                 selection: p.text_selection,
                 caret: p.accent,
@@ -1578,15 +1947,7 @@ impl Render for MainView {
         };
         for input in [&self.omni].into_iter().chain(sheet_inputs) {
             input.update(cx, |s, _| {
-                s.set_editor_style(gpui_kit::base::input::InputEditorStyle {
-                    foreground: p.ink,
-                    muted_foreground: p.muted,
-                    background: gpui_kit::transparent_black(),
-                    border: p.line,
-                    selection: p.text_selection,
-                    caret: p.accent,
-                    ..Default::default()
-                });
+                s.set_editor_style(p.field());
             });
         }
 
@@ -1623,6 +1984,8 @@ impl Render for MainView {
             .map(|d| self.onboarding_actions(d, cx)) // --- onboarding ---
             .map(|d| self.profile_actions(d, cx)) // --- profiles ---
             .map(|d| self.discard_actions(d, cx)) // --- delete & withdraw ---
+            .map(|d| self.browser_actions(d, cx)) // --- browser ---
+            .map(|d| self.notes_actions(d, cx)) // --- notes ---
             .size_full()
             .relative()
             .flex()
@@ -1659,7 +2022,7 @@ impl Render for MainView {
                                 .child(match self.render_own_versions(&body_font, size, cx) {
                                     Some(v) => v,
                                     None => self
-                                        .render_editor_pane(&body_font, size, cx)
+                                        .render_editor_pane(&body_font, size, side_pad, cx)
                                         .into_any_element(),
                                 })
                                 // --- full editor --- (not beside ⌘Y's history,
@@ -1671,6 +2034,8 @@ impl Render for MainView {
                 ),
             })
             .child(self.render_status_bar(cx))
+            .children(self.render_browser_pane(cx)) // --- browser ---
+            .children(self.render_notes_drawer(cx)) // --- notes ---
             .children(self.render_sheet(&ui_font, &body_font, cx))
             .children(self.render_ai_overlay(&ui_font, &body_font, cx)) // --- AI ---
             .children(self.render_reading_sheet(cx)) // --- reading & versions ---
@@ -1684,6 +2049,7 @@ impl Render for MainView {
 impl MainView {
     fn render_titlebar(&self, ui_font: &SharedString, show_title: bool) -> impl IntoElement {
         let p = self.palette;
+        let plate = crate::ornament::title_plate(&self.theme);
         div()
             .id("titlebar")
             // On Windows the OS title bar moves the window, and a drag area
@@ -1694,12 +2060,15 @@ impl MainView {
             })
             .h(px(TITLEBAR_H))
             .flex_none()
+            .relative()
+            .overflow_hidden()
             .flex()
             .items_center()
             .justify_center()
             .bg(p.bar)
             .border_b_1()
-            .border_color(p.line)
+            .border_color(p.bar_line)
+            .children(crate::ornament::titlebar_band(&self.theme))
             // --- buttons --- the toolbar hides the title when it needs the room
             .when(show_title, |d| {
                 d.child(
@@ -1707,7 +2076,8 @@ impl MainView {
                         .font_family(ui_font.clone())
                         .font_weight(FontWeight::MEDIUM)
                         .text_size(px(12.))
-                        .text_color(p.muted)
+                        .text_color(p.bar_ink)
+                        .when(plate, |d| d.px(px(8.)).rounded(px(3.)).bg(p.bar))
                         .child(self.title.clone()),
                 )
             })
@@ -1735,10 +2105,9 @@ impl MainView {
                 .gap(px(10.))
                 .px(px(14.))
                 .py(px(7.))
-                .border_b_1()
-                .border_color(p.line)
-                .bg(p.bar)
-                .font_family("Inter")
+                .rule_b(&p)
+                .bg(p.panel())
+                .font_family(self.theme.chrome_font(&self.prefs))
                 .text_size(px(11.5))
                 .text_color(p.muted)
                 .child(
@@ -1819,8 +2188,7 @@ impl MainView {
             .items_center()
             .gap(px(8.))
             .px(px(14.))
-            .border_b_1()
-            .border_color(p.line)
+            .rule_b(&p)
             .child(div().text_size(px(16.)).text_color(p.muted).child("⌕"))
             .child(
                 div()
@@ -1845,7 +2213,7 @@ impl MainView {
                 d.child(
                     div()
                         .flex_none()
-                        .font_family("Inter")
+                        .font_family(self.theme.chrome_font(&self.prefs))
                         .text_size(px(12.))
                         .text_color(p.muted)
                         .child(hint),
@@ -1859,13 +2227,19 @@ impl MainView {
         ui_font: &SharedString,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
-        let p = self.palette;
+        let p = self.palette.on_side();
         let lsize = self.prefs.list_size();
         let count = self.list.results().len();
+        // --- themes --- the sidebar's ground, then the rows, then the mist.
         let base = div()
             .flex_none()
-            .border_color(p.line)
-            .font_family(ui_font.clone());
+            .relative()
+            .overflow_hidden()
+            .bg(p.bg)
+            .text_color(p.ink)
+            .border_color(self.palette.side_line)
+            .font_family(ui_font.clone())
+            .children(crate::ornament::sidebar_ground(&self.theme));
         let base = match len {
             ListLength::Width(w) => base.w(w).h_full().border_r_1(),
             ListLength::Height(h) => base.h(h).w_full().border_b_1(),
@@ -1879,11 +2253,21 @@ impl MainView {
             };
             return base.child(
                 div()
+                    .relative()
                     .p(px(14.))
-                    .italic()
-                    .text_size(px(lsize))
-                    .text_color(p.muted)
-                    .child(msg),
+                    .flex()
+                    .flex_col()
+                    .gap(px(10.))
+                    .when(q.is_empty(), |d| {
+                        d.children(crate::ornament::empty_art(&self.theme))
+                    })
+                    .child(
+                        div()
+                            .italic()
+                            .text_size(px(lsize))
+                            .text_color(p.muted)
+                            .child(msg),
+                    ),
             );
         }
         base.child(
@@ -1899,13 +2283,20 @@ impl MainView {
             .track_scroll(&self.list_scroll)
             .size_full(),
         )
+        .children(crate::ornament::scroll_edge(&self.theme))
     }
 
     fn render_row(&self, ix: usize, lsize: f32, cx: &mut Context<Self>) -> AnyElement {
-        let p = self.palette;
         let item = &self.list.results()[ix];
         let selected = self.list.selected() == Some(&item.local_id);
-        let title: SharedString = item.title().to_string().into();
+        // --- themes --- sidebar colours; the selected row's own.
+        let p = if selected {
+            self.palette.on_sel()
+        } else {
+            self.palette.on_side()
+        };
+        let chrome = self.theme.chrome_font(&self.prefs);
+        let title: SharedString = vm::item_title(item).into();
         let highlights: Vec<_> = vm::highlight_ranges(&title, self.list.query())
             .into_iter()
             .map(|r| {
@@ -1921,11 +2312,8 @@ impl MainView {
             .collect();
         let (pill_text, pill_pub) = vm::pill(item);
         let id = item.local_id.clone();
-        div()
-            .id(("row", ix))
-            .px(px(14.))
-            .py(px(6.))
-            .when(selected, |d| d.bg(p.sel))
+        let row = div().id(("row", ix)).py(px(6.)).text_color(p.ink);
+        crate::ornament::row(&self.theme, row, selected)
             .on_click(cx.listener(move |this, _, window, cx| this.open(&id, window, cx)))
             .child(
                 div()
@@ -1940,43 +2328,113 @@ impl MainView {
                     .flex()
                     .items_center()
                     .gap(px(7.))
-                    .font_family("Inter")
+                    .font_family(chrome)
                     .text_size(px(11.))
                     .text_color(p.muted)
                     .when(vm::has_unpublished_edits(item), |d| {
-                        d.child(div().size(px(6.)).rounded_full().bg(p.accent))
+                        d.child(
+                            crate::ornament::marker(
+                                &self.theme,
+                                blyg_core::config::theme::Slot::MarkerNew,
+                                p.accent,
+                                chrome,
+                            )
+                            .unwrap_or_else(|| {
+                                div()
+                                    .size(px(6.))
+                                    .rounded_full()
+                                    .bg(p.accent)
+                                    .into_any_element()
+                            }),
+                        )
                     })
                     .child(vm::kind_label(item.kind))
                     .child(
                         div()
                             .px(px(6.))
-                            .rounded_full()
+                            .rounded(px(self.theme.chip_radius))
                             .border_1()
                             .line_height(px(15.))
                             .border_color(if pill_pub { p.accent } else { p.line })
                             .when(pill_pub, |d| d.text_color(p.accent))
                             .child(pill_text),
                     )
+                    .when(pill_pub, |d| {
+                        d.children(crate::ornament::marker(
+                            &self.theme,
+                            blyg_core::config::theme::Slot::MarkerPinned,
+                            p.accent,
+                            chrome,
+                        ))
+                    })
                     .child(vm::relative_time(&item.updated, self.now)),
             )
-            .into_any_element()
+            .map(|cell| crate::ornament::row_wrap(&self.theme, cell))
     }
 
     fn render_editor_pane(
         &self,
         body_font: &SharedString,
         size: f32,
+        side_pad: Pixels,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
+        // --- themes --- a lit harbour (the editor inset in a sea), the
+        // margins' ornaments, and the divider band under the text.
+        let harbour = crate::ornament::harbour(&self.theme);
+        let inset = if harbour.is_some() { 10. } else { 0. };
+        let margins = crate::ornament::editor_margins(&self.theme, f32::from(side_pad) - inset);
+        let band = crate::ornament::divider(&self.theme);
+        let p = self.palette;
+        let radius = self.theme.radius;
+        let paper = div()
+            .size_full()
+            .relative()
+            .flex()
+            .flex_col()
+            .bg(p.editor)
+            .when_some(harbour, |d, (_, glow)| {
+                d.rounded(px(radius)).overflow_hidden().shadow(vec![
+                    BoxShadow {
+                        color: p.line,
+                        offset: point(px(0.), px(0.)),
+                        blur_radius: px(0.),
+                        spread_radius: px(1.),
+                        inset: false,
+                    },
+                    BoxShadow {
+                        color: glow.opacity(0.28),
+                        offset: point(px(0.), px(0.)),
+                        blur_radius: px(30.),
+                        spread_radius: px(0.),
+                        inset: false,
+                    },
+                ])
+            })
+            // --- stub quotes --- a stub's hint line and passage chooser.
+            .children(self.render_stub_bar(cx))
+            .child(
+                div()
+                    .flex_1()
+                    .min_h_0()
+                    .relative()
+                    .child(gpui_kit::base::input::Textarea::new(&self.editor))
+                    .children(margins)
+                    .child(self.assist.clone()), // --- composer ---
+            )
+            .children(band);
         div()
             .id("editor-pane")
             .flex_1()
             .min_w_0()
             .min_h_0()
             .relative()
+            .when_some(harbour, |d, (sea, _)| d.bg(sea).p(px(inset)))
             .font_family(body_font.clone())
             .text_size(px(size))
             .line_height(relative(1.6))
+            // --- composer --- the mention popup / spelling menu keys come first.
+            .map(|d| self.composer_keys(d, cx))
             .capture_action(cx.listener(|this, _: &Escape, window, cx| {
                 if this.sheet.is_none() {
                     cx.stop_propagation();
@@ -1993,6 +2451,7 @@ impl MainView {
                 }
             }))
             .capture_action(cx.listener(|this, _: &Paste, window, cx| {
+                this.assist.update(cx, |a, _| a.note_paste()); // --- composer ---
                 if this.paste_link(window, cx) || this.paste_image(window, cx) {
                     cx.stop_propagation();
                 }
@@ -2008,15 +2467,53 @@ impl MainView {
                     this.upload_paths(imgs, window, cx);
                 }
             }))
-            .child(
-                div()
-                    .size_full()
-                    .child(gpui_kit::base::input::Textarea::new(&self.editor)),
-            )
+            .child(paper)
+    }
+
+    // --- composer ---
+    /// While the mention popup or the spelling menu is up, ↑/↓/⏎/⇥/esc are
+    /// theirs (checked before the editor's own and the pane's esc).
+    fn composer_keys(&self, d: Stateful<Div>, cx: &mut Context<Self>) -> Stateful<Div> {
+        use crate::composer::AssistKey;
+        use gpui_kit::base::input::IndentInline;
+        fn route(
+            this: &mut MainView,
+            key: AssistKey,
+            window: &mut Window,
+            cx: &mut Context<MainView>,
+        ) {
+            if this.assist.read(cx).wants_keys()
+                && this
+                    .assist
+                    .update(cx, |a, cx| a.handle_key(key, window, cx))
+            {
+                cx.stop_propagation();
+            }
+        }
+        d.capture_action(
+            cx.listener(|this, _: &MoveUp, window, cx| route(this, AssistKey::Up, window, cx)),
+        )
+        .capture_action(
+            cx.listener(|this, _: &MoveDown, window, cx| route(this, AssistKey::Down, window, cx)),
+        )
+        .capture_action(cx.listener(|this, a: &Enter, window, cx| {
+            if !a.secondary {
+                route(this, AssistKey::Enter, window, cx)
+            }
+        }))
+        .capture_action(
+            cx.listener(|this, _: &IndentInline, window, cx| {
+                route(this, AssistKey::Tab, window, cx)
+            }),
+        )
+        .capture_action(
+            cx.listener(|this, _: &Escape, window, cx| route(this, AssistKey::Escape, window, cx)),
+        )
     }
 
     fn render_status_bar(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let p = self.palette;
+        let p = self.palette.on_status();
+        let chrome = self.theme.chrome_font(&self.prefs);
         let disconnected =
             crate::connection::mode(cx) == Some(crate::connection::Mode::Disconnected);
         let (sync_text, dot) = if disconnected {
@@ -2033,6 +2530,9 @@ impl MainView {
             vm::SyncDot::Grey => p.grey,
             vm::SyncDot::Red => p.over,
         };
+        // --- themes --- the dot is a mark on the status bar's own ground.
+        let dot_color =
+            crate::theme_ext::readable(dot_color, self.palette.status, crate::theme_ext::MARK);
         // --- follow-ups --- Reading / Mentions / Subscriptions show their
         // own status, not the current post's.
         let screen = reading::vm::screen_status(self.reading.view, self.unread);
@@ -2068,9 +2568,9 @@ impl MainView {
             .gap(px(12.))
             .px(px(14.))
             .border_t_1()
-            .border_color(p.line)
-            .bg(p.bar)
-            .font_family("Inter")
+            .border_color(self.palette.status_line)
+            .bg(self.palette.status)
+            .font_family(chrome)
             .text_size(px(11.5))
             .text_color(p.muted)
             .when_some(item, |d, item| {
@@ -2086,24 +2586,28 @@ impl MainView {
                 )
                 .child(
                     div()
-                        .when(level == vm::Level::Warn, |d| d.text_color(p.warn))
+                        .when(level == vm::Level::Warn, |d| {
+                            d.text_color(self.palette.on_status_text(p.warn))
+                        })
                         .when(level == vm::Level::Over, |d| {
-                            d.text_color(p.over).font_weight(FontWeight::SEMIBOLD)
+                            d.text_color(self.palette.on_status_text(p.over))
+                                .font_weight(FontWeight::SEMIBOLD)
                         })
                         .child(count),
                 )
             })
             // --- full editor ---
-            .children(self.studio_status(&p).filter(|_| screen.post))
+            .children(self.studio_status(&p, cx).filter(|_| screen.post))
             .child(
                 div()
                     .flex_1()
                     .flex()
                     .justify_center()
-                    .text_color(p.over)
+                    .text_color(self.palette.on_status_text(p.over))
                     .children(banner),
             )
             .children(screen.to_read.map(|t| div().id("to-read").child(t)))
+            .children(self.render_server_notice())
             .children(self.render_update_notice(cx)) // --- auto-update ---
             .children(self.render_ai_status()) // --- AI ---
             .child(
@@ -2114,7 +2618,13 @@ impl MainView {
                     .child(dot_el)
                     .child(sync_text),
             )
-            .children(item.map(vm::version_label));
+            .children(item.map(vm::version_label))
+            // --- themes ---
+            .children(crate::ornament::status(
+                &self.theme,
+                self.status_data(),
+                chrome,
+            ));
 
         if self.shake_gen > 0 {
             bar.with_animation(
@@ -2126,6 +2636,37 @@ impl MainView {
         } else {
             bar.into_any_element()
         }
+    }
+
+    /// --- themes --- What the status ornaments show: posts touched per day
+    /// over the last two weeks, and the selected post's depth in the list.
+    fn status_data(&self) -> crate::ornament::StatusData {
+        if !self
+            .theme
+            .has(blyg_core::config::theme::Slot::StatusOrnament)
+        {
+            return crate::ornament::StatusData {
+                activity: Vec::new(),
+                depth: None,
+            };
+        }
+        let mut activity = vec![0u32; 14];
+        for item in self.list.results() {
+            if let Ok(t) = chrono::DateTime::parse_from_rfc3339(&item.updated) {
+                let days = (self.now - t.with_timezone(&chrono::Utc)).num_days();
+                if (0..14).contains(&days) {
+                    activity[13 - days as usize] += 1;
+                }
+            }
+        }
+        let depth = self.list.selected().and_then(|id| {
+            self.list
+                .results()
+                .iter()
+                .position(|i| &i.local_id == id)
+                .map(|i| i + 1)
+        });
+        crate::ornament::StatusData { activity, depth }
     }
 
     fn render_toast(&self) -> Option<AnyElement> {
@@ -2140,10 +2681,11 @@ impl MainView {
             .max_w(px(420.))
             .px(px(12.))
             .py(px(9.))
-            .rounded(px(8.))
-            .bg(p.ink)
-            .text_color(p.bg)
-            .font_family("Inter")
+            .rounded(px(self.theme.toast_radius))
+            .bg(p.toast)
+            .text_color(p.toast_ink)
+            .map(|d| crate::ornament::border(d, self.theme.toast_border, p.toast_ink.opacity(0.4)))
+            .font_family(self.theme.chrome_font(&self.prefs))
             .text_size(px(12.5))
             .shadow_md()
             .child(t.text.clone())
@@ -2171,18 +2713,14 @@ impl MainView {
     ) -> Option<AnyElement> {
         let sheet = self.sheet.as_ref()?;
         let p = self.palette;
+        let theme = &*self.theme;
         let kbd = |k: &'static str| {
-            div()
+            crate::theme_ext::kbd(div(), theme)
                 .px(px(6.))
                 .py(px(1.))
                 .min_w(px(20.))
                 .flex()
                 .justify_center()
-                .rounded(px(5.))
-                .border_1()
-                .border_b_2()
-                .border_color(p.line)
-                .text_color(p.ink)
                 .font_weight(FontWeight::MEDIUM)
                 .text_size(px(11.5))
                 .child(k)
@@ -2211,12 +2749,9 @@ impl MainView {
                 .child(s)
         };
         let input_box = |el: AnyElement| {
-            div()
+            crate::theme_ext::field_box(div(), theme)
                 .px(px(10.))
                 .py(px(8.))
-                .rounded(px(7.))
-                .border_1()
-                .border_color(p.line)
                 .text_size(px(14.))
                 .font_family(ui_font.clone())
                 .child(el)
@@ -2241,7 +2776,7 @@ impl MainView {
                         div()
                             .mb(px(8.))
                             .text_size(px(12.5))
-                            .text_color(p.warn)
+                            .text_color(p.warn_text())
                             .child(w)
                     }))
                     .child(input_box(
@@ -2295,13 +2830,13 @@ impl MainView {
                         .max_h(px(260.))
                         .overflow_y_scroll()
                         .p(px(8.))
-                        .rounded(px(7.))
+                        .rounded(px(theme.radius.min(8.)))
                         .border_1()
-                        .border_color(p.line)
+                        .border_color(p.edge())
                         .child(
                             div()
                                 .mb(px(4.))
-                                .font_family("Inter")
+                                .font_family(theme.chrome_font(&self.prefs))
                                 .font_weight(FontWeight::SEMIBOLD)
                                 .text_size(px(10.5))
                                 .text_color(p.muted)
@@ -2370,8 +2905,8 @@ impl MainView {
                     .child(heading(format!("Disconnect from {host}?")))
                     .child(div().text_color(p.muted).line_height(relative(1.45)).child(
                         crate::keymap::hint(
-                            "The owner token is removed from your Keychain and the address from \
-                         your config file. Nothing changes on the blyg itself.",
+                            "The password or owner token is removed from your Keychain and the \
+                             address from your config file. Nothing changes on the blyg itself.",
                         ),
                     ))
                     // Windows: the keys are buttons too.
@@ -2419,12 +2954,79 @@ impl MainView {
                     })
                     .into_any_element(),
             ),
+            Sheet::ServerLimits { focus } => (
+                500.,
+                div()
+                    .track_focus(focus)
+                    .on_key_down(cx.listener(|this, ev: &KeyDownEvent, window, cx| {
+                        match ev.keystroke.key.as_str() {
+                            "enter" | "escape" => this.close_sheet(window, cx),
+                            _ => return,
+                        }
+                        cx.stop_propagation();
+                    }))
+                    .child(heading(server_notice::LIMITS_TITLE.into()))
+                    .child(
+                        div()
+                            .text_color(p.muted)
+                            .line_height(relative(1.45))
+                            .child(server_notice::LIMITS_INTRO),
+                    )
+                    .children(server_notice::LIMITS.iter().map(|l| {
+                        div()
+                            .mt(px(6.))
+                            .flex()
+                            .gap(px(6.))
+                            .line_height(relative(1.45))
+                            .child(div().text_color(p.muted).child("•"))
+                            .child(div().flex_1().child(*l))
+                    }))
+                    .child(
+                        div()
+                            .mt(px(8.))
+                            .text_color(p.muted)
+                            .line_height(relative(1.45))
+                            .child(server_notice::LIMITS_OUTRO),
+                    )
+                    .child(
+                        div()
+                            .id("limits-help")
+                            .mt(px(8.))
+                            .cursor_pointer()
+                            .text_color(p.accent)
+                            .hover(|s| s.underline())
+                            .child("What a server needs for everything")
+                            .on_click(|_, _, cx| cx.open_url(server_notice::SERVER_HELP_URL)),
+                    )
+                    .child(keys_row(vec![key_hint("⏎", "OK")]))
+                    .into_any_element(),
+            ),
             Sheet::Connect {
                 url,
                 token,
+                way,
                 error,
                 busy,
+                waiting,
             } => {
+                let way = *way;
+                let waiting = waiting.is_some();
+                // "Sign in with browser · API token · Studio password": the
+                // chosen one in ink.
+                let choice = |id: &'static str, text: &'static str, pick: ConnectWay| {
+                    let on = way == pick;
+                    div()
+                        .id(id)
+                        .debug_selector(move || id.into())
+                        .cursor_pointer()
+                        .text_color(if on { p.ink } else { p.muted })
+                        .when(on, |d| d.font_weight(FontWeight::SEMIBOLD))
+                        .hover(|s| s.underline())
+                        .child(text)
+                        .on_click(cx.listener(move |this, _, window, cx| {
+                            this.set_connect_way(pick, window, cx)
+                        }))
+                };
                 let label = |s: &'static str| {
                     div()
                         .mt(px(10.))
@@ -2433,6 +3035,32 @@ impl MainView {
                         .font_weight(FontWeight::SEMIBOLD)
                         .text_color(p.muted)
                         .child(s)
+                };
+                let note = |s: &'static str| {
+                    div()
+                        .mt(px(8.))
+                        .text_size(px(12.))
+                        .text_color(p.muted)
+                        .line_height(relative(1.45))
+                        .child(s)
+                };
+                let explain = match way {
+                    ConnectWay::Browser => {
+                        "Burrow opens your blyg's studio in your browser. Sign in there and \
+                         allow Burrow; it gets renewable access with all four permissions, \
+                         kept in your macOS Keychain. Needs blygger-studio 0.28 or later."
+                    }
+                    ConnectWay::Token => {
+                        "Make a token in your blyg's Studio → More → Client access: choose REST \
+                         API and all four permissions (read, draft, publish, manage). It lasts \
+                         30 days. A server with Burrow's extensions can use its owner token \
+                         here instead. Either is kept in your macOS Keychain."
+                    }
+                    ConnectWay::Password => {
+                        "The password you sign in to the studio with. It works with any \
+                         studio, including ones older than 0.28, and is kept in your macOS \
+                         Keychain."
+                    }
                 };
                 (
                     480.,
@@ -2443,55 +3071,85 @@ impl MainView {
                         }))
                         .child(heading("Connect your blyg".into()))
                         .child(div().text_color(p.muted).line_height(relative(1.45)).child(
-                            crate::keymap::hint(
-                                "Blygger writes to your own blyg. Enter its address and its \
-                                     owner token. The token is kept in your macOS Keychain; the \
-                                     address goes in your config file.",
-                            ),
+                            "Burrow writes to your own blyg. Enter its address and choose how to \
+                             sign in. The address goes in your config file.",
                         ))
                         .child(label("BLYG ADDRESS"))
                         .child(input_box(
                             gpui_kit::base::input::Input::new(url).into_any_element(),
                         ))
-                        .child(label("OWNER TOKEN"))
-                        .child(input_box(
-                            gpui_kit::base::input::Input::new(token).into_any_element(),
-                        ))
+                        .child(
+                            div()
+                                .mt(px(10.))
+                                .flex()
+                                .gap(px(6.))
+                                .text_size(px(12.))
+                                .child(choice(
+                                    "connect-by-browser",
+                                    "Sign in with browser",
+                                    ConnectWay::Browser,
+                                ))
+                                .child(div().text_color(p.muted).child("·"))
+                                .child(choice("connect-by-token", "API token", ConnectWay::Token))
+                                .child(div().text_color(p.muted).child("·"))
+                                .child(choice(
+                                    "connect-by-password",
+                                    "Studio password",
+                                    ConnectWay::Password,
+                                )),
+                        )
+                        .child(note(explain))
+                        .when(way != ConnectWay::Browser, |d| {
+                            d.child(label(if way == ConnectWay::Password {
+                                "STUDIO PASSWORD"
+                            } else {
+                                "API TOKEN"
+                            }))
+                            .child(input_box(
+                                gpui_kit::base::input::Input::new(token).into_any_element(),
+                            ))
+                        })
                         .when_some(error.clone(), |d, e| {
-                            d.child(div().mt(px(8.)).text_color(p.over).child(e))
+                            d.child(div().mt(px(8.)).text_color(p.over_text()).child(e))
                         })
                         .when(*busy, |d| {
-                            d.child(
-                                div()
-                                    .mt(px(8.))
-                                    .text_color(p.muted)
-                                    .child("Checking the address and token…"),
-                            )
+                            d.child(div().mt(px(8.)).text_color(p.muted).child(match way {
+                                ConnectWay::Browser if waiting => {
+                                    "Waiting for you to allow Burrow in your browser… (esc cancels)"
+                                }
+                                ConnectWay::Browser => "Checking the address…",
+                                ConnectWay::Password => "Signing in…",
+                                ConnectWay::Token => "Checking the address and token…",
+                            }))
                         })
-                        // Windows: the keys are buttons too.
-                        .child(if cfg!(target_os = "windows") {
-                            keys_row(vec![])
-                                .child(
-                                    key_hint("⏎", "next · connect")
-                                        .id("connect-submit")
-                                        .cursor_pointer()
-                                        .on_click(cx.listener(|this, _, window, cx| {
-                                            this.submit_connect(window, cx)
-                                        })),
-                                )
-                                .child(
-                                    key_hint("esc", "not now")
-                                        .id("connect-cancel")
-                                        .cursor_pointer()
-                                        .on_click(cx.listener(|this, _, window, cx| {
-                                            this.close_sheet(window, cx)
-                                        })),
-                                )
-                        } else {
-                            keys_row(vec![
-                                key_hint("⏎", "next · connect"),
-                                key_hint("esc", "not now"),
-                            ])
+                        .child({
+                            let next = if way == ConnectWay::Browser {
+                                "next · open the browser"
+                            } else {
+                                "next · connect"
+                            };
+                            // Windows: the keys are buttons too.
+                            if cfg!(target_os = "windows") {
+                                keys_row(vec![])
+                                    .child(
+                                        key_hint("⏎", next)
+                                            .id("connect-submit")
+                                            .cursor_pointer()
+                                            .on_click(cx.listener(|this, _, window, cx| {
+                                                this.submit_connect(window, cx)
+                                            })),
+                                    )
+                                    .child(
+                                        key_hint("esc", "not now")
+                                            .id("connect-cancel")
+                                            .cursor_pointer()
+                                            .on_click(cx.listener(|this, _, window, cx| {
+                                                this.close_sheet(window, cx)
+                                            })),
+                                    )
+                            } else {
+                                keys_row(vec![key_hint("⏎", next), key_hint("esc", "not now")])
+                            }
                         })
                         .into_any_element(),
                 )
@@ -2526,7 +3184,7 @@ impl MainView {
                                     .id("sheet-delete")
                                     .debug_selector(|| "sheet-delete".into())
                                     .cursor_pointer()
-                                    .text_color(p.over)
+                                    .text_color(p.over_text())
                                     .on_click(cx.listener(|this, _, window, cx| {
                                         this.confirm_delete(window, cx)
                                     })),
@@ -2570,7 +3228,7 @@ impl MainView {
                                         .id("sheet-withdraw")
                                         .debug_selector(|| "sheet-withdraw".into())
                                         .cursor_pointer()
-                                        .text_color(p.over)
+                                        .text_color(p.over_text())
                                         .on_click(cx.listener(move |this, _, window, cx| {
                                             let text = note.read(cx).value().to_string();
                                             this.confirm_withdraw(text, window, cx)
@@ -2606,18 +3264,7 @@ impl MainView {
                         .occlude()
                         .w(px(width))
                         .max_w(relative(0.92))
-                        .bg(p.bg)
-                        .border_1()
-                        .border_t_0()
-                        .border_color(p.line)
-                        .rounded_b(px(12.))
-                        .shadow(vec![BoxShadow {
-                            color: p.shadow,
-                            offset: point(px(0.), px(18.)),
-                            blur_radius: px(40.),
-                            spread_radius: px(-12.),
-                            inset: false,
-                        }])
+                        .map(|d| crate::theme_ext::sheet(d, &self.theme))
                         .px(px(18.))
                         .py(px(16.))
                         .font_family(ui_font.clone())
@@ -2649,13 +3296,10 @@ impl MainView {
                     .id(id)
                     .px(px(10.))
                     .py(px(3.))
-                    .rounded_full()
-                    .border_1()
+                    .map(|d| crate::theme_ext::chip(d, &self.theme, on))
                     .cursor_pointer()
-                    .border_color(if on { p.accent } else { p.line })
-                    .when(on, |d| d.text_color(p.accent))
                     .when_some(family, |d, f| d.font_family(f))
-                    .hover(|s| s.border_color(p.accent))
+                    .hover(|s| s.border_color(p.accent).bg(p.hover()))
                     .child(label)
             };
         let row = |label: &'static str, content: AnyElement| {
@@ -2689,6 +3333,7 @@ impl MainView {
                 )
                 .on_click(cx.listener(move |this, _, window, cx| {
                     this.prefs.writing_font = label.to_string();
+                    this.prefs.writing_font_set = true;
                     this.apply_prefs(window, cx);
                 }))
                 .into_any_element()
@@ -2703,23 +3348,69 @@ impl MainView {
             )
             .on_click(cx.listener(move |this, _, window, cx| {
                 this.prefs.ui_font = label.to_string();
+                this.prefs.ui_font_set = true;
                 this.apply_prefs(window, cx);
             }))
             .into_any_element()
         });
-        let themes = ThemePref::ALL.iter().map(|t| {
-            let t = *t;
-            chip(
-                format!("th{}", t.label()).into(),
-                t.label().into(),
-                self.prefs.theme == t,
-                None,
-            )
-            .on_click(cx.listener(move |this, _, window, cx| {
-                this.prefs.theme = t;
-                this.apply_prefs(window, cx);
-            }))
-            .into_any_element()
+        // --- themes --- every theme, grouped, each with a small swatch.
+        let theme_chip = |id: String, label: String, swatch: Option<AnyElement>| {
+            let on = self.prefs.theme == id;
+            let sel = format!("th-{id}");
+            chip(sel.clone().into(), label.into(), on, None)
+                .debug_selector(move || sel.clone())
+                .flex()
+                .items_center()
+                .gap(px(6.))
+                .children(swatch)
+                .on_click(cx.listener(move |this, _, window, cx| {
+                    this.prefs.theme = id.clone();
+                    this.apply_prefs(window, cx);
+                }))
+                .into_any_element()
+        };
+        let groups = crate::theme::themes(cx).grouped();
+        let themes = div()
+            .flex()
+            .flex_col()
+            .gap(px(6.))
+            .children(groups.into_iter().map(|(family, list)| {
+                let mut chips: Vec<AnyElement> = Vec::new();
+                if family == blyg_core::config::theme::Family::Plain {
+                    chips.push(theme_chip("system".into(), "System".into(), None));
+                }
+                for t in list {
+                    let label = match t.id.as_str() {
+                        "light" => "Light".to_string(),
+                        "dark" => "Dark".to_string(),
+                        _ => t.name.clone(),
+                    };
+                    chips.push(theme_chip(
+                        t.id.clone(),
+                        label,
+                        Some(crate::ornament::swatch_on(&t, self.palette.bg)),
+                    ));
+                }
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(6.))
+                    .flex_wrap()
+                    .child(
+                        div()
+                            .w(px(52.))
+                            .flex_none()
+                            .text_size(px(10.5))
+                            .text_color(p.muted)
+                            .child(family.label()),
+                    )
+                    .children(chips)
+            }));
+        let theme_dark_note = self.prefs.theme_dark.clone().map(|d| {
+            div()
+                .text_size(px(11.))
+                .text_color(p.muted)
+                .child(format!("theme-dark = {d} is used while macOS is dark"))
         });
         let layouts = LayoutPref::ALL.iter().map(|l| {
             let l = *l;
@@ -2745,7 +3436,7 @@ impl MainView {
         div()
             // The rows (fonts, buttons, AI, help…) outgrow a short window.
             .id("settings-scroll")
-            .max_h(px(560.))
+            .max_h(px(680.))
             .overflow_y_scroll()
             .track_focus(focus)
             .on_key_down(cx.listener(|this, ev: &KeyDownEvent, window, cx| {
@@ -2822,7 +3513,13 @@ impl MainView {
             ))
             .child(row(
                 "THEME",
-                div().flex().gap(px(6.)).children(themes).into_any_element(),
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(px(4.))
+                    .child(themes)
+                    .children(theme_dark_note)
+                    .into_any_element(),
             ))
             .child(row(
                 "LAYOUT",
@@ -2841,17 +3538,11 @@ impl MainView {
                     .flex_col()
                     .gap(px(4.))
                     .child(
-                        div()
+                        crate::theme_ext::field_box(div(), &self.theme)
                             .id("hotkey-box")
                             .px(px(10.))
                             .py(px(5.))
-                            .rounded(px(7.))
-                            .border_1()
-                            .border_color(if hotkey_error.is_some() {
-                                p.over
-                            } else {
-                                p.line
-                            })
+                            .when(hotkey_error.is_some(), |d| d.border_color(p.over))
                             .text_size(px(13.))
                             .child(gpui_kit::base::input::Input::new(hotkey)),
                     )
@@ -2859,7 +3550,7 @@ impl MainView {
                         div()
                             .text_size(px(11.5))
                             .text_color(if hotkey_error.is_some() {
-                                p.over
+                                p.over_text()
                             } else {
                                 p.muted
                             })

@@ -26,6 +26,7 @@ use crate::ai::generate::{self, Under};
 use crate::ai::palette::{self, Action};
 use crate::ai::settings as ais;
 use crate::ai::{self, AiGenerate, AiShorten, Failure, Picked};
+use crate::theme::Rule; // --- themes --- dividers
 
 #[cfg(test)]
 #[path = "view_tests.rs"]
@@ -105,8 +106,14 @@ enum Done {
         text: String,
         model: String,
     },
-    /// The blyg generated and recorded provenance itself: pull.
-    Server,
+    /// The blyg generated and recorded provenance itself. `content_md` is
+    /// the working copy it saved (studio 0.27.2), applied to the editor
+    /// when it still holds `sent`; without it the item was re-pulled.
+    Server {
+        item: LocalId,
+        sent: String,
+        content_md: Option<String>,
+    },
     Shorten {
         item: LocalId,
         before: String,
@@ -260,12 +267,17 @@ impl MainView {
                 .flex()
                 .items_center()
                 .gap(px(6.))
-                .text_color(p.accent)
+                // --- themes --- on the status bar's own ground.
+                .text_color(p.on_status_text(p.accent))
                 .child(
                     div()
                         .size(px(7.))
                         .rounded_full()
-                        .bg(p.accent)
+                        .bg(crate::theme_ext::readable(
+                            p.accent,
+                            p.status,
+                            crate::theme_ext::MARK,
+                        ))
                         .with_animation(
                             "ai-pulse",
                             Animation::new(std::time::Duration::from_millis(1100)).repeat(),
@@ -554,6 +566,8 @@ impl MainView {
             return;
         };
         let backend = self.backend.clone();
+        let sent = item.content_md.clone();
+        let local = item.local_id.clone();
         self.ai_spawn(
             picked,
             "generating on the blyg",
@@ -563,11 +577,19 @@ impl MainView {
                     item_id: sid.0,
                     scope: index,
                 });
-                p.generate(req, &mut |_| {})?;
-                backend
-                    .sync_now()
-                    .map_err(|e| blyg_ai::AiError::Provider(e.to_string()))?;
-                Ok(Done::Server)
+                let r = p.generate(req, &mut |_| {})?;
+                let content_md = generate::server_content_md(&r);
+                // Without the server's copy, pull it (the fallback).
+                if content_md.is_none() {
+                    backend
+                        .sync_now()
+                        .map_err(|e| blyg_ai::AiError::Provider(e.to_string()))?;
+                }
+                Ok(Done::Server {
+                    item: local,
+                    sent,
+                    content_md,
+                })
             },
             window,
             cx,
@@ -762,11 +784,26 @@ impl MainView {
                     cx,
                 );
             }
-            Done::Server => {
-                self.requery(window, cx);
-                if let Some(cur) = self.current.clone() {
-                    self.current = self.backend.item(&cur.local_id);
-                    self.load_current_into_editor(window, cx);
+            Done::Server {
+                item,
+                sent,
+                content_md,
+            } => {
+                let now = self.ai_text_of(&item, cx).unwrap_or_default();
+                let open = self.current.as_ref().is_some_and(|c| c.local_id == item);
+                match generate::server_fill(&sent, &now, content_md) {
+                    // The server's copy, straight into the editor as one
+                    // undoable edit (its provenance is the server's own).
+                    Some(new) if open => self.splice_editor(&now, &new, None, window, cx),
+                    // Otherwise the pulled copy (pulled in the background
+                    // when the reply had no content_md).
+                    _ => {
+                        self.requery(window, cx);
+                        if let Some(cur) = self.current.clone() {
+                            self.current = self.backend.item(&cur.local_id);
+                            self.load_current_into_editor(window, cx);
+                        }
+                    }
                 }
                 self.show_toast(
                     "Generated on your blyg",
@@ -945,6 +982,11 @@ impl MainView {
                 }
             }
             "escape" => self.ai_close(window, cx),
+            "h" => {
+                if let Some(next) = self.highlight_state().map(|(m, _)| next_highlight(m)) {
+                    self.ai_set_highlight(next, cx);
+                }
+            }
             k => {
                 let Some(n) = k
                     .parse::<usize>()
@@ -962,6 +1004,106 @@ impl MainView {
         }
         cx.notify();
         true
+    }
+
+    /// The open post's generated-text highlight (studio 0.27): (its own
+    /// choice, whether the page highlights now). `None` for a post the
+    /// blyg doesn't have yet, or a server that doesn't report it.
+    fn highlight_state(&self) -> Option<(blyg_core::HighlightMode, bool)> {
+        let it = self.current.as_ref()?;
+        it.server_id.as_ref()?;
+        Some((it.highlight_mode?, it.highlight))
+    }
+
+    /// Set the open post's highlight. It changes the public page at once
+    /// (the blyg wants `owner:publish` for it), so it goes straight to the
+    /// server, off the UI thread.
+    pub(super) fn ai_set_highlight(
+        &mut self,
+        mode: blyg_core::HighlightMode,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(id) = self.current.as_ref().map(|c| c.local_id.clone()) else {
+            return;
+        };
+        let backend = self.backend.clone();
+        let task = cx.background_spawn(async move { backend.set_highlight(&id, mode) });
+        cx.spawn(async move |this, cx| {
+            let r = task.await;
+            let _ = this.update(cx, |v, cx| {
+                match r {
+                    Ok(on) => {
+                        if let Some(cur) = v.current.as_mut() {
+                            cur.highlight = on;
+                            cur.highlight_mode = Some(mode);
+                        }
+                        let what = if on { "highlighted" } else { "not highlighted" };
+                        v.show_toast(
+                            format!("Generated text {what} on this post"),
+                            Some(
+                                match mode {
+                                    blyg_core::HighlightMode::Default => {
+                                        "Following your blyg's default"
+                                    }
+                                    _ => "Its page shows it now",
+                                }
+                                .into(),
+                            ),
+                            cx,
+                        );
+                        v.studio_refresh(true, cx);
+                    }
+                    Err(e) => v.show_toast(format!("Couldn't change the highlight: {e}"), None, cx),
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn render_highlight_row(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        use blyg_core::HighlightMode as M;
+        let (mode, on) = self.highlight_state()?;
+        let p = self.palette;
+        // What `default` means now: with the post on default, the effective
+        // state is the blyg's default.
+        let default_label = match (mode, on) {
+            (M::Default, true) => "default (on)",
+            (M::Default, false) => "default (off)",
+            _ => "default",
+        };
+        let opt = |m: M, label: &'static str| {
+            div()
+                .id(SharedString::from(format!("ai-hl-{}", m.as_str())))
+                .px(px(9.))
+                .py(px(2.))
+                .map(|d| crate::theme_ext::chip(d, &self.theme, m == mode))
+                .cursor_pointer()
+                .text_size(px(12.))
+                .child(label)
+                .on_click(cx.listener(move |this, _, _, cx| this.ai_set_highlight(m, cx)))
+        };
+        Some(
+            div()
+                .mt(px(10.))
+                .pt(px(8.))
+                .border_t_1()
+                .border_color(p.edge())
+                .flex()
+                .items_center()
+                .gap(px(6.))
+                .child(
+                    div()
+                        .flex_1()
+                        .text_size(px(12.))
+                        .text_color(p.muted)
+                        .child("Highlight generated text on its page"),
+                )
+                .child(opt(M::Default, default_label))
+                .child(opt(M::Show, "on"))
+                .child(opt(M::Hide, "off"))
+                .into_any_element(),
+        )
     }
 
     fn ai_accept_shorten(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -1060,9 +1202,11 @@ impl MainView {
                     .flex()
                     .items_center()
                     .gap(px(8.))
-                    .child(chip(p, "ai-open-settings", "AI accounts…", false).on_click(
-                        cx.listener(|this, _, window, cx| this.ai_open_settings(window, cx)),
-                    ))
+                    .child(
+                        chip(&self.theme, "ai-open-settings", "AI accounts…", false).on_click(
+                            cx.listener(|this, _, window, cx| this.ai_open_settings(window, cx)),
+                        ),
+                    )
                     .child(
                         div()
                             .text_size(px(11.5))
@@ -1290,7 +1434,7 @@ impl MainView {
         if let Some(Overlay::Settings(s)) = self.ai.overlay.as_mut() {
             s.chatgpt_running = Some(cancel.clone());
             s.message = Some((
-                "Approve Blygger in the browser window that opened…".into(),
+                "Approve Burrow in the browser window that opened…".into(),
                 false,
             ));
         }
@@ -1405,12 +1549,16 @@ impl MainView {
                         .py(px(3.))
                         .child(
                             div()
-                                .text_color(p.over)
+                                .text_color(p.over_text())
                                 .line_through()
                                 .child(s.original.clone()),
                         )
                         .child("→")
-                        .child(div().text_color(p.green).child(s.replacement.clone()))
+                        .child(
+                            div()
+                                .text_color(p.green_text())
+                                .child(s.replacement.clone()),
+                        )
                         .child(div().text_color(p.muted).child(s.reason.clone()))
                 });
                 (
@@ -1459,7 +1607,7 @@ impl MainView {
                     }))
                     .child(heading("This will publish without AI disclosure".into()))
                     .child(div().text_color(p.muted).line_height(relative(1.45)).child(
-                        "This post has text generated in Blygger, but your blyg doesn't have the \
+                        "This post has text generated in Burrow, but your blyg doesn't have the \
                          provenance extension (it answered 404), so readers won't see that it \
                          was generated. See docs/SERVER.md.",
                     ))
@@ -1468,15 +1616,16 @@ impl MainView {
                             .mt(px(12.))
                             .flex()
                             .gap(px(8.))
-                            .child(chip(p, "ai-warn-cancel", "Cancel  ⏎", true).on_click(
-                                cx.listener(|this, _, window, cx| this.ai_close(window, cx)),
-                            ))
                             .child(
-                                chip(p, "ai-warn-publish", "Publish anyway  P", false).on_click(
-                                    cx.listener(|this, _, window, cx| {
-                                        this.ai_publish_anyway(window, cx)
-                                    }),
+                                chip(&self.theme, "ai-warn-cancel", "Cancel  ⏎", true).on_click(
+                                    cx.listener(|this, _, window, cx| this.ai_close(window, cx)),
                                 ),
+                            )
+                            .child(
+                                chip(&self.theme, "ai-warn-publish", "Publish anyway  P", false)
+                                    .on_click(cx.listener(|this, _, window, cx| {
+                                        this.ai_publish_anyway(window, cx)
+                                    })),
                             ),
                     )
                     .into_any_element(),
@@ -1487,10 +1636,12 @@ impl MainView {
             div()
                 .absolute()
                 .top(px(TITLEBAR_H))
+                .bottom_0() // --- themes --- so `max_h` (86%) has a height to measure
                 .left_0()
                 .right_0()
                 .flex()
                 .justify_center()
+                .items_start()
                 .child(
                     div()
                         .id("ai-sheet")
@@ -1499,18 +1650,8 @@ impl MainView {
                         .max_w(relative(0.92))
                         .max_h(relative(0.86))
                         .overflow_y_scroll()
-                        .bg(p.bg)
-                        .border_1()
-                        .border_t_0()
-                        .border_color(p.line)
-                        .rounded_b(px(12.))
-                        .shadow(vec![BoxShadow {
-                            color: p.shadow,
-                            offset: point(px(0.), px(18.)),
-                            blur_radius: px(40.),
-                            spread_radius: px(-12.),
-                            inset: false,
-                        }])
+                        // --- themes --- the theme's sheet box.
+                        .map(|d| crate::theme_ext::sheet(d, &self.theme))
                         .px(px(18.))
                         .py(px(16.))
                         .font_family(ui_font.clone())
@@ -1542,7 +1683,7 @@ impl MainView {
                 .px(px(8.))
                 .py(px(5.))
                 .rounded(px(6.))
-                .when(on, |d| d.bg(p.sel))
+                .when(on, |d| d.bg(p.pick()))
                 .when(!enabled, |d| d.opacity(0.45))
                 .when(enabled, |d| d.cursor_pointer())
                 .on_click(cx.listener(move |this, _, window, cx| {
@@ -1579,7 +1720,15 @@ impl MainView {
             .child(div().mt(px(8.)).text_size(px(11.5)).text_color(p.muted).child(
                 crate::keymap::hint("Inside [TK]instruction[/TK], ⌘G fills it. Generated text is disclosed when published."),
             ))
-            .child(keys(p, &[("↑↓", "choose"), ("⏎", "run"), ("esc", "close")]))
+            .children(self.render_highlight_row(cx))
+            .child(keys(
+                p,
+                if self.highlight_state().is_some() {
+                    &[("↑↓", "choose"), ("⏎", "run"), ("H", "highlight"), ("esc", "close")]
+                } else {
+                    &[("↑↓", "choose"), ("⏎", "run"), ("esc", "close")]
+                },
+            ))
             .into_any_element()
     }
 
@@ -1591,15 +1740,12 @@ impl MainView {
     ) -> AnyElement {
         let p = self.palette;
         let input_box = |id: &'static str, e: &Entity<InputState>| {
-            div()
+            crate::theme_ext::field_box(div(), &self.theme)
                 .id(id)
                 .flex_1()
                 .min_w_0()
                 .px(px(9.))
                 .py(px(4.))
-                .rounded(px(7.))
-                .border_1()
-                .border_color(p.line)
                 .font_family(ui_font.clone())
                 .text_size(px(12.5))
                 .child(gpui_kit::base::input::Input::new(e))
@@ -1611,25 +1757,15 @@ impl MainView {
             &s.cf_token,
             &s.model,
         ] {
-            e.update(cx, |st, _| {
-                st.set_editor_style(gpui_kit::base::input::InputEditorStyle {
-                    foreground: p.ink,
-                    muted_foreground: p.muted,
-                    background: gpui_kit::transparent_black(),
-                    border: p.line,
-                    selection: p.text_selection,
-                    caret: p.accent,
-                    ..Default::default()
-                });
-            });
+            e.update(cx, |st, _| st.set_editor_style(p.field()));
         }
         let rows = s.rows.iter().map(|row| {
             let kind = row.kind;
             let (word, tone) = ais::status_label(row);
             let tone_color = match tone {
-                ais::Tone::Good => p.green,
+                ais::Tone::Good => p.green_text(),
                 ais::Tone::Neutral => p.muted,
-                ais::Tone::Bad => p.over,
+                ais::Tone::Bad => p.over_text(),
             };
             let signed_in = matches!(
                 row.status,
@@ -1649,7 +1785,7 @@ impl MainView {
                 controls = controls.when(installed || on, |d| {
                     d.child(
                         chip(
-                            p,
+                            &self.theme,
                             format!("ai-toggle-{name}"),
                             if on { "Switch off" } else { "Switch on" },
                             false,
@@ -1671,7 +1807,7 @@ impl MainView {
                     )
                     .child(
                         chip(
-                            p,
+                            &self.theme,
                             format!("ai-remove-{name}"),
                             if kind == ProviderKind::ChatgptAccount {
                                 "Sign out"
@@ -1686,14 +1822,14 @@ impl MainView {
                 controls = match kind {
                     ProviderKind::AnthropicApi => controls
                         .child(input_box("ai-key-anthropic", &s.anthropic_key))
-                        .children(save_chip(p, "ai-save-anthropic").map(|c| {
+                        .children(save_chip(&self.theme, "ai-save-anthropic").map(|c| {
                             c.on_click(cx.listener(|this, _, window, cx| {
                                 this.ai_save_key(ProviderKind::AnthropicApi, window, cx)
                             }))
                         })),
                     ProviderKind::OpenaiApi => controls
                         .child(input_box("ai-key-openai", &s.openai_key))
-                        .children(save_chip(p, "ai-save-openai").map(|c| {
+                        .children(save_chip(&self.theme, "ai-save-openai").map(|c| {
                             c.on_click(cx.listener(|this, _, window, cx| {
                                 this.ai_save_key(ProviderKind::OpenaiApi, window, cx)
                             }))
@@ -1701,7 +1837,7 @@ impl MainView {
                     ProviderKind::CloudflareWorkersAi => controls
                         .child(input_box("ai-cf-account", &s.cf_account))
                         .child(input_box("ai-cf-token", &s.cf_token))
-                        .children(save_chip(p, "ai-save-cloudflare").map(|c| {
+                        .children(save_chip(&self.theme, "ai-save-cloudflare").map(|c| {
                             c.on_click(cx.listener(|this, _, window, cx| {
                                 this.ai_save_cloudflare(window, cx)
                             }))
@@ -1715,20 +1851,22 @@ impl MainView {
                                         .text_color(p.muted)
                                         .child("Waiting for the browser…"),
                                 )
-                                .child(chip(p, "ai-chatgpt-cancel", "Cancel", false).on_click(
-                                    cx.listener(|this, _, _, cx| {
-                                        if let Some(Overlay::Settings(s)) = this.ai.overlay.as_mut()
-                                            && let Some(c) = s.chatgpt_running.take()
-                                        {
-                                            c.cancel();
-                                        }
-                                        cx.notify();
-                                    }),
-                                ))
+                                .child(
+                                    chip(&self.theme, "ai-chatgpt-cancel", "Cancel", false)
+                                        .on_click(cx.listener(|this, _, _, cx| {
+                                            if let Some(Overlay::Settings(s)) =
+                                                this.ai.overlay.as_mut()
+                                                && let Some(c) = s.chatgpt_running.take()
+                                            {
+                                                c.cancel();
+                                            }
+                                            cx.notify();
+                                        })),
+                                )
                         } else {
                             controls.child(
                                 chip(
-                                    p,
+                                    &self.theme,
                                     "ai-chatgpt",
                                     if s.chatgpt_notice {
                                         "Continue to the browser"
@@ -1749,7 +1887,7 @@ impl MainView {
             if ready && !row.is_default {
                 controls = controls.child(
                     chip(
-                        p,
+                        &self.theme,
                         format!("ai-use-{name}"),
                         crate::keymap::hint("Use for ⌘G"),
                         false,
@@ -1762,8 +1900,7 @@ impl MainView {
             div()
                 .id(SharedString::from(format!("ai-row-{name}")))
                 .py(px(7.))
-                .border_b_1()
-                .border_color(p.line)
+                .rule_b(&p)
                 .child(
                     div()
                         .flex()
@@ -1776,10 +1913,10 @@ impl MainView {
                                 div()
                                     .text_size(px(11.))
                                     .px(px(6.))
-                                    .rounded_full()
+                                    .rounded(px(self.theme.chip_radius))
                                     .border_1()
                                     .border_color(p.accent)
-                                    .text_color(p.accent)
+                                    .text_color(p.accent_text())
                                     .child(crate::keymap::hint("⌘G uses this")),
                             )
                         }),
@@ -1848,7 +1985,7 @@ impl MainView {
                             }),
                     )
                     .child(input_box("ai-model", &s.model))
-                    .children(save_chip(p, "ai-save-model").map(|c| {
+                    .children(save_chip(&self.theme, "ai-save-model").map(|c| {
                         c.on_click(
                             cx.listener(|this, _, window, cx| this.ai_save_model(window, cx)),
                         )
@@ -1860,7 +1997,7 @@ impl MainView {
                         .id("ai-settings-message")
                         .mt(px(8.))
                         .text_size(px(12.))
-                        .text_color(if is_err { p.over } else { p.green })
+                        .text_color(if is_err { p.over_text() } else { p.green_text() })
                         .child(m),
                 )
             })
@@ -1869,7 +2006,7 @@ impl MainView {
             .when(cfg!(target_os = "windows"), |d| {
                 d.child(
                     div().mt(px(10.)).flex().justify_end().child(
-                        chip(p, "ai-settings-done", "Done", true).on_click(
+                        chip(&self.theme, "ai-settings-done", "Done", true).on_click(
                             cx.listener(|this, _, window, cx| this.ai_close(window, cx)),
                         ),
                     ),
@@ -1880,13 +2017,23 @@ impl MainView {
 }
 
 /// Windows: a Save button beside a field, which macOS saves with ⏎ alone.
-fn save_chip(p: crate::theme::Palette, id: &'static str) -> Option<Stateful<Div>> {
-    cfg!(target_os = "windows").then(|| chip(p, id, "Save", false))
+fn save_chip(t: &crate::theme::Theme, id: &'static str) -> Option<Stateful<Div>> {
+    cfg!(target_os = "windows").then(|| chip(t, id, "Save", false))
 }
 
 /// `BLYGGER_TIMING`: print what AI did (automation; never any secret).
 fn timing() -> bool {
     std::env::var_os("BLYGGER_TIMING").is_some()
+}
+
+/// `H` in the palette: default → on → off → default.
+fn next_highlight(m: blyg_core::HighlightMode) -> blyg_core::HighlightMode {
+    use blyg_core::HighlightMode as M;
+    match m {
+        M::Default => M::Show,
+        M::Show => M::Hide,
+        M::Hide => M::Default,
+    }
 }
 
 fn heading(s: String) -> Div {
@@ -1898,22 +2045,20 @@ fn heading(s: String) -> Div {
 }
 
 fn chip(
-    p: crate::theme::Palette,
+    t: &crate::theme::Theme,
     id: impl Into<SharedString>,
     label: &'static str,
     primary: bool,
 ) -> Stateful<Div> {
+    let p = t.palette;
     div()
         .id(ElementId::Name(id.into()))
         .px(px(10.))
         .py(px(3.))
-        .rounded_full()
-        .border_1()
+        .map(|d| crate::theme_ext::chip(d, t, primary))
         .cursor_pointer()
         .text_size(px(12.))
-        .border_color(if primary { p.accent } else { p.line })
-        .when(primary, |d| d.text_color(p.accent))
-        .hover(|s| s.border_color(p.accent))
+        .hover(|s| s.border_color(p.accent).bg(p.hover()))
         .child(label)
 }
 
@@ -1936,7 +2081,7 @@ fn keys(p: crate::theme::Palette, items: &[(&'static str, &'static str)]) -> Div
                         .rounded(px(5.))
                         .border_1()
                         .border_b_2()
-                        .border_color(p.line)
+                        .border_color(p.edge())
                         .text_color(p.ink)
                         .child(*k),
                 )
@@ -1988,11 +2133,10 @@ fn diff_col(
         .p(px(8.))
         .rounded(px(7.))
         .border_1()
-        .border_color(p.line)
+        .border_color(p.edge())
         .child(
             div()
                 .mb(px(4.))
-                .font_family("Inter")
                 .font_weight(FontWeight::SEMIBOLD)
                 .text_size(px(10.5))
                 .text_color(p.muted)

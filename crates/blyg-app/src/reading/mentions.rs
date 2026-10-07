@@ -2,12 +2,14 @@
 //! relation, when; a dot for new; hide a mention; and per post, whether its
 //! responses show on the public page.
 
+use blyg_core::ResponsesMode;
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
 use super::Load;
 use super::vm::{self, MentionRow};
 use crate::app::MainView;
+use crate::theme::Rule; // --- themes --- dividers
 
 impl MainView {
     pub(super) fn load_mentions(&mut self, cx: &mut Context<Self>) {
@@ -20,6 +22,7 @@ impl MainView {
             let r = task.await;
             let _ = this.update(cx, |v, cx| {
                 v.reading.mentions = Load::from_result(r);
+                v.reading.refilter(); // mentions of your posts mark them
                 cx.notify();
             });
         })
@@ -30,7 +33,12 @@ impl MainView {
     /// responses, rows).
     pub(crate) fn mention_groups(
         &self,
-    ) -> Vec<(String, Option<blyg_core::LocalId>, bool, Vec<MentionRow>)> {
+    ) -> Vec<(
+        String,
+        Option<blyg_core::LocalId>,
+        Responses,
+        Vec<MentionRow>,
+    )> {
         let Some(ms) = self.reading.mentions.ready() else {
             return vec![];
         };
@@ -50,7 +58,10 @@ impl MainView {
                 (
                     t,
                     item.map(|i| i.local_id.clone()),
-                    item.is_some_and(|i| i.show_responses),
+                    Responses {
+                        show: item.is_some_and(|i| i.show_responses),
+                        mode: item.and_then(|i| i.responses_mode),
+                    },
                     rows,
                 )
             })
@@ -63,7 +74,10 @@ impl MainView {
         let mut out = vec!["Mentions".to_string(), self.mentions_hint()];
         for (title, _, show, rows) in self.mention_groups() {
             out.push(format!("On “{title}”"));
-            out.push(responses_label(show).into());
+            out.push(show.label());
+            if show.can_follow_default() {
+                out.push(FOLLOW_DEFAULT.into());
+            }
             for r in rows {
                 out.extend([r.who, r.origin, r.relation, r.when]);
                 out.push(if r.hidden { "Unhide" } else { "Hide" }.into());
@@ -96,14 +110,31 @@ impl MainView {
         .detach();
     }
 
-    fn toggle_responses(&mut self, id: blyg_core::LocalId, show: bool, cx: &mut Context<Self>) {
+    pub(super) fn set_responses(
+        &mut self,
+        id: blyg_core::LocalId,
+        mode: ResponsesMode,
+        cx: &mut Context<Self>,
+    ) {
         let backend = self.backend.clone();
-        let task = cx.background_spawn(async move { backend.set_show_responses(&id, show) });
+        let task = cx.background_spawn(async move { backend.set_responses(&id, mode) });
         cx.spawn(async move |this, cx| {
             let r = task.await;
             let _ = this.update(cx, |v, cx| {
                 match r {
-                    Ok(()) => v.show_toast(
+                    Ok(show) if mode == ResponsesMode::Default => v.show_toast(
+                        "Responses follow your site setting",
+                        Some(
+                            if show {
+                                "Shown on the post's page"
+                            } else {
+                                "Hidden from the post's page"
+                            }
+                            .into(),
+                        ),
+                        cx,
+                    ),
+                    Ok(show) => v.show_toast(
                         if show {
                             "Responses show on the post's page"
                         } else {
@@ -121,7 +152,7 @@ impl MainView {
     }
 
     pub(super) fn render_mentions_screen(&self, cx: &mut Context<Self>) -> AnyElement {
-        let p = self.palette;
+        let p = self.palette.on_page();
         let show_hidden = self.reading.show_hidden;
         let toggle_hidden = self
             .chip(
@@ -154,7 +185,7 @@ impl MainView {
             _ => {
                 let groups = self.mention_groups();
                 if groups.is_empty() {
-                    self.muted_note("Nobody has quoted, replied to or forked your posts yet.")
+                    self.empty_note("Nobody has quoted, replied to or forked your posts yet.")
                 } else {
                     div()
                         .id("mentions-list")
@@ -166,8 +197,7 @@ impl MainView {
                                     .px(px(16.))
                                     .pt(px(12.))
                                     .pb(px(6.))
-                                    .border_b_1()
-                                    .border_color(p.line)
+                                    .rule_b(&p)
                                     .child(
                                         div()
                                             .flex()
@@ -182,16 +212,38 @@ impl MainView {
                                                     .child(format!("On “{title}”")),
                                             )
                                             .when_some(id, |d, id| {
+                                                let flip = id.clone();
                                                 d.child(
                                                     self.chip(
                                                         format!("responses-{gi}"),
-                                                        responses_label(show),
+                                                        show.label(),
                                                     )
-                                                    .when(show, |d| d.text_color(p.accent))
+                                                    .when(show.show, |d| d.text_color(p.accent))
                                                     .on_click(cx.listener(move |this, _, _, cx| {
-                                                        this.toggle_responses(id.clone(), !show, cx)
+                                                        this.set_responses(
+                                                            flip.clone(),
+                                                            show.flipped(),
+                                                            cx,
+                                                        )
                                                     })),
                                                 )
+                                                .when(show.can_follow_default(), |d| {
+                                                    d.child(
+                                                        self.chip(
+                                                            format!("responses-default-{gi}"),
+                                                            FOLLOW_DEFAULT,
+                                                        )
+                                                        .on_click(cx.listener(
+                                                            move |this, _, _, cx| {
+                                                                this.set_responses(
+                                                                    id.clone(),
+                                                                    ResponsesMode::Default,
+                                                                    cx,
+                                                                )
+                                                            },
+                                                        )),
+                                                    )
+                                                })
                                             }),
                                     )
                                     .children(
@@ -208,7 +260,7 @@ impl MainView {
             .min_h_0()
             .flex()
             .flex_col()
-            .font_family("Inter")
+            .font_family(self.prefs.ui().family)
             .text_size(px(13.))
             .child(header)
             .child(body)
@@ -216,7 +268,7 @@ impl MainView {
     }
 
     fn render_mention_row(&self, r: MentionRow, cx: &mut Context<Self>) -> AnyElement {
-        let p = self.palette;
+        let p = self.palette.on_page();
         let (id, hidden, source) = (r.id.clone(), r.hidden, r.source.clone());
         let profile_of = r.source.clone(); // --- profiles ---
         div()
@@ -228,11 +280,11 @@ impl MainView {
             .when(hidden, |d| d.opacity(0.5))
             .child(
                 div()
-                    .w(px(6.))
-                    .h(px(6.))
+                    .w(px(8.))
                     .flex_none()
-                    .rounded_full()
-                    .when(r.new, |d| d.bg(p.accent)),
+                    .flex()
+                    .justify_center()
+                    .when(r.new, |d| d.child(self.unread_marker(p.accent))),
             )
             .child(div().font_weight(FontWeight::MEDIUM).child(r.who))
             .child(div().text_color(p.muted).child(r.relation))
@@ -285,10 +337,41 @@ impl MainView {
     }
 }
 
-fn responses_label(show: bool) -> &'static str {
-    if show {
-        "responses shown on the page"
-    } else {
-        "responses hidden from the page"
+const FOLLOW_DEFAULT: &str = "follow site setting";
+
+/// One post's responses control: what its page shows now, and the post's own
+/// choice (`None` on a server older than studio 0.8, which has no default).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Responses {
+    pub show: bool,
+    pub mode: Option<ResponsesMode>,
+}
+
+impl Responses {
+    fn label(self) -> String {
+        let base = if self.show {
+            "responses shown on the page"
+        } else {
+            "responses hidden from the page"
+        };
+        if self.mode == Some(ResponsesMode::Default) {
+            format!("{base} · site setting")
+        } else {
+            base.into()
+        }
+    }
+
+    /// The main chip flips what the page shows, as the post's own choice.
+    fn flipped(self) -> ResponsesMode {
+        if self.show {
+            ResponsesMode::Hide
+        } else {
+            ResponsesMode::Show
+        }
+    }
+
+    /// A post with its own choice can hand it back to the site setting.
+    fn can_follow_default(self) -> bool {
+        matches!(self.mode, Some(ResponsesMode::Show | ResponsesMode::Hide))
     }
 }

@@ -1,0 +1,17 @@
+{
+  "name": "tr_partial_lazy_marker",
+  "kind": "thread",
+  "md": "![[01j9zq3k4m5n6p7q8r9s0t1v2w]]\n>used daily\n  > beat big tools",
+  "html": "<blockquote class=\"blyg-transclusion unresolved\"><p>⚠ unresolvable: quoted passage not found in the target&#39;s version 3</p></blockquote>",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": [
+    {
+      "directive": "![[01j9zq3k4m5n6p7q8r9s0t1v2w]]",
+      "reason": "quoted passage not found in the target's version 3"
+    }
+  ]
+}

@@ -84,16 +84,17 @@ impl SwitchBackend {
 /// Which blyg the local database in the data dir belongs to.
 const DB_OWNER_FILE: &str = "blygger.db.blyg-url";
 
-/// Open the live backend for `url` if the token store has a token for it.
+/// Open the live backend for `url` if the Keychain holds a credential (its
+/// studio password, or its owner token) for it.
 /// A local database that belongs to a *different* blyg is moved aside first
 /// (`blygger.<host>.db`), so one blyg's unpushed drafts can never be pushed
 /// to another.
 pub fn open_live(
     data_dir: &Path,
     url: &str,
-    tokens: &dyn TokenStore,
+    tokens: &Arc<dyn TokenStore>,
 ) -> Result<Option<Arc<dyn Backend>>> {
-    let Some(token) = tokens.get(url)? else {
+    let Some(cred) = blyg_core::config::load_credential(tokens, url)? else {
         return Ok(None);
     };
     std::fs::create_dir_all(data_dir).map_err(|e| CoreError::Storage(e.to_string()))?;
@@ -112,7 +113,7 @@ pub fn open_live(
             }
         }
     }
-    let live = LiveBackend::open(data_dir, url, &token)?;
+    let live = LiveBackend::open(data_dir, url, cred)?;
     std::fs::write(&owner, url).map_err(|e| CoreError::Storage(e.to_string()))?;
     Ok(Some(Arc::new(live)))
 }
@@ -131,8 +132,20 @@ pub fn delete_local_data(data_dir: &Path) {
 
 // ------------------------------------------------------------ app global
 
-/// Checks a URL + token before anything is saved (`GET /api/items`).
-pub type Verifier = fn(&str, &str) -> std::result::Result<usize, blyg_core::api::ConnectError>;
+/// Checks a URL and credential before anything is saved (sign in, then
+/// `GET /api/items`).
+pub type Verifier = fn(
+    &str,
+    &blyg_core::api::auth::Credential,
+) -> std::result::Result<usize, blyg_core::api::ConnectError>;
+
+/// The real check.
+pub fn live_verifier(
+    url: &str,
+    cred: &blyg_core::api::auth::Credential,
+) -> std::result::Result<usize, blyg_core::api::ConnectError> {
+    blyg_core::api::verify_connection(url, cred.clone())
+}
 
 /// The app's connection state (absent in headless tests, which run on a
 /// `FakeBackend` directly).
@@ -157,7 +170,10 @@ pub fn verifier(cx: &gpui_kit::App) -> Verifier {
 }
 
 /// Verifier for fake mode: never touches the network.
-pub fn fake_verifier(_: &str, _: &str) -> std::result::Result<usize, blyg_core::api::ConnectError> {
+pub fn fake_verifier(
+    _: &str,
+    _: &blyg_core::api::auth::Credential,
+) -> std::result::Result<usize, blyg_core::api::ConnectError> {
     Ok(6)
 }
 
@@ -173,7 +189,7 @@ pub fn go_live(url: &str, cx: &mut gpui_kit::App) -> Result<bool> {
     }
     let (switch, dir) = (conn.switch.clone(), conn.data_dir.clone());
     let tokens = crate::settings::get(cx).tokens.clone();
-    match open_live(&dir, url, &*tokens)? {
+    match open_live(&dir, url, &tokens)? {
         Some(live) => {
             switch.switch(live, Mode::Live, || {});
             Ok(true)
@@ -211,7 +227,7 @@ pub fn use_sample_data(fake: Arc<dyn Backend>, cx: &mut gpui_kit::App) -> bool {
 }
 // --- end onboarding ---
 
-/// Forget the token (Keychain) and `blyg-url` (config); keep or delete the
+/// Forget the password and token (Keychain) and `blyg-url` (config); keep or delete the
 /// local copy. Returns the host that was disconnected.
 pub fn disconnect(
     delete_local: bool,
@@ -219,10 +235,20 @@ pub fn disconnect(
 ) -> std::result::Result<String, String> {
     let url = crate::settings::blyg_url(cx).ok_or("Not connected to a blyg")?;
     let host = crate::vm::url_host(&url).unwrap_or(url.clone());
-    crate::settings::get(cx)
-        .tokens
-        .delete(&url)
-        .map_err(|e| format!("Couldn't remove the token: {e}"))?;
+    let tokens = crate::settings::get(cx).tokens.clone();
+    // A browser sign-in is revoked at the blyg too (best effort, off the
+    // UI thread; offline, it just lapses within 30 days).
+    if let Ok(Some(grant)) = blyg_core::config::load_grant(tokens.as_ref(), &url)
+        && !grant.ended()
+    {
+        std::thread::spawn(move || {
+            if let Err(e) = blyg_core::api::oauth::revoke(&grant) {
+                eprintln!("blygger: couldn't revoke the browser sign-in: {e}");
+            }
+        });
+    }
+    blyg_core::config::delete_credential(tokens.as_ref(), &url)
+        .map_err(|e| format!("Couldn't remove it from the Keychain: {e}"))?;
     crate::settings::write(&[("blyg-url", blyg_core::config::Change::Remove)], cx)?;
     if let Some(conn) = cx.try_global::<Connection>()
         && conn.switch.mode() != Mode::Fake
@@ -307,7 +333,13 @@ impl Backend for Disconnected {
     fn fork(&self, _: &RemoteRef) -> Result<LocalId> {
         not_connected()
     }
-    fn set_show_responses(&self, _: &LocalId, _: bool) -> Result<()> {
+    fn set_responses(&self, _: &LocalId, _: ResponsesMode) -> Result<bool> {
+        not_connected()
+    }
+    fn set_highlight(&self, _: &LocalId, _: HighlightMode) -> Result<bool> {
+        not_connected()
+    }
+    fn fetch_own_media(&self, _: &str) -> Result<(Vec<u8>, Option<String>)> {
         not_connected()
     }
     fn sync_now(&self) -> Result<()> {
@@ -413,6 +445,9 @@ impl Backend for SwitchBackend {
     fn mark_read(&self, sub_id: &str, remote_id: &str) -> Result<()> {
         self.cur().mark_read(sub_id, remote_id)
     }
+    fn set_read(&self, rows: &[(String, String)], read: bool) -> Result<usize> {
+        self.cur().set_read(rows, read)
+    }
     fn publish(&self, id: &LocalId, note: Option<&str>) -> Result<PublishOutcome> {
         self.cur().publish(id, note)
     }
@@ -446,8 +481,20 @@ impl Backend for SwitchBackend {
     fn fork(&self, of: &RemoteRef) -> Result<LocalId> {
         self.cur().fork(of)
     }
-    fn set_show_responses(&self, id: &LocalId, show: bool) -> Result<()> {
-        self.cur().set_show_responses(id, show)
+    fn set_responses(&self, id: &LocalId, mode: ResponsesMode) -> Result<bool> {
+        self.cur().set_responses(id, mode)
+    }
+    fn set_highlight(&self, id: &LocalId, mode: HighlightMode) -> Result<bool> {
+        self.cur().set_highlight(id, mode)
+    }
+    fn pick_search(&self, q: &blyg_core::PickQuery) -> Vec<blyg_core::Pickable> {
+        self.cur().pick_search(q)
+    }
+    fn picker_typing(&self) -> PickerTyping {
+        self.cur().picker_typing()
+    }
+    fn fetch_own_media(&self, url: &str) -> Result<(Vec<u8>, Option<String>)> {
+        self.cur().fetch_own_media(url)
     }
     fn sync_now(&self) -> Result<()> {
         self.cur().sync_now()
@@ -471,6 +518,15 @@ impl Backend for SwitchBackend {
     }
     fn pause_subscription(&self, sub_id: &str, paused: bool) -> Result<()> {
         self.cur().pause_subscription(sub_id, paused)
+    }
+    fn rename_subscription(&self, sub_id: &str, title: Option<&str>) -> Result<()> {
+        self.cur().rename_subscription(sub_id, title)
+    }
+    fn poll_subscriptions(&self) -> Result<u32> {
+        self.cur().poll_subscriptions()
+    }
+    fn check_subscription(&self, sub_id: &str) -> Result<bool> {
+        self.cur().check_subscription(sub_id)
     }
     fn signal(&self, sub_id: &str, remote_id: &str, thumb: Option<i8>) -> Result<()> {
         self.cur().signal(sub_id, remote_id, thumb)
@@ -512,6 +568,56 @@ impl Backend for SwitchBackend {
     }
     fn cached_profile(&self, url: &str) -> Option<blyg_core::Profile> {
         self.cur().cached_profile(url)
+    }
+    // --- about ---
+    fn read_state_sync(&self) -> bool {
+        self.cur().read_state_sync()
+    }
+
+    fn server_outdated(&self) -> bool {
+        self.cur().server_outdated()
+    }
+
+    fn server_extensions(&self) -> Option<bool> {
+        self.cur().server_extensions()
+    }
+
+    fn cached_profiles(&self) -> Vec<blyg_core::Profile> {
+        self.cur().cached_profiles()
+    }
+
+    // --- responses ---
+    fn responses(&self, origin: &str, id: &str) -> Vec<blyg_core::Response> {
+        self.cur().responses(origin, id)
+    }
+    // --- reader folders ---
+    fn folders(&self) -> Vec<blyg_core::Folder> {
+        self.cur().folders()
+    }
+    fn subscription_folders(&self) -> std::collections::HashMap<String, String> {
+        self.cur().subscription_folders()
+    }
+    fn create_folder(&self, name: &str) -> Result<blyg_core::Folder> {
+        self.cur().create_folder(name)
+    }
+    fn rename_folder(&self, id: &str, name: &str) -> Result<()> {
+        self.cur().rename_folder(id, name)
+    }
+    fn delete_folder(&self, id: &str) -> Result<()> {
+        self.cur().delete_folder(id)
+    }
+    fn move_folder(&self, id: &str, index: usize) -> Result<()> {
+        self.cur().move_folder(id, index)
+    }
+    fn set_subscription_folder(&self, sub_id: &str, folder: Option<&str>) -> Result<()> {
+        self.cur().set_subscription_folder(sub_id, folder)
+    }
+    // --- quote targets ---
+    fn public_item(&self, origin: &str, id: &str) -> Result<blyg_core::PublicItem> {
+        self.cur().public_item(origin, id)
+    }
+    fn public_pinned(&self, origin: &str, id: &str, version: u32) -> Result<PinnedVersion> {
+        self.cur().public_pinned(origin, id, version)
     }
 }
 

@@ -1,0 +1,24 @@
+{
+  "name": "link_in_tk_thread",
+  "kind": "thread",
+  "md": "[TK]sum [[01j9zq3k4m5n6p7q8r9s0t1v2w]][=]out [[02abcdefghjkmnpqrstvwxyz01]][/TK]\n\n![[01j9zq3k4m5n6p7q8r9s0t1v2w]]",
+  "html": "<div class=\"blyg-tk-gen\"><p>out <a href=\"https://blyg.example.com/f/02abcdefghjkmnpqrstvwxyz01/\">“Writing is thinking with a pencil.”</a></p>\n</div>\n\n<blockquote class=\"blyg-transclusion\" data-blyg-id=\"01j9zq3k4m5n6p7q8r9s0t1v2w\" data-blyg-version=\"3\">\n<p>Small tools, used daily, beat big tools used rarely.</p>\n\n\n<p class=\"provenance\"><a href=\"/blyg/f/01j9zq3k4m5n6p7q8r9s0t1v2w/\">fragment ↗</a> · snapshot of v3</p></blockquote>",
+  "tk": {
+    "scopes": [
+      {
+        "instruction": "sum [[01j9zq3k4m5n6p7q8r9s0t1v2w]]",
+        "generated": true,
+        "block": true,
+        "source_ids": []
+      }
+    ],
+    "errors": []
+  },
+  "transclusions": [
+    {
+      "id": "01j9zq3k4m5n6p7q8r9s0t1v2w",
+      "version": 3
+    }
+  ],
+  "errors": []
+}

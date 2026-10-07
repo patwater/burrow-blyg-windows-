@@ -21,7 +21,7 @@ pub enum Change {
 /// The header of a config file the app creates.
 #[cfg(not(windows))]
 pub const HEADER: &str = "\
-# Blygger configuration. One `key = value` per line; `#` starts a comment.
+# Burrow configuration. One `key = value` per line; `#` starts a comment.
 # See every option, with its docs and default:
 #     blygger +show-config --default --docs
 # Reload after editing with ⌘⇧, in the app. Secrets (tokens, API keys) are
@@ -31,7 +31,7 @@ pub const HEADER: &str = "\
 /// The header of a config file the app creates.
 #[cfg(windows)]
 pub const HEADER: &str = "\
-# Blygger configuration. One `key = value` per line; `#` starts a comment.
+# Burrow configuration. One `key = value` per line; `#` starts a comment.
 # See every option, with its docs and default:
 #     blygger +show-config --default --docs
 # Reload after editing with Ctrl+Shift+, in the app. Secrets (tokens, API

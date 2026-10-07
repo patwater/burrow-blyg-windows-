@@ -161,7 +161,11 @@ impl Provider for CloudflareWorkersAi {
                 "provider returned no text content".into(),
             ));
         }
-        Ok(GenResult { text, model })
+        Ok(GenResult {
+            text,
+            model,
+            content_md: None,
+        })
     }
 
     /// `GET /accounts/{id}/ai/models/search?task=Text Generation`, Gemma 4 first.
