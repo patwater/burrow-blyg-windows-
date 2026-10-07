@@ -470,12 +470,12 @@ fn brackets_step_versions_and_the_pane_hides(cx: &mut TestAppContext) {
     assert_eq!(label(&view, cx), "v5 · current ▾");
 
     // ⌥⌘S hides the sources pane; ← then stays in the list.
-    cx.simulate_keystrokes("alt-cmd-s");
+    cx.simulate_keystrokes(&crate::keymap::keys("alt-cmd-s"));
     settle(cx);
     assert!(!view.read_with(cx, |v, _| v.reading.sources_open));
     cx.simulate_keystrokes("left");
     assert_eq!(pane(&view, cx), Pane::List);
-    cx.simulate_keystrokes("alt-cmd-s");
+    cx.simulate_keystrokes(&crate::keymap::keys("alt-cmd-s"));
     settle(cx);
     assert!(view.read_with(cx, |v, _| v.reading.sources_open));
 }
@@ -483,7 +483,7 @@ fn brackets_step_versions_and_the_pane_hides(cx: &mut TestAppContext) {
 #[gpui_kit::test]
 fn the_subscriptions_screen_chooses_a_folder(cx: &mut TestAppContext) {
     let (view, fake, cx) = setup(cx);
-    cx.simulate_keystrokes("cmd-shift-s");
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-shift-s"));
     settle(cx);
     assert_eq!(
         view.read_with(cx, |v, _| v.reading.view),

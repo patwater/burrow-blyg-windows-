@@ -336,7 +336,7 @@ fn restore_loads_a_version_into_the_editor(cx: &mut TestAppContext) {
 #[gpui_kit::test]
 fn a_post_can_hand_its_responses_back_to_the_site_setting(cx: &mut TestAppContext) {
     let (view, fake, cx) = setup(cx);
-    cx.simulate_keystrokes("cmd-shift-m");
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-shift-m"));
     settle(cx);
     let first = |view: &Entity<MainView>, cx: &mut VisualTestContext| {
         view.read_with(cx, |v, _| {
@@ -850,7 +850,7 @@ fn actions_name_the_primitive_and_fork_waits_for_a_pin(cx: &mut TestAppContext) 
 #[gpui_kit::test]
 fn link_post_starts_a_fragment_that_is_not_a_reply(cx: &mut TestAppContext) {
     let (view, fake, cx) = setup(cx);
-    cx.simulate_keystrokes("cmd-r");
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-r"));
     open_row(&view, RUE_TRUST, cx);
     let before = fake.items().len();
     view.update_in(cx, |v, window, cx| {
@@ -876,7 +876,7 @@ fn reply_quotes_the_whole_post_however_long(cx: &mut TestAppContext) {
     // The seeded posts are all short: one is made long for this test.
     let long_html = format!("<p>{}</p>", "The tide comes in. ".repeat(40));
     for (id, want_quote) in [(LIN_BENCH, true), (ADA_FINISHED, false)] {
-        cx.simulate_keystrokes("cmd-r");
+        cx.simulate_keystrokes(&crate::keymap::keys("cmd-r"));
         open_row(&view, id, cx);
         view.update_in(cx, |v, window, cx| {
             if want_quote {

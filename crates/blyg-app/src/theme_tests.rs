@@ -78,12 +78,12 @@ fn every_theme_renders_every_surface(cx: &mut TestAppContext) {
             assert_eq!(v.palette, v.theme.palette);
         });
         // The stream (quote boxes, dividers between posts), then back.
-        cx.simulate_keystrokes("cmd-r");
+        cx.simulate_keystrokes(&crate::keymap::keys("cmd-r"));
         frame(cx);
-        cx.simulate_keystrokes("cmd-r");
+        cx.simulate_keystrokes(&crate::keymap::keys("cmd-r"));
         frame(cx);
         // Settings (the themes list with swatches), then a toast.
-        cx.simulate_keystrokes("cmd-,");
+        cx.simulate_keystrokes(&crate::keymap::keys("cmd-,"));
         frame(cx);
         cx.simulate_keystrokes("escape");
         view.update(cx, |v, cx| v.show_toast("Published v3", None, cx));
@@ -94,7 +94,13 @@ fn every_theme_renders_every_surface(cx: &mut TestAppContext) {
     view.read_with(cx, |v, _| assert_eq!(v.prefs.writing().family, "ETBembo"));
     switch_to(&view, "fortress", cx);
     view.read_with(cx, |v, _| {
-        assert_eq!(v.prefs.ui().family, "Menlo");
+        // Windows has no Menlo: the theme gets its substitute.
+        let menlo = if cfg!(target_os = "windows") {
+            "Consolas"
+        } else {
+            "Menlo"
+        };
+        assert_eq!(v.prefs.ui().family, menlo);
         assert!(v.palette.dark);
     });
     switch_to(&view, "system", cx);
@@ -104,7 +110,7 @@ fn every_theme_renders_every_surface(cx: &mut TestAppContext) {
 #[gpui_kit::test]
 fn settings_lists_themes_and_writes_the_choice(cx: &mut TestAppContext) {
     let (view, cx) = setup(cx, CONNECTED, None);
-    cx.simulate_keystrokes("cmd-,");
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-,"));
     cx.run_until_parked();
     for _ in 0..3 {
         cx.executor()
@@ -158,6 +164,6 @@ fn a_user_theme_with_svg_ornaments_renders(cx: &mut TestAppContext) {
         assert!(v.config_problems.is_empty(), "{:?}", v.config_problems);
     });
     frame(cx);
-    cx.simulate_keystrokes("cmd-r");
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-r"));
     frame(cx);
 }

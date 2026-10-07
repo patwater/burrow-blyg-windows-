@@ -1,13 +1,14 @@
 //! The documentation site's shortcut table (`site/src/generated/keybindings.md`)
-//! is generated from `keymap::table()`, the same table that binds the keys and
-//! builds the menus and buttons, so it can't drift.
+//! is generated from `keymap::mac_table()`, the same table that binds the keys
+//! and builds the menus and buttons, so it can't drift. It documents the macOS
+//! spelling on every platform (Windows respells `cmd` as `ctrl` when binding).
 //!
 //! This test fails when the checked-in file is out of date. Regenerate it with
 //! `scripts/gen-docs.sh` (which runs it with `BLYGGER_UPDATE_DOCS=1`).
 
 use std::path::PathBuf;
 
-use crate::keymap::{Scope, glyphs, table};
+use crate::keymap::{Scope, mac_glyphs, mac_table};
 
 fn doc_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../site/src/generated/keybindings.md")
@@ -17,9 +18,9 @@ fn cell(s: &str) -> String {
     s.replace('|', "\\|")
 }
 
-/// `glyphs`, with arrow keys drawn as arrows.
+/// `mac_glyphs`, with arrow keys drawn as arrows.
 fn key(k: &str) -> String {
-    glyphs(k)
+    mac_glyphs(k)
         .replace("RIGHT", "→")
         .replace("LEFT", "←")
         .replace("UP", "↑")
@@ -40,7 +41,7 @@ fn render() -> String {
         ),
         (Scope::Browser, "In the browser pane"),
     ];
-    let rows = table();
+    let rows = mac_table();
     for (scope, heading) in groups {
         let keyed: Vec<_> = rows
             .iter()

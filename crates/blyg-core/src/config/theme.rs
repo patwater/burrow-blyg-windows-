@@ -1802,7 +1802,8 @@ mod tests {
                 .contains("can't go in marker.new")
         );
         // `~/` is the home directory.
-        let home = std::env::var("HOME").unwrap_or_default();
+        // `HOME`, or `USERPROFILE` on Windows.
+        let home = crate::config::paths::home_var().unwrap_or_default();
         let e =
             parse_ornament("svg(~/no-such-dir-xyz/a.svg)", Slot::EmptyArt, dir.path()).unwrap_err();
         assert!(!home.is_empty() && e.contains("no-such-dir-xyz"), "{e}");

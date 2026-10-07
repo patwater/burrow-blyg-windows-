@@ -691,7 +691,13 @@ mod tests {
             }
         }
         assert_eq!(t.get("portolan").font_writing.unwrap().family, "ETBembo");
-        assert_eq!(t.get("fortress").font_ui.unwrap().family, "Menlo");
+        // Windows has no Menlo: the theme gets its substitute.
+        let menlo = if cfg!(target_os = "windows") {
+            "Consolas"
+        } else {
+            "Menlo"
+        };
+        assert_eq!(t.get("fortress").font_ui.unwrap().family, menlo);
         let groups = t.grouped();
         let names = |f: usize| groups[f].1.iter().map(|t| t.id.clone()).collect::<Vec<_>>();
         assert_eq!(names(0), ["light", "dark"]);

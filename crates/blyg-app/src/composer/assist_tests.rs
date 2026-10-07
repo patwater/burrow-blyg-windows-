@@ -186,7 +186,7 @@ fn emails_pastes_and_code_never_open_it(cx: &mut TestAppContext) {
     assert_eq!(labels(&view, cx), None, "an email address");
     cx.simulate_input(" ");
     cx.write_to_clipboard(ClipboardItem::new_string("@".into()));
-    cx.simulate_keystrokes("cmd-v");
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-v"));
     cx.run_until_parked();
     assert_eq!(labels(&view, cx), None, "a paste");
     assert_eq!(text(&view, cx), format!("{before}ada@ @"));

@@ -454,7 +454,13 @@ fn the_reader_takes_the_themes_writing_font() {
     assert!(css("Literata").is_empty());
     assert!(super::reader::text_font_css(None).is_empty());
     let ny = css("New York");
-    assert!(!ny.contains("@font-face") && ny.contains("\"New York\", ui-serif"));
+    // Windows has no New York: it goes by its substitute's name.
+    let named = if cfg!(target_os = "windows") {
+        "body { font-family: \"Georgia\", Literata"
+    } else {
+        "\"New York\", ui-serif"
+    };
+    assert!(!ny.contains("@font-face") && ny.contains(named), "{ny}");
     let reader = super::reader::reader_css(17.);
     for rule in [
         "var(--quote-bg",

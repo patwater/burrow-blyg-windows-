@@ -366,7 +366,7 @@ mod ui {
     fn cmd_shift_n_toggles_and_esc_closes(cx: &mut TestAppContext) {
         let (view, fake, _, cx) = setup(cx);
         let before = fake.items().len();
-        cx.simulate_keystrokes("cmd-shift-n");
+        cx.simulate_keystrokes(&crate::keymap::keys("cmd-shift-n"));
         settle(cx);
         assert!(is_open(&view, cx));
         assert!(cx.debug_bounds("notes-drawer").is_some(), "drawn");
@@ -377,13 +377,13 @@ mod ui {
         settle(cx);
         assert_eq!(notes_text(&view, cx), "# Reading notes\n\nbenches, again");
         // ⇧⌘N again: slides back (still drawn while it slides).
-        cx.simulate_keystrokes("cmd-shift-n");
+        cx.simulate_keystrokes(&crate::keymap::keys("cmd-shift-n"));
         settle(cx);
         assert!(!is_open(&view, cx));
         slide_out(cx);
         assert!(cx.debug_bounds("notes-drawer").is_none(), "gone");
         // esc with the drawer's editor focused closes it too.
-        cx.simulate_keystrokes("cmd-shift-n");
+        cx.simulate_keystrokes(&crate::keymap::keys("cmd-shift-n"));
         settle(cx);
         assert!(is_open(&view, cx));
         cx.simulate_keystrokes("escape");
@@ -398,7 +398,7 @@ mod ui {
     #[gpui_kit::test]
     fn the_notes_are_a_real_scratch_note(cx: &mut TestAppContext) {
         let (view, fake, _, cx) = setup(cx);
-        cx.simulate_keystrokes("cmd-shift-n");
+        cx.simulate_keystrokes(&crate::keymap::keys("cmd-shift-n"));
         settle(cx);
         cx.simulate_input("a thought about gardens");
         settle(cx);
@@ -417,7 +417,7 @@ mod ui {
         // Closed and reopened: the same note, the same text.
         cx.simulate_keystrokes("escape");
         slide_out(cx);
-        cx.simulate_keystrokes("cmd-shift-n");
+        cx.simulate_keystrokes(&crate::keymap::keys("cmd-shift-n"));
         settle(cx);
         assert_eq!(stored(&view, &fake, cx).local_id, it.local_id);
         assert_eq!(notes_text(&view, cx), it.content_md);
@@ -426,7 +426,7 @@ mod ui {
     #[gpui_kit::test]
     fn a_new_page_leaves_the_old_one_in_posts(cx: &mut TestAppContext) {
         let (view, fake, _, cx) = setup(cx);
-        cx.simulate_keystrokes("cmd-shift-n");
+        cx.simulate_keystrokes(&crate::keymap::keys("cmd-shift-n"));
         cx.simulate_input("first page");
         settle(cx);
         let first = stored(&view, &fake, cx).local_id;
@@ -447,11 +447,11 @@ mod ui {
         // Something else open in the editor: ⌘D must not touch it.
         let other = fake.create_scratch(Kind::Fragment, "not these").unwrap();
         view.update_in(cx, |v, window, cx| v.open(&other, window, cx));
-        cx.simulate_keystrokes("cmd-shift-n");
+        cx.simulate_keystrokes(&crate::keymap::keys("cmd-shift-n"));
         cx.simulate_input("draft me");
         settle(cx);
         let id = stored(&view, &fake, cx).local_id;
-        cx.simulate_keystrokes("cmd-d");
+        cx.simulate_keystrokes(&crate::keymap::keys("cmd-d"));
         settle(cx);
         assert_eq!(fake.item(&id).unwrap().status, Status::Draft);
         assert_eq!(fake.item(&other).unwrap().status, Status::Scratch);
@@ -507,7 +507,7 @@ mod ui {
     #[gpui_kit::test]
     fn a_fragment_note_gets_links_not_quotes(cx: &mut TestAppContext) {
         let (view, fake, _, cx) = setup(cx);
-        cx.simulate_keystrokes("cmd-shift-n");
+        cx.simulate_keystrokes(&crate::keymap::keys("cmd-shift-n"));
         cx.simulate_input("x");
         settle(cx);
         let id = stored(&view, &fake, cx).local_id;
@@ -708,7 +708,7 @@ mod ui {
         settle(cx);
         assert!(view.read_with(cx, |v, _| v.reading.opened.is_some()));
         // Open: esc is the drawer's; the side pane stays.
-        cx.simulate_keystrokes("cmd-shift-n");
+        cx.simulate_keystrokes(&crate::keymap::keys("cmd-shift-n"));
         settle(cx);
         cx.simulate_keystrokes("escape");
         settle(cx);

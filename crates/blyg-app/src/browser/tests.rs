@@ -292,7 +292,7 @@ mod pane {
         });
         assert!(!log.borrow().visible, "hidden when closed");
         // ⇧⌘B brings it back without loading anything.
-        cx.simulate_keystrokes("cmd-shift-b");
+        cx.simulate_keystrokes(&crate::keymap::keys("cmd-shift-b"));
         cx.run_until_parked();
         view.read_with(cx, |v, _| assert!(v.browser.open));
         assert_eq!(log.borrow().loads.len(), 2);
@@ -316,7 +316,7 @@ mod pane {
         assert_eq!(log.borrow().dropped, 1);
         view.read_with(cx, |v, _| assert!(!v.browser.alive()));
         // Reopening makes a new one and loads the last page again.
-        cx.simulate_keystrokes("cmd-shift-b");
+        cx.simulate_keystrokes(&crate::keymap::keys("cmd-shift-b"));
         cx.run_until_parked();
         assert_eq!(log.borrow().created, 2);
         assert_eq!(
@@ -367,7 +367,7 @@ mod pane {
             cx.run_until_parked();
         };
         // ⌘2: the preview beside the editor.
-        cx.simulate_keystrokes("cmd-2");
+        cx.simulate_keystrokes(&crate::keymap::keys("cmd-2"));
         frame(cx);
         let full_w = preview.borrow().frames.last().unwrap().size.width;
         assert!(preview.borrow().visible);

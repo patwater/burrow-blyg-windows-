@@ -75,7 +75,7 @@ fn opened(view: &Entity<MainView>, cx: &mut VisualTestContext) -> Option<String>
 #[gpui_kit::test]
 fn the_stream_is_the_default_and_jk_select_without_opening(cx: &mut TestAppContext) {
     let (view, fake, cx) = setup(cx);
-    cx.simulate_keystrokes("cmd-r");
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-r"));
     settle(cx);
     view.read_with(cx, |v, _| {
         assert_eq!(v.reading.view, View::Reading);
@@ -104,7 +104,7 @@ fn the_stream_is_the_default_and_jk_select_without_opening(cx: &mut TestAppConte
 #[gpui_kit::test]
 fn enter_opens_the_side_pane_and_esc_closes_it(cx: &mut TestAppContext) {
     let (view, fake, cx) = setup(cx);
-    cx.simulate_keystrokes("cmd-r");
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-r"));
     settle(cx);
     cx.simulate_keystrokes("j j");
     settle(cx);
@@ -148,7 +148,7 @@ fn enter_opens_the_side_pane_and_esc_closes_it(cx: &mut TestAppContext) {
 #[gpui_kit::test]
 fn read_more_opens_the_thread(cx: &mut TestAppContext) {
     let (view, _, cx) = setup(cx);
-    cx.simulate_keystrokes("cmd-r");
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-r"));
     settle(cx);
     let b = cx
         .debug_bounds("stream-read-more-1")
@@ -164,7 +164,7 @@ fn read_more_opens_the_thread(cx: &mut TestAppContext) {
 #[gpui_kit::test]
 fn posts_on_screen_for_a_second_are_read(cx: &mut TestAppContext) {
     let (view, fake, cx) = setup(cx);
-    cx.simulate_keystrokes("cmd-r");
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-r"));
     settle(cx);
     assert_eq!(read_version(&fake, ADA_FINISHED), None);
     let t0 = Instant::now();
@@ -211,7 +211,7 @@ fn posts_on_screen_for_a_second_are_read(cx: &mut TestAppContext) {
 #[gpui_kit::test]
 fn search_filters_the_stream(cx: &mut TestAppContext) {
     let (view, _, cx) = setup(cx);
-    cx.simulate_keystrokes("cmd-r");
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-r"));
     settle(cx);
     cx.simulate_keystrokes("/");
     settle(cx);
@@ -238,7 +238,7 @@ fn search_filters_the_stream(cx: &mut TestAppContext) {
 #[gpui_kit::test]
 fn the_toggle_and_its_keys_switch_modes(cx: &mut TestAppContext) {
     let (view, _, cx) = setup(cx);
-    cx.simulate_keystrokes("alt-cmd-2");
+    cx.simulate_keystrokes(&crate::keymap::keys("alt-cmd-2"));
     settle(cx);
     view.read_with(cx, |v, _| {
         assert_eq!(v.reading.view, View::Reading, "from Posts, too");
@@ -248,7 +248,7 @@ fn the_toggle_and_its_keys_switch_modes(cx: &mut TestAppContext) {
     cx.simulate_keystrokes("down");
     settle(cx);
     assert_eq!(opened(&view, cx).as_deref(), Some(RUE_TRUST));
-    cx.simulate_keystrokes("alt-cmd-1");
+    cx.simulate_keystrokes(&crate::keymap::keys("alt-cmd-1"));
     settle(cx);
     view.read_with(cx, |v, _| assert_eq!(v.reading.mode, ReadMode::Stream));
     assert_eq!(
@@ -265,7 +265,7 @@ fn the_toggle_and_its_keys_switch_modes(cx: &mut TestAppContext) {
 #[gpui_kit::test]
 fn the_selected_posts_actions_work_without_opening_it(cx: &mut TestAppContext) {
     let (view, fake, cx) = setup(cx);
-    cx.simulate_keystrokes("cmd-r");
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-r"));
     settle(cx);
     cx.simulate_keystrokes("j");
     settle(cx);
@@ -295,7 +295,7 @@ fn on_screen_version(view: &Entity<MainView>, cx: &mut VisualTestContext) -> Opt
 #[gpui_kit::test]
 fn a_held_original_opens_at_once_at_the_quoted_pin(cx: &mut TestAppContext) {
     let (view, fake, cx) = setup(cx);
-    cx.simulate_keystrokes("cmd-r");
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-r"));
     settle(cx);
     view.update_in(cx, |v, window, cx| {
         v.open_original(ADA.into(), ADA_TIDES.into(), Some(1), window, cx)
@@ -323,7 +323,7 @@ fn a_held_original_opens_at_once_at_the_quoted_pin(cx: &mut TestAppContext) {
 #[gpui_kit::test]
 fn an_original_nobody_follows_is_fetched_with_a_subscribe_action(cx: &mut TestAppContext) {
     let (view, fake, cx) = setup(cx);
-    cx.simulate_keystrokes("cmd-r");
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-r"));
     settle(cx);
     let reads = |fake: &FakeBackend| -> Vec<_> {
         fake.reading()
@@ -363,7 +363,7 @@ fn an_original_nobody_follows_is_fetched_with_a_subscribe_action(cx: &mut TestAp
 #[gpui_kit::test]
 fn the_lineage_lines_name_opens_the_profile_and_the_rest_the_post(cx: &mut TestAppContext) {
     let (view, _, cx) = setup(cx);
-    cx.simulate_keystrokes("alt-cmd-2");
+    cx.simulate_keystrokes(&crate::keymap::keys("alt-cmd-2"));
     settle(cx);
     let key = view.read_with(cx, |v, _| {
         v.reading
@@ -393,7 +393,7 @@ fn the_lineage_lines_name_opens_the_profile_and_the_rest_the_post(cx: &mut TestA
 #[gpui_kit::test]
 fn responses_seen_in_the_network_are_listed_in_the_pane(cx: &mut TestAppContext) {
     let (view, _, cx) = setup(cx);
-    cx.simulate_keystrokes("cmd-r");
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-r"));
     settle(cx);
     // The stream marks the post, without a number.
     assert!(view.read_with(cx, |v, _| v.has_responses(LIN, LIN_BENCH)));
@@ -482,7 +482,7 @@ fn lineage(view: &Entity<MainView>, cx: &mut VisualTestContext) -> Option<Lineag
 fn lineage_walks_one_step_at_a_time_and_rings_the_actions(cx: &mut TestAppContext) {
     use super::lineage_vm::Act;
     let (view, _, cx) = setup(cx);
-    cx.simulate_keystrokes("cmd-r");
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-r"));
     settle(cx);
     let ix = view.read_with(cx, |v, _| {
         v.reading
@@ -495,7 +495,7 @@ fn lineage_walks_one_step_at_a_time_and_rings_the_actions(cx: &mut TestAppContex
     // The reply's glyph is drawn: it draws on the bench post.
     assert!(cx.debug_bounds("lineage-glyph").is_some());
 
-    cx.simulate_keystrokes("cmd-j");
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-j"));
     settle(cx);
     let (centre, ups, _, ring, _) = lineage(&view, cx).expect("⌘J opens it");
     assert_eq!(centre, ADA_REPLY);
@@ -546,7 +546,7 @@ fn lineage_walks_one_step_at_a_time_and_rings_the_actions(cx: &mut TestAppContex
     assert!(lineage(&view, cx).is_none(), "esc closes the sheet");
 
     // Link post from the ring makes a draft that links the reply.
-    cx.simulate_keystrokes("cmd-j");
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-j"));
     settle(cx);
     cx.simulate_keystrokes("space l enter");
     settle(cx);

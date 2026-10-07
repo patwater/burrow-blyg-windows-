@@ -310,9 +310,28 @@ impl Prefs {
     }
 }
 
-/// A font by label or family name, ignoring case.
+/// The macOS system fonts `system` swaps on Windows, by their macOS label or
+/// family, and what Windows uses instead: so a theme or a config file that
+/// names "Menlo" gets Consolas there.
+const WINDOWS_SUBSTITUTES: &[(&str, &str)] = &[
+    ("New York", "Georgia"),
+    ("Charter", "Cambria"),
+    ("SF Pro", "Segoe UI"),
+    (".SystemUIFont", "Segoe UI"),
+    ("Menlo", "Consolas"),
+];
+
+/// A font by label or family name, ignoring case. On Windows a macOS system
+/// font's name finds its substitute.
 pub fn find(list: &[FontChoice], name: &str) -> Option<FontChoice> {
-    let n = name.trim();
+    let mut n = name.trim();
+    if cfg!(target_os = "windows")
+        && let Some((_, win)) = WINDOWS_SUBSTITUTES
+            .iter()
+            .find(|(mac, _)| mac.eq_ignore_ascii_case(n))
+    {
+        n = win;
+    }
     list.iter()
         .find(|f| f.label.eq_ignore_ascii_case(n) || f.family.eq_ignore_ascii_case(n))
         .copied()
@@ -379,7 +398,7 @@ mod tests {
             "font-size = 99\ntheme = dark\nlayout = stacked\nfont-family-ui = menlo\n",
         );
         let menlo = if cfg!(target_os = "windows") {
-            "Inter" // no Menlo on Windows: the default
+            "Consolas" // no Menlo on Windows: its substitute
         } else {
             "Menlo"
         };
@@ -456,7 +475,13 @@ mod tests {
         let s = ConfigStore::in_memory("font-family-writing = Charter\n");
         let mut p = Prefs::from_config(s.config());
         p.adopt_theme_fonts(&themes.get("portolan"));
-        assert_eq!(p.writing().family, "Charter", "the user's setting wins");
+        // Windows has no Charter: the setting gets its substitute.
+        let charter = if cfg!(target_os = "windows") {
+            "Cambria"
+        } else {
+            "Charter"
+        };
+        assert_eq!(p.writing().family, charter, "the user's setting wins");
         assert_eq!(p.ui().family, "ETBembo");
         // Choosing a font in Settings writes it, even when it's the default.
         let old = Prefs::default();

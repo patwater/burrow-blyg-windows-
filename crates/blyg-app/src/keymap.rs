@@ -166,10 +166,17 @@ macro_rules! button {
     };
 }
 
-/// The one table. Order matters only for display. Keys are written in
-/// macOS terms; `platform_keys` respells them for Windows.
+/// The one table, as this platform binds it. Order matters only for
+/// display. Keys are written in macOS terms (`mac_table`); `platform_keys`
+/// respells them for Windows.
 pub fn table() -> Vec<Keybind> {
-    platform_keys(vec![
+    platform_keys(mac_table())
+}
+
+/// The table in macOS terms, unrespelled: what the documentation site's
+/// shortcut reference shows (`keymap_docs`).
+pub fn mac_table() -> Vec<Keybind> {
+    vec![
         kb!(
             "cmd-l",
             Main,
@@ -637,7 +644,7 @@ pub fn table() -> Vec<Keybind> {
             Some("Post › Quote Selection in Draft")
         ),
         // --- end notes ---
-    ])
+    ]
 }
 
 /// The table as this platform spells it. On Windows GPUI's `cmd` is the
@@ -926,6 +933,13 @@ pub fn windows_label(key: &str) -> String {
 /// `⌘⇧,` for `cmd-shift-,`.
 #[cfg(not(target_os = "windows"))]
 pub fn glyphs(key: &str) -> String {
+    mac_glyphs(key)
+}
+
+/// `⌘⇧,` for `cmd-shift-,` on every platform (the documentation site's
+/// shortcut reference describes the macOS app).
+#[cfg_attr(all(target_os = "windows", not(test)), allow(dead_code))]
+pub fn mac_glyphs(key: &str) -> String {
     if key.is_empty() {
         return "—".into();
     }
