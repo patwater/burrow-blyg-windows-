@@ -352,6 +352,37 @@ pub fn unresolved_warning(s: &Stats) -> Option<String> {
     })
 }
 
+/// How many `![[id]]` quote lines a fragment holds. They publish as literal
+/// text (only threads resolve quotes), so the status bar says why they don't
+/// render. Fenced code is skipped, as the thread renderer skips it.
+pub fn fragment_quote_lines(md: &str) -> usize {
+    if !md.contains("![[") {
+        return 0;
+    }
+    let mut fence: Option<&str> = None;
+    let mut n = 0;
+    for line in md.lines() {
+        let t = line.trim();
+        if let Some(f) = fence {
+            if t.starts_with(f) {
+                fence = None;
+            }
+            continue;
+        }
+        if t.starts_with("```") {
+            fence = Some("```");
+        } else if t.starts_with("~~~") {
+            fence = Some("~~~");
+        } else if let Some(id) = t.strip_prefix("![[").and_then(|r| r.strip_suffix("]]"))
+            && id.len() == 26
+            && id.chars().all(|c| blyg_render::ID_ALPHABET.contains(c))
+        {
+            n += 1;
+        }
+    }
+    n
+}
+
 fn render_opts(base_url: Option<&str>, item: Option<&Item>) -> RenderOpts {
     RenderOpts {
         mount: base_url
@@ -686,8 +717,12 @@ impl MainView {
     }
 
     /// The status bar's preview segment (preview modes only).
-    pub(super) fn studio_status(&self, p: &Palette) -> Option<AnyElement> {
-        if !self.studio.view.preview_visible() || self.current.is_none() {
+    pub(super) fn studio_status(&self, p: &Palette, cx: &mut Context<Self>) -> Option<AnyElement> {
+        let item = self.current.as_ref()?;
+        if item.kind == blyg_core::Kind::Fragment {
+            return self.fragment_quote_hint(item, p, cx);
+        }
+        if !self.studio.view.preview_visible() {
             return None;
         }
         let stats = self.studio.stats()?;
@@ -705,6 +740,76 @@ impl MainView {
                 .when_some(warn, |d, w| d.child(div().text_color(p.warn).child(w)))
                 .into_any_element(),
         )
+    }
+
+    /// A fragment with `![[id]]` lines: say they only resolve in threads, and
+    /// offer the way there. A draft becomes a thread in place; a published
+    /// fragment can't change kind, so its text is copied into a new thread.
+    fn fragment_quote_hint(
+        &self,
+        item: &Item,
+        p: &Palette,
+        cx: &mut Context<Self>,
+    ) -> Option<AnyElement> {
+        let n = fragment_quote_lines(&self.editor.read(cx).value());
+        if n == 0 {
+            return None;
+        }
+        let convertible = item.version == 0
+            && matches!(
+                item.status,
+                blyg_core::Status::Draft | blyg_core::Status::Scratch
+            );
+        let what = if n == 1 { "Quotes" } else { "These quotes" };
+        let (label, tip) = if convertible {
+            (
+                format!("⚠ {what} only resolve in threads · make it a thread"),
+                "Turn this draft into a thread (⌘T), so ![[id]] lines become quotes",
+            )
+        } else {
+            (
+                format!("⚠ {what} only resolve in threads · copy into a new thread"),
+                "A published fragment can't become a thread. This starts a thread \
+                 draft with the same text and leaves the fragment as it is.",
+            )
+        };
+        let warn = p.warn;
+        let ink = p.ink;
+        Some(
+            div()
+                .id("fragment-quotes")
+                .cursor_pointer()
+                .text_color(warn)
+                .hover(move |s| s.text_color(ink))
+                .tooltip(move |_, cx| cx.new(|_| crate::app::reading::Tip(tip.into())).into())
+                .on_click(cx.listener(move |this, _, window, cx| {
+                    if convertible {
+                        this.toggle_kind_now(window, cx);
+                    } else {
+                        this.copy_into_new_thread(window, cx);
+                    }
+                }))
+                .child(label)
+                .into_any_element(),
+        )
+    }
+
+    /// A new thread draft holding the current text, opened in the editor.
+    fn copy_into_new_thread(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let md = self.editor.read(cx).value().to_string();
+        match self.backend.create_draft(blyg_core::Kind::Thread, &md) {
+            Ok(id) => {
+                let results = self.backend.search("");
+                self.list.refresh(results);
+                self.open(&id, window, cx);
+                self.show_toast(
+                    "New thread draft with the same text; the fragment is unchanged",
+                    None,
+                    cx,
+                );
+            }
+            Err(e) => self.show_toast(format!("Couldn't start a thread: {e}"), None, cx),
+        }
     }
 
     /// The publish sheet's warning about quotes publish would refuse.
@@ -756,7 +861,26 @@ impl MainView {
 
 #[cfg(test)]
 mod tests {
-    use super::{Stats, Studio, ViewMode, load_view, save_view, stats_label, unresolved_warning};
+    use super::{
+        Stats, Studio, ViewMode, fragment_quote_lines, load_view, save_view, stats_label,
+        unresolved_warning,
+    };
+
+    #[test]
+    fn fragment_quote_lines_counts_directive_lines_only() {
+        let id = "0123456789abcdefghjkmnpqrs";
+        assert_eq!(fragment_quote_lines("No quotes here."), 0);
+        assert_eq!(fragment_quote_lines(&format!("Intro\n\n![[{id}]]\n")), 1);
+        assert_eq!(
+            fragment_quote_lines(&format!("  ![[{id}]]  \n![[{id}]]")),
+            2
+        );
+        // Inline, wrong length, wrong alphabet, or fenced: not a quote line.
+        assert_eq!(fragment_quote_lines(&format!("see ![[{id}]] here")), 0);
+        assert_eq!(fragment_quote_lines("![[short]]"), 0);
+        assert_eq!(fragment_quote_lines("![[0123456789ABCDEFGHJKMNPQRS]]"), 0);
+        assert_eq!(fragment_quote_lines(&format!("```\n![[{id}]]\n```\n")), 0);
+    }
 
     #[test]
     fn modes() {

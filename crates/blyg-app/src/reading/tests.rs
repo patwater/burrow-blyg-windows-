@@ -111,6 +111,21 @@ fn cmd_r_shows_reading_edited_on_top_tombstones_hidden(cx: &mut TestAppContext) 
 }
 
 #[gpui_kit::test]
+fn enter_opens_the_selected_subscription(cx: &mut TestAppContext) {
+    let (view, _fake, cx) = setup(cx);
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-shift-s"));
+    cx.run_until_parked();
+    cx.simulate_keystrokes("down");
+    cx.run_until_parked();
+    let origin = view.read_with(cx, |v, _| v.reading.subs[v.reading.sub_sel].origin.clone());
+    cx.simulate_keystrokes("enter");
+    settle(cx);
+    view.read_with(cx, |v, _| {
+        assert_eq!(v.profiles.page().map(|p| p.url.clone()), Some(origin));
+    });
+}
+
+#[gpui_kit::test]
 fn opening_marks_read_and_arrows_move(cx: &mut TestAppContext) {
     let (view, fake, cx) = setup(cx);
     cx.simulate_keystrokes(&crate::keymap::keys("cmd-r"));

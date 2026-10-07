@@ -2094,7 +2094,7 @@ impl MainView {
                 )
             })
             // --- full editor ---
-            .children(self.studio_status(&p).filter(|_| screen.post))
+            .children(self.studio_status(&p, cx).filter(|_| screen.post))
             .child(
                 div()
                     .flex_1()
