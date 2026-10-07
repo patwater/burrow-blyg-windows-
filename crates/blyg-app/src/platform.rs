@@ -12,7 +12,7 @@ pub fn is_bundled(exe: &std::path::Path) -> bool {
 }
 
 /// A bare `cargo run` binary has no bundle, so the Dock shows a generic
-/// icon. Give it ours. Launched from Blygger.app, the bundle's .icns is
+/// icon. Give it ours. Launched from Burrow.app, the bundle's .icns is
 /// already in use and this does nothing.
 #[cfg(target_os = "macos")]
 pub fn set_dock_icon_unless_bundled() {
@@ -81,7 +81,7 @@ mod tests {
     fn icon_is_an_embedded_png() {
         assert!(super::ICON_PNG.starts_with(b"\x89PNG\r\n\x1a\n"));
         assert!(super::is_bundled(std::path::Path::new(
-            "/Applications/Blygger.app/Contents/MacOS/blygger"
+            "/Applications/Burrow.app/Contents/MacOS/blygger"
         )));
         assert!(!super::is_bundled(std::path::Path::new(
             "/tmp/target/release/blygger"

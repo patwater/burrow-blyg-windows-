@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Burrow Platform Ports</title>
+<style>
+:root{
+  --bg:#f7f6f3;--card:#ffffff;--ink:#1d1d1f;--muted:#5f6368;--line:#e2e0da;
+  --accent:#2f5bd3;--ok:#1e7f4f;--okbg:#e3f4ea;--warn:#9a5b00;--warnbg:#fdf0d9;
+  --bad:#b3261e;--badbg:#fbe4e2;--inf:#6b3fb5;--infbg:#efe7fb;--codebg:#f1f0ec;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#161618;--card:#202023;--ink:#ececec;--muted:#a3a3a8;--line:#333338;
+  --accent:#7aa2ff;--ok:#6fd49c;--okbg:#17321f;--warn:#f0b75e;--warnbg:#3a2b12;
+  --bad:#ff8a80;--badbg:#3d1a18;--inf:#c4a6ff;--infbg:#2a2140;--codebg:#2a2a2e;}}
+:root[data-theme="dark"]{
+  --bg:#161618;--card:#202023;--ink:#ececec;--muted:#a3a3a8;--line:#333338;
+  --accent:#7aa2ff;--ok:#6fd49c;--okbg:#17321f;--warn:#f0b75e;--warnbg:#3a2b12;
+  --bad:#ff8a80;--badbg:#3d1a18;--inf:#c4a6ff;--infbg:#2a2140;--codebg:#2a2a2e;}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;padding:0 16px 260px}
+main{max-width:980px;margin:0 auto}
+header{padding:32px 0 8px}
+h1{font-size:28px;margin:0 0 6px}
+h2{font-size:22px;margin:0 0 4px}
+h3{font-size:16px;margin:18px 0 6px}
+p.lede{color:var(--muted);margin:0 0 12px}
+section{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:22px 22px 18px;margin:22px 0}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px}
+.card{border:1px solid var(--line);border-radius:10px;padding:12px 14px;background:var(--bg)}
+.card h4{margin:0 0 6px;font-size:15px}
+.badge{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.03em;padding:2px 7px;border-radius:999px;vertical-align:middle;margin-right:4px;text-transform:uppercase}
+.v{background:var(--okbg);color:var(--ok)} .i{background:var(--infbg);color:var(--inf)}
+.s{background:var(--okbg);color:var(--ok)} .m{background:var(--warnbg);color:var(--warn)} .l{background:var(--badbg);color:var(--bad)}
+pre,code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px}
+pre{background:var(--codebg);padding:10px 12px;border-radius:8px;overflow-x:auto;white-space:pre-wrap;word-break:break-word;margin:8px 0}
+code{background:var(--codebg);padding:1px 4px;border-radius:4px}
+table{width:100%;border-collapse:collapse;font-size:13.5px;margin:8px 0}
+th,td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--muted);font-weight:600}
+.tablewrap{overflow-x:auto}
+a{color:var(--accent)}
+ul{padding-left:20px;margin:6px 0}
+.reply{margin-top:16px}
+.reply label{display:block;font-size:12px;color:var(--muted);margin-bottom:4px}
+textarea{width:100%;min-height:72px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);padding:8px 10px;font:inherit;resize:vertical}
+#float{position:fixed;right:16px;bottom:16px;width:min(380px,calc(100vw - 32px));background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:0 8px 28px rgba(0,0,0,.18);padding:10px 12px;z-index:10}
+#float textarea{min-height:64px}
+#float .row{display:flex;gap:8px;align-items:center;margin-top:8px}
+button{background:var(--accent);color:#fff;border:0;border-radius:8px;padding:8px 12px;font:inherit;font-weight:600;cursor:pointer}
+#status{font-size:12px;color:var(--muted)}
+.callout{border-left:4px solid var(--accent);padding:8px 12px;background:var(--bg);border-radius:0 8px 8px 0;margin:10px 0}
+.legend{font-size:13px;color:var(--muted)}
+</style>
+</head>
+<body>
+<main>
+<header>
+  <h1>Burrow on Windows and in the browser</h1>
+  <p class="lede">Research on the <code>studio-0.32</code> worktree, 2026-10-06. Toolchain 1.98.1, gpui-kit 0.6.6 → gpui-pre 0.3.6 (Zed snapshot <code>bcf6582</code>).</p>
+  <p class="legend"><span class="badge v">verified</span> I ran it or read it in source. <span class="badge i">inference</span> My judgement or extrapolation. Effort: <span class="badge s">small</span> under 2 days, <span class="badge m">medium</span> about 1 week, <span class="badge l">large</span> several weeks.</p>
+</header>
+
+<!-- ============ 1 WINDOWS ============ -->
+<section data-title="1. Windows">
+<h2>1. Windows: feasible. GPUI already supports it; our own macOS code is the work.</h2>
+<p class="lede">The UI framework is ready. Most of the work is in Burrow's three WebKit surfaces, the updater, and packaging.</p>
+
+<h3>GPUI's Windows backend</h3>
+<div class="grid">
+  <div class="card"><h4><span class="badge v">verified</span> The pinned GPUI ships a Windows backend</h4>
+  <code>gpui-pre-platform</code> selects <code>gpui-pre-windows</code> under <code>cfg(target_os="windows")</code>. It is 12,769 lines of Rust: DirectX 11 renderer, DirectWrite text, IME, clipboard, dialogs, credentials, notifications. For comparison, the macOS backend is 10,853 lines.</div>
+  <div class="card"><h4><span class="badge v">verified</span> Zed ships it as stable</h4>
+  Zed 1.0 (2026-04-29) ships stable on Windows, Linux and macOS. Sources: <a href="https://zed.dev/blog/zed-1-0">zed.dev/blog/zed-1-0</a>, <a href="https://linuxiac.com/zed-code-editor-hits-1-0-with-gpu-accelerated-ui/">linuxiac</a>, and earlier friction in <a href="https://www.theregister.com/2025/08/22/everything_is_different_on_windows/">The Register, 2025-08</a>.</div>
+  <div class="card"><h4><span class="badge v">verified</span> Release builds need fxc.exe</h4>
+  <code>gpui-pre-windows/build.rs</code> compiles the HLSL shaders with <code>fxc.exe</code> in non-debug builds, and <code>gpui-pre/build.rs</code> embeds a manifest with <code>llvm-rc</code>/<code>rc.exe</code>. Plan release builds on a <code>windows-latest</code> CI runner, not a cross build from the Mac.</div>
+</div>
+
+<h3>Cross-check results (<code>cargo check --target x86_64-pc-windows-msvc</code>)</h3>
+<p><span class="badge v">verified</span> I added the <code>x86_64-pc-windows-msvc</code> and <code>-gnu</code> std targets. These are small downloads. cargo-xwin, mingw and zig aren't installed, and I didn't install them. A plain check stops in the C build scripts:</p>
+<pre>blyg-render: error occurred in cc-rs: failed to find tool "lib.exe"   (psm, via markdown-it → stacker)
+blyg-core / blyg-ai / blyg-app:
+  ring@0.17.14: include/ring-core/check.h:27:11: fatal error: 'assert.h' file not found
+  (no MSVC CRT/SDK headers on macOS; libsqlite3-sys bundled would hit the same wall)</pre>
+<p>To get past the C code to the Rust code, I put a stub C compiler, archiver and <code>llvm-rc</code> in the scratchpad. They only touch their output files. That makes the result a typecheck, not a build.</p>
+<div class="tablewrap"><table>
+<tr><th>Crate</th><th>Result with stub C tools</th></tr>
+<tr><td>blyg-render, blyg-core, blyg-ai</td><td><span class="badge v">verified</span> <b>0 errors.</b> <code>Finished `dev` profile</code></td></tr>
+<tr><td>blyg-app</td><td><span class="badge v">verified</span> Stops first at <code>objc2</code>. It's an unconditional dependency in <code>crates/blyg-app/Cargo.toml</code>:
+<pre>error: `objc2` only works on Apple platforms. Pass `--target aarch64-apple-darwin` or similar to compile for macOS.</pre>
+I moved <code>objc2</code> under the macOS target table (temporarily, then reverted). After that there are <b>12 errors</b>:
+<pre>platform.rs:18,19          objc2 (dock icon)
+about/mod.rs:166,167       objc2
+main.rs:246,250,252        objc2 (orderFrontRegardless on the NSView's window)
+update/install.rs:11,12    std::os::unix::{fs::MetadataExt, process::CommandExt}
+update/install.rs:142      Metadata::dev()
+update/install.rs:299      Command::process_group()</pre>
+Everything else already compiles, because the WebKit pieces are behind <code>cfg(target_os="macos")</code> with stubs.</td></tr>
+</table></div>
+
+<h3>macOS-only code and its Windows equivalent</h3>
+<div class="tablewrap"><table>
+<tr><th>Area / files</th><th>Today (macOS)</th><th>Windows equivalent</th><th>Effort</th></tr>
+<tr><td><b>Tokens</b><br><code>blyg-core/Cargo.toml</code>, <code>config/tokens.rs</code></td><td><code>keyring = { features = ["apple-native"] }</code></td><td>Add <code>windows-native</code> (Credential Manager). <span class="badge v">verified</span> <b>Trap:</b> keyring 3.6 falls back to the in-memory <b>mock</b> store on Windows without that feature (<code>lib.rs:296</code>). Tokens would compile, then vanish on restart.</td><td><span class="badge s">small</span></td></tr>
+<tr><td><b>Paths</b><br><code>config/paths.rs</code>, <code>blyg-ai/src/cli.rs</code></td><td><code>$HOME</code>, <code>~/.config/blygger/config</code>, <code>~/Library/Application Support/org.blygger.desktop</code></td><td><code>%USERPROFILE%</code> (HOME is usually unset, so the code falls back to <code>.</code>). Data in <code>%APPDATA%\org.blygger.desktop</code> (or <code>%LOCALAPPDATA%</code> for the db). Keep <code>~/.config/blygger/config</code> as the Ghostty-style first choice. Use <code>dirs</code> or an explicit cfg.</td><td><span class="badge s">small</span></td></tr>
+<tr><td><b>objc2 one-offs</b><br><code>platform.rs</code>, <code>main.rs:246</code>, <code>about/mod.rs:166</code></td><td>Dock icon, <code>orderFrontRegardless</code>, About panel</td><td>Gate them to macOS. The window icon comes from the .exe resource, and GPUI's <code>activate_window</code> brings the window forward.</td><td><span class="badge s">small</span></td></tr>
+<tr><td><b>Opening things</b><br><code>settings.rs:181</code>, <code>about/mod.rs:191</code>, <code>blyg-ai/src/lib.rs:37</code></td><td><code>/usr/bin/open</code></td><td><code>cx.open_url</code> / <code>reveal_path</code> (GPUI has both on Windows), or <code>explorer.exe</code> / <code>ShellExecuteW</code>.</td><td><span class="badge s">small</span></td></tr>
+<tr><td><b>Key bindings</b><br><code>keymap.rs</code> (83 <code>cmd-</code> bindings), menus</td><td><code>cmd-…</code></td><td><span class="badge v">verified</span> GPUI's <code>cmd</code> is the platform key (Win key on Windows). <code>secondary-</code> maps to cmd on macOS and ctrl elsewhere (<code>keystroke.rs:483</code>). So: switch to <code>secondary-</code>, check for clashes with ctrl bindings, and swap the ⌘ glyphs in the menus and docs for "Ctrl+".</td><td><span class="badge m">medium</span></td></tr>
+<tr><td><b>Preview / reader WebView</b><br><code>studio/webview.rs</code></td><td>wry 0.57 + <code>WebViewExtMacOS</code>, NSAppearance, firstResponder probing</td><td>wry's Windows backend is <b>WebView2</b>. <code>build_as_child</code> works with a Win32 HWND from raw-window-handle. Rewrite the macOS-only glue (focus test, appearance) for WebView2. On non-mac today the factory returns <i>"The preview isn't available here."</i> <span class="badge v">verified</span></td><td><span class="badge m">medium</span></td></tr>
+<tr><td><b>In-app browser + blocking</b><br><code>browser/surface.rs</code>, <code>rules.rs</code>, <code>driver.rs</code></td><td>WKWebView, WKContentRuleListStore (uBO lists compiled to WebKit JSON by <code>adblock</code>), custom navigation delegate built with <code>ClassBuilder</code></td><td>WebView2 has no declarative content-blocker. Use <code>WebResourceRequested</code> plus <code>adblock</code>'s network matcher (the crate is designed for this), and <code>NavigationStarting</code> for the policy. That's a different engine path, so cosmetic filtering needs injected CSS.</td><td><span class="badge l">large</span></td></tr>
+<tr><td><b>Spellcheck</b><br><code>composer/spell_mac.rs</code></td><td>NSSpellChecker</td><td>Windows <code>ISpellChecker</code> (Win8+) through the <code>windows</code> crate. Non-mac currently returns <code>None</code>, so it degrades without spellcheck. <span class="badge v">verified</span></td><td><span class="badge m">medium</span></td></tr>
+<tr><td><b>Quick-capture hotkey</b><br><code>capture.rs</code>, <code>prefs.rs</code></td><td>global-hotkey 0.8</td><td><span class="badge v">verified</span> global-hotkey has a <code>windows-sys</code> backend, so this works as is. Defaults need ctrl instead of cmd.</td><td><span class="badge s">small</span></td></tr>
+<tr><td><b>Updater</b><br><code>update/install.rs</code></td><td><code>ditto</code>, <code>plutil</code>, <code>codesign</code>, <code>/usr/bin/open -n</code>, unix <code>process_group</code>, <code>Metadata::dev</code></td><td>Keep the ed25519-signed manifest (portable). Replace install with zip extraction (the <code>zip</code> crate) and a swap-on-restart helper, because Windows locks a running .exe. Or ship MSIX/winget and drop in-place updates.</td><td><span class="badge m">medium</span></td></tr>
+<tr><td><b>Packaging / CI</b><br><code>scripts/bundle.sh</code>, <code>sign.sh</code>, <code>packaging/Info.plist.in</code>, <code>.icns</code>, <code>release.yml</code> (macos-latest)</td><td>.app/.dmg, ad-hoc signing</td><td>A <code>windows-latest</code> job (MSVC + fxc), .ico + version resource, zip or MSI (cargo-wix) or MSIX. Unsigned binaries trigger SmartScreen; Authenticode or Azure Trusted Signing costs money. The curl installer gets a PowerShell twin.</td><td><span class="badge m">medium</span></td></tr>
+<tr><td><b>Local AI CLIs</b><br><code>blyg-ai/src/cli.rs</code></td><td>Looks under <code>$HOME</code> for <code>claude</code>/<code>codex</code></td><td><code>%USERPROFILE%</code>, <code>%APPDATA%\npm\claude.cmd</code>, <code>.cmd</code>/<code>.exe</code> resolution.</td><td><span class="badge s">small</span></td></tr>
+</table></div>
+
+<div class="callout"><span class="badge i">inference</span> <b>Total: medium-large, about 2–4 focused weeks.</b> A "compiles and runs on Windows" build, with the preview and browser stubbed and tokens in Credential Manager, is about 2–3 days. WebView2 preview/reader parity is about a week. Ad-blocking browser parity is the long pole. A real Windows machine or VM is needed for UI testing; the cross-check above proves compilation only.</div>
+
+<div class="reply"><label>Reply on 1. Windows</label><textarea data-section="1. Windows" placeholder="Questions or decisions on the Windows port…"></textarea></div>
+</section>
+
+<!-- ============ 2 WASM ============ -->
+<section data-title="2. WASM / browser">
+<h2>2. WASM / browser: possible, with real costs. First decide what it's for.</h2>
+
+<h3>Does GPUI run on the web?</h3>
+<div class="grid">
+  <div class="card"><h4><span class="badge v">verified</span> Yes, and it's already in our lockfile</h4>
+  <code>gpui-pre-web 0.3.6</code> (Zed's <code>gpui_web</code>, 6,949 lines) is selected for <code>cfg(target_family="wasm")</code> by both <code>gpui-pre-platform</code> and <code>gpui-kit</code>. Its header comment: <i>"one document-owned canvas … supports one top-level window. Browser WebGPU is preferred by default, with an automatic WebGL2 fallback."</i></div>
+  <div class="card"><h4><span class="badge v">verified</span> Upstream history</h4>
+  The initial implementation is <a href="https://github.com/zed-industries/zed/pull/50228">zed#50228 "GPUI on the web"</a>, merged 2026-02-26: <i>"a basic web platform for the wasm32-unknown-unknown target."</i> Since then: a fetch HTTP client (#50463, 2026-03-02), IME (#50437), and iOS keyboard fixes (#64882, 2026-09-28). There are 57 commits to <code>crates/gpui_web</code>. Latest snapshot: <a href="https://docs.rs/crate/gpui-pre-web/latest">gpui-pre-web 0.3.8</a> (2026-10-05). Zed itself doesn't ship a web build.</div>
+  <div class="card"><h4><span class="badge v">verified</span> Gaps in <code>WebPlatform</code> (platform.rs)</h4>
+  <code>prompt_for_paths</code> / <code>prompt_for_new_path</code>: "not supported on the web". <code>write/read_credentials</code>: Err. <code>reveal_path</code> / <code>set_menus</code>: no-ops. <code>quit</code>: unsupported. There's one window, and reopening it is an error. The default <code>multithreaded</code> feature uses <code>wasm_thread</code>. <span class="badge i">inference</span> That needs SharedArrayBuffer, which needs COOP/COEP cross-origin isolation headers from the host.</div>
+</div>
+
+<h3>What blocks wasm32-unknown-unknown in our crates</h3>
+<div class="tablewrap"><table>
+<tr><th>Check</th><th>Result</th></tr>
+<tr><td><code>cargo check/build --release --target wasm32-unknown-unknown -p blyg-render</code></td><td><span class="badge v">verified</span> <b>Builds clean</b> (stacker/psm included). The publish-identical renderer can go to the browser today.</td></tr>
+<tr><td><code>-p blyg-core</code> (default and <code>--no-default-features</code>)</td><td><span class="badge v">verified</span> First error, via <code>ureq → rustls → ring → getrandom 0.2</code>:
+<pre>error: the wasm*-unknown-unknown targets are not supported by default, you may need to enable the "js" feature.
+   --> getrandom-0.2.17/src/lib.rs:346:9</pre>
+With <code>getrandom/js</code> forced (temporarily, then reverted), there are 16 errors in rustls itself:
+<pre>error[E0277]: the trait bound `SystemRandom: ring::rand::SecureRandom` is not satisfied
+   --> rustls-0.23.45/src/crypto/ring/sign.rs:182:34
+error[E0599]: no associated function or constant named `now` found for struct `UnixTime`
+   --> rustls-0.23.45/src/ticketer.rs:56:45</pre>
+In a browser, TLS is the browser's job, so ureq/rustls has to be replaced by <code>fetch()</code>.</td></tr>
+<tr><td>rusqlite 0.40 <code>bundled</code> alone (scratch crate)</td><td><span class="badge v">verified</span> <b>Typechecks on wasm32.</b> On that target libsqlite3-sys pulls in <code>sqlite-wasm-rs 0.5.5</code> (SQLite compiled to wasm, with wasm-bindgen). So the <code>store/</code> SQL and FTS5 could carry over. <span class="badge i">inference</span> Persistence needs an OPFS VFS, and OPFS sync access handles only work in a dedicated Worker.</td></tr>
+<tr><td>Other blyg-core IO (source grep)</td><td><span class="badge v">verified</span> <code>std::fs</code> in 10 files (config, state.json, scratch_media, store open). <code>std::thread</code> in <code>live.rs</code> and <code>sync/worker.rs</code>. <code>ureq</code> in <code>api/{mod,auth,public}.rs</code>. Keyring in <code>config/tokens.rs</code>. <code>Instant/SystemTime</code> in <code>util.rs</code> and <code>sync/</code>. All of these panic or don't exist on wasm32-unknown-unknown. <code>model.rs</code>, <code>tk.rs</code> and the <code>api/wire.rs</code> types are pure.</td></tr>
+<tr><td><code>Backend</code> trait (<code>backend.rs:97</code>)</td><td><span class="badge v">verified</span> <code>pub trait Backend: Send + Sync</code> with synchronous methods. <span class="badge i">inference</span> On the web that only fits if the whole core runs in a Worker (sync OPFS, plus sync XHR, which is still allowed in workers) and the UI talks to it by message passing. Otherwise the HTTP side needs an async seam.</td></tr>
+<tr><td>blyg-ai</td><td><span class="badge i">inference</span> The local Claude Code/Codex providers (process spawn) can't exist in a browser. ChatGPT-account sign-in and direct OpenAI/Anthropic calls depend on each vendor's CORS policy. Anthropic needs an explicit browser-access header, and the Codex endpoint probably rejects browser origins. The blyg-server and Workers AI paths are the safe ones.</td></tr>
+</table></div>
+
+<h3>Options</h3>
+<div class="grid">
+  <div class="card"><h4>(a) GPUI on the web <span class="badge l">large</span></h4>
+  <b>Reuses:</b> the whole GPUI UI (60.8k lines in blyg-app), theming, keymap, VMs.<br>
+  <b>Costs:</b> the core in a Worker or async rewrite. There's no WebView in a canvas, so the reader, preview and browser pane (all WKWebView today) need DOM overlays layered above the canvas. Spellcheck, file dialogs, credentials and menus all go. A COOP/COEP host is needed for threads.<br>
+  <b>Lost:</b> canvas text has no native find-in-page, screen reader access or browser text selection. Larger download (wgpu + app, multiple MB). <span class="badge i">inference</span> The backend is 7 months old and Zed doesn't ship on it. Expect rough edges.</div>
+  <div class="card"><h4>(b) Rust core in wasm + web UI <span class="badge l">large</span></h4>
+  <b>Reuses:</b> blyg-render as is (verified), model/tk/wire types, SQL schema and queries through rusqlite on sqlite-wasm-rs + OPFS, and sync logic once HTTP is abstracted.<br>
+  <b>New:</b> the entire UI (Leptos/Dioxus, or TS + wasm-bindgen). It's a second UI to maintain alongside GPUI.<br>
+  <b>Kept:</b> NV-speed local search and offline outbox (OPFS SQLite is fast). Bearer tokens + CORS and OAuth PKCE in studio 0.28+ fit a browser client.<br>
+  <b>Lost:</b> local CLI AI, global hotkey, native spellcheck (the browser's own is fine), and the ad-blocking pane (the browser does that).</div>
+  <div class="card"><h4>(c) PWA served alongside the blyg <span class="badge m">medium</span> on top of (b)</h4>
+  Same as (b), packaged as an installable PWA from the blyg's own origin (or a static host). Same-origin removes CORS and token-paste friction, gives an offline service worker, and works on phones. It needs a Worker route or static asset upload on the blyg, which is maintainer-side (a Worker patch needs explicit go-ahead).</div>
+  <div class="card"><h4>(d) Tauri for Windows + web build sharing one UI <span class="badge l">very large</span></h4>
+  Effectively a rewrite of blyg-app into HTML/JS. The core goes behind Tauri commands, and the same UI ships to the web. It gives up GPUI's NV-speed native feel, which is Burrow's reason to exist, and it duplicates what the GPUI Windows port gets for medium cost. <span class="badge i">inference</span> Not recommended.</div>
+</div>
+
+<h3>What would a browser Burrow offer that Studio doesn't?</h3>
+<p><span class="badge i">inference</span> Studio (the upstream SPA) already covers writing, TK, publishing, versions, subscriptions and settings, and it's always online. A browser Burrow would add:</p>
+<ul>
+<li><b>Local-first and offline.</b> Your posts and imported reading live in OPFS SQLite, edits queue in an outbox, and nothing waits on the network.</li>
+<li><b>Notational-Velocity search</b> across your own posts <i>and</i> everything you read, done locally with FTS5.</li>
+<li><b>The reader:</b> stream / three-pane reader, lineage glyphs, one entry per post with edit diffs, read-state sync, quote picker from held posts.</li>
+<li><b>Multiple blygs and profiles</b> in one client, plus scratch notes and capture.</li>
+<li><b>Bring-your-own AI provider</b> (subject to CORS), where Studio uses the server's generator.</li>
+</ul>
+<p>If the reader and offline aren't what the user wants on the web, Studio already covers the authoring case, and a browser Burrow mostly duplicates it.</p>
+
+<div class="reply"><label>Reply on 2. WASM / browser</label><textarea data-section="2. WASM / browser" placeholder="Which option interests you? What would you use a browser Burrow for?"></textarea></div>
+</section>
+
+<!-- ============ 3 RECOMMENDATION ============ -->
+<section data-title="3. Recommendation">
+<h2>3. Recommendation</h2>
+<div class="grid">
+  <div class="card"><h4><span class="badge s">do</span> Windows: port the GPUI app</h4>
+  Order: (1) gate <code>objc2</code> and the unix updater bits, add <code>keyring/windows-native</code>, Windows paths, and <code>secondary-</code> keys. Add a <code>windows-latest</code> CI <code>cargo check</code>/test job so it stays green. (2) WebView2 preview/reader through wry. (3) Updater and packaging. (4) Browser-pane blocking and spellcheck last; until then, links can open in the default browser.</div>
+  <div class="card"><h4><span class="badge m">cheap prep</span> Keep the web door open</h4>
+  Add a CI <code>cargo check --target wasm32-unknown-unknown -p blyg-render</code> job; it already passes. When convenient, split the pure parts of blyg-core (model, tk, wire types) from IO so they also build for wasm. These are small steps that don't commit to a web UI.</div>
+  <div class="card"><h4><span class="badge l">defer</span> A browser Burrow</h4>
+  Only worth it if the reader, offline use or phones matter on the web. In that case, go with <b>(b)/(c)</b>: core in a Worker, OPFS SQLite through rusqlite + sqlite-wasm-rs, fetch-based API, a thin DOM UI, served from the blyg. Revisit <b>(a)</b> GPUI-web in about 6 months, once WebViews-over-canvas and accessibility are solved upstream.</div>
+</div>
+<div class="reply"><label>Reply on 3. Recommendation</label><textarea data-section="3. Recommendation" placeholder="Agree / disagree / next step…"></textarea></div>
+</section>
+
+<section data-title="Method notes">
+<h2>Method notes</h2>
+<ul>
+<li>I installed only the rustup std components <code>x86_64-pc-windows-msvc</code> and <code>x86_64-pc-windows-gnu</code>; <code>wasm32-unknown-unknown</code> was already installed. I didn't install cargo-xwin, mingw, zig or the MSVC SDK.</li>
+<li>The stub C compiler, archiver and <code>llvm-rc</code> live in the scratchpad (<code>stub/</code>, <code>wincheck.sh</code>, <code>wasmcheck.sh</code>), and builds went to <code>scratchpad/tgt</code>. The temporary manifest edits (objc2 gating, getrandom/js) and Cargo.lock were restored. The worktree is clean.</li>
+</ul>
+</section>
+</main>
+
+<div id="float">
+  <label for="general" style="font-size:12px;color:var(--muted)">General comments</label>
+  <textarea id="general" data-section="General" placeholder="Anything not tied to a section…"></textarea>
+  <div class="row"><button id="copy" type="button">Copy all to clipboard</button><span id="status"></span></div>
+</div>
+
+<script>
+(function(){
+  var KEY='burrow-platforms-replies';
+  var boxes=[].slice.call(document.querySelectorAll('textarea[data-section]'));
+  var saved={};
+  try{saved=JSON.parse(localStorage.getItem(KEY)||'{}')||{};}catch(e){}
+  boxes.forEach(function(t){
+    if(saved[t.dataset.section]) t.value=saved[t.dataset.section];
+    t.addEventListener('input',function(){
+      saved[t.dataset.section]=t.value;
+      try{localStorage.setItem(KEY,JSON.stringify(saved));}catch(e){}
+    });
+  });
+  function aggregate(){
+    var out=['Re: Burrow on Windows and in the browser',''];
+    boxes.forEach(function(t){
+      var v=t.value.trim();
+      if(v){out.push('## '+t.dataset.section);out.push(v);out.push('');}
+    });
+    if(out.length===2) out.push('(no comments)');
+    return out.join('\n');
+  }
+  var status=document.getElementById('status');
+  document.getElementById('copy').addEventListener('click',function(){
+    var text=aggregate();
+    function done(ok){status.textContent=ok?'Copied':'Copy failed: select and copy manually';setTimeout(function(){status.textContent='';},2500);}
+    if(navigator.clipboard&&navigator.clipboard.writeText){
+      navigator.clipboard.writeText(text).then(function(){done(true);},function(){fallback();});
+    } else fallback();
+    function fallback(){
+      var ta=document.createElement('textarea');ta.value=text;document.body.appendChild(ta);ta.select();
+      var ok=false;try{ok=document.execCommand('copy');}catch(e){}
+      document.body.removeChild(ta);done(ok);
+    }
+  });
+})();
+</script>
+</body>
+</html>

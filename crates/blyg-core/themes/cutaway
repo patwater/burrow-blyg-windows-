@@ -1,0 +1,43 @@
+# Cutaway: your posts are rooms in one burrow, and the one you're in has the
+# light on. After Pixar's Burrow and the Barklem and Potter cutaways.
+name = Cutaway
+family = woody
+base = light
+
+color-bg = #fbf3e2
+color-ink = #3b2a1c
+color-muted = #7d6249
+color-line = #e3cfae
+color-accent = #b0562a
+color-sel = #ffe2a6
+color-sel-ink = #3b2a1c
+color-sel-muted = #7a5634
+color-bar = #56722f
+color-bar-ink = #fdf6e6
+color-bar-line = #5b3d25
+color-side = #6b4a2f
+color-side-ink = #f6e7cc
+color-side-muted = #e8cfa7
+color-side-accent = #ffcf7a
+color-side-line = #5b3d25
+color-status = #5b3d25
+color-status-ink = #e8cfa7
+color-status-line = #5b3d25
+color-quote-bg = #f3e4c6
+color-quote-rule = #e1c796
+color-toast = #3b2a1c
+color-toast-ink = #fbf3e2
+
+font-writing = Literata
+font-ui = Inter
+radius = 8
+sheet.radius = 14
+toast.radius = 12
+
+titlebar.band = gradient(#63803a #4f6a2b)
+sidebar.ground = strata(#7a8f45 #5b3d25 #684529 #71492b #7d5030)
+sidebar.top = roots(#d9b98a, opacity=0.55)
+row.selected = lit-cell(#ffe2a6 #e3a85a)
+quote.frame = arch(#e1c796)
+divider = roots(#c9a877)
+empty.art = lit-cell(#ffe2a6 #e3a85a)

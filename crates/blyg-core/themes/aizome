@@ -1,0 +1,41 @@
+# Aizome: the sea as craft. Endless waves, and the quotes of others stitched
+# in by hand. After Kyoto indigo dyeing, seigaiha waves and sashiko.
+name = Aizome
+family = oceanic
+base = light
+
+color-bg = #f6f3ea
+color-ink = #1c2340
+color-muted = #5c6286
+color-line = #cfd2df
+color-accent = #c0432c
+color-sel = #f6f3ea
+color-sel-ink = #1c2340
+color-sel-muted = #5c6286
+color-bar = #26356b
+color-bar-ink = #e8ecf8
+color-bar-line = #1f2c5c
+color-side = #1f2c5c
+color-side-ink = #dfe4f4
+color-side-muted = #aab4d8
+color-side-accent = #f2a38f
+color-side-line = #1a2550
+color-status = #1a2550
+color-status-ink = #aab4d8
+color-status-line = #1a2550
+color-quote-bg = #eef0f6
+color-quote-rule = #1f2c5c
+color-toast = #1f2c5c
+color-toast-ink = #f6f3ea
+
+font-writing = Source Serif 4
+font-ui = Inter
+radius = 3
+sheet.radius = 6
+toast.radius = 4
+
+titlebar.band = indigo-dye(#324687 #1f2c5c)
+sidebar.ground = seigaiha(#ffffff #26356b #1a2550, opacity=0.14)
+quote.frame = sashiko(#1f2c5c)
+divider = seigaiha(#1f2c5c)
+empty.art = seigaiha(#1f2c5c)

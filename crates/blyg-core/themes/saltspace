@@ -1,0 +1,32 @@
+# Saltspace: indifference to purity. Weathered, a little unsafe, never a
+# maritime museum. After Memento Salis: corrosive greys, salt, the horizon.
+name = Saltspace
+family = oceanic
+base = light
+
+color-bg = #eceeed
+color-ink = #1d2224
+color-muted = #5f6769
+color-line = #c9cfcf
+color-accent = #c4461d
+color-sel = #f7f8f6
+color-bar = #e4e7e6
+color-bar-ink = #3a4244
+color-side = #dde1e0
+color-quote-bg = #f5f6f3
+color-quote-rule = #e2572b
+color-toast = #1d2224
+color-toast-ink = #eceeed
+
+font-writing = Literata
+font-ui = Inter
+radius = 2
+sheet.radius = 2
+toast.radius = 2
+chip.radius = 2
+
+titlebar.band = horizon(#8b9597)
+row.selected = inset-bar(#e2572b)
+quote.frame = buoy(#e2572b)
+divider = tide-line(#b8c0c0 #d3d9d8)
+texture = salt-grain(#7f8585, opacity=0.35)

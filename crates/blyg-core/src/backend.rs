@@ -14,7 +14,7 @@ use crate::model::*;
 pub enum CoreError {
     #[error("offline")]
     Offline,
-    #[error("not authorised — check the token")]
+    #[error("not authorised: sign in to your blyg again")]
     Unauthorized,
     #[error("not found")]
     NotFound,
@@ -25,11 +25,21 @@ pub enum CoreError {
         message: String,
         details: Vec<String>,
     },
+    /// The server is older than blygger-studio 0.9 (its owner API predates
+    /// the OpenAPI contract). Nothing is pushed to it: an old server's 404 on
+    /// a new route would read as "deleted" and duplicate posts.
+    #[error("your blyg's server needs updating to blygger-studio 0.9 or later")]
+    ServerOutdated,
     /// Item has never reached the server (still local-only) and the op needs a server id.
     #[error("not on the server yet — still syncing")]
     NotSynced,
     #[error("storage: {0}")]
     Storage(String),
+    /// 429: the blyg's API work budget is spent (studio 0.28+). Transient:
+    /// nothing is dropped, and the next attempt waits `retry_after` seconds
+    /// (the server's `Retry-After`).
+    #[error("the blyg asked Burrow to slow down; retrying in {retry_after}s")]
+    RateLimited { retry_after: u64 },
     #[error("{0}")]
     Other(String),
 }
@@ -41,6 +51,19 @@ pub struct PublishOutcome {
     pub permalink: String,
     pub warning: Option<String>,
 }
+
+/// Someone's post fetched from its public item document because it isn't
+/// held here (see [`Backend::public_item`]).
+#[derive(Debug, Clone, PartialEq)]
+pub struct PublicItem {
+    /// Not subscribed: `subscription_id` is empty and it's never marked read.
+    pub item: ReadingItem,
+    /// Its public changelog, oldest first (current row with media and lineage).
+    pub versions: Vec<RemoteVersion>,
+}
+
+/// The largest media file the app reads (the Worker's upload cap is 5 MB).
+pub const MEDIA_MAX_BYTES: u64 = 20 * 1024 * 1024;
 
 pub struct MediaRef {
     /// Relative, e.g. "media/abc123.webp" — what goes in the markdown.
@@ -129,6 +152,25 @@ pub trait Backend: Send + Sync {
         Ok(())
     }
 
+    /// Mark many reading items (`(sub_id, remote_id)`, each with its
+    /// duplicates) read at their current versions, or unread: a selection
+    /// in the reading list, or all of it. Local and instant; on a server
+    /// that syncs read state the change is queued for it (unread only when
+    /// the server can clear read state; otherwise unread stays on this Mac).
+    /// Returns how many rows changed. Additive; the default marks read one
+    /// by one and refuses unread, so other implementors compile.
+    fn set_read(&self, rows: &[(String, String)], read: bool) -> Result<usize> {
+        if !read {
+            return Err(CoreError::Other(
+                "marking unread isn't supported here".into(),
+            ));
+        }
+        for (s, r) in rows {
+            self.mark_read(s, r)?;
+        }
+        Ok(rows.len())
+    }
+
     // --- scratch notes ---
     // docs/SPEC.md § Scratch notes. Scratch items have `Status::Scratch`:
     // `save`, `set_kind`, `search` and `delete_draft` work on them locally,
@@ -191,7 +233,34 @@ pub trait Backend: Send + Sync {
         ))
     }
     fn fork(&self, of: &RemoteRef) -> Result<LocalId>;
-    fn set_show_responses(&self, id: &LocalId, show: bool) -> Result<()>;
+    /// Set whether the item's page shows its verified responses. Returns
+    /// whether it shows them now (with `Default`, the blyg's setting decides).
+    fn set_responses(&self, id: &LocalId, mode: ResponsesMode) -> Result<bool>;
+    /// Set whether the item's public page highlights its generated text
+    /// (studio 0.27; remote, needs `owner:publish`). Returns whether it
+    /// highlights now (with `Default`, `highlight_generated_default` decides).
+    fn set_highlight(&self, id: &LocalId, mode: HighlightMode) -> Result<bool>;
+
+    /// The `[[` / `![[` picker's search over what's held here (local): own
+    /// published posts and posts imported from blyg subscriptions, every
+    /// word matching. The default searches `items()` and `reading()` in
+    /// memory; the live backend uses its full-text indexes.
+    fn pick_search(&self, q: &crate::pick::PickQuery) -> Vec<crate::pick::Pickable> {
+        crate::pick::search_in(&self.items(), &self.reading(), &self.subscriptions(), q)
+    }
+
+    /// Where the picker's query is typed (`picker_typing`), as the blyg's
+    /// settings last said. Local; `Auto` until they've been read.
+    fn picker_typing(&self) -> PickerTyping {
+        PickerTyping::Auto
+    }
+
+    /// One of the blyg's own media files (`{base}/media/…`), fetched with
+    /// the owner credential, since an upload no public version uses yet is
+    /// private (studio 0.28). Remote. The default fetches anonymously.
+    fn fetch_own_media(&self, url: &str) -> Result<(Vec<u8>, Option<String>)> {
+        crate::api::public::PublicClient::new().get_bytes(url, MEDIA_MAX_BYTES)
+    }
 
     /// Pull everything (items, reading, subscriptions) now.
     fn sync_now(&self) -> Result<()>;
@@ -205,6 +274,35 @@ pub trait Backend: Send + Sync {
         title: Option<&str>,
     ) -> Result<()>;
     fn pause_subscription(&self, sub_id: &str, paused: bool) -> Result<()>;
+    /// Name a subscription: `Some(name)` is a name of your own (the source
+    /// stops renaming it); `None` hands the name back to the source, which
+    /// refreshes it while polling (studio 0.30, `title_follows_source`).
+    /// Additive; the default sets a name and refuses `None`.
+    fn rename_subscription(&self, sub_id: &str, title: Option<&str>) -> Result<()> {
+        match title {
+            Some(t) => self.set_subscription(sub_id, None, Some(t)),
+            None => Err(CoreError::Other(
+                "following the source's name isn't supported here".into(),
+            )),
+        }
+    }
+    /// "Check all feeds now": the server polls every subscription that
+    /// isn't paused, in the background (studio 0.30), and answers with how
+    /// many; a pull follows. Additive; the default refuses.
+    fn poll_subscriptions(&self) -> Result<u32> {
+        Err(CoreError::Other(
+            "checking feeds isn't supported here".into(),
+        ))
+    }
+    /// "Check now" for one subscription: a blyg's index is reconciled at
+    /// once (true when anything changed); a feed is polled with the rest.
+    /// A pull follows. Additive; the default refuses.
+    fn check_subscription(&self, sub_id: &str) -> Result<bool> {
+        let _ = sub_id;
+        Err(CoreError::Other(
+            "checking feeds isn't supported here".into(),
+        ))
+    }
     /// thumb: Some(1) / Some(-1) / None (clear).
     fn signal(&self, sub_id: &str, remote_id: &str, thumb: Option<i8>) -> Result<()>;
     fn mentions(&self) -> Result<Vec<Mention>>;
@@ -281,7 +379,7 @@ pub trait Backend: Send + Sync {
     // --- reading ---
 
     /// False once the server has shown it lacks the owner-API read
-    /// extensions (`GET /api/reading` answered 404): the reading, mentions and
+    /// extensions (`GET /api/reading/imported` answered 404): the reading, mentions and
     /// site-settings screens then say "not available on this server" instead
     /// of showing an empty list. Additive; the default says "available".
     fn read_extensions_available(&self) -> bool {
@@ -341,5 +439,113 @@ pub trait Backend: Send + Sync {
     fn cached_profile(&self, url: &str) -> Option<crate::profile::Profile> {
         let _ = url;
         None
+    }
+
+    // --- about ---
+
+    /// Whether the server carries the extensions in docs/SERVER.md: `Some(false)`
+    /// for a stock blygger-studio (reading comes from upstream's own routes;
+    /// AI disclosure for app-generated text, read-state sync and upload
+    /// removal are off), `None` until a reading pull has found out.
+    fn server_extensions(&self) -> Option<bool> {
+        None
+    }
+
+    /// The connected server is older than blygger-studio 0.9: nothing syncs
+    /// until it's updated (`CoreEvent::ServerOutdated` says when first seen).
+    fn server_outdated(&self) -> bool {
+        false
+    }
+
+    /// Whether read state syncs with the server (the last `GET /api/reading/imported`
+    /// advertised `read_state: true`, extension 5; meta key `read_sync`).
+    /// For the About window. Additive; the default says no.
+    fn read_state_sync(&self) -> bool {
+        false
+    }
+
+    /// Every profile fetched so far, one per origin, whatever its age.
+    /// Local, no network (the composer's @-mentions read it). Additive.
+    fn cached_profiles(&self) -> Vec<crate::profile::Profile> {
+        Vec::new()
+    }
+
+    // --- responses --- (issue #7)
+
+    /// Posts in the local reading list, and your own published posts, that
+    /// quote, stub or fork the post `(origin, id)`: "seen in your network".
+    /// One per post, the strongest relation winning (fork > stub > quote).
+    /// Local, instant; a list, never a count. Additive; the default knows none.
+    fn responses(&self, origin: &str, id: &str) -> Vec<Response> {
+        let _ = (origin, id);
+        Vec::new()
+    }
+
+    // --- reader folders ---
+    // The Reader's folders of subscriptions: local only (this Mac's store),
+    // never sent to the blyg and unrelated to the server's hoppers. One
+    // folder per subscription. All local and instant. Additive; the
+    // defaults know no folders and refuse changes, so implementors compile.
+
+    /// Every folder, in display order.
+    fn folders(&self) -> Vec<Folder> {
+        Vec::new()
+    }
+
+    /// Subscription id → folder id, for each filed subscription.
+    fn subscription_folders(&self) -> std::collections::HashMap<String, String> {
+        Default::default()
+    }
+
+    /// A new folder at the end. `Rejected{400}` for an empty name,
+    /// `Rejected{409}` for a name another folder has (any case).
+    fn create_folder(&self, name: &str) -> Result<Folder> {
+        let _ = name;
+        Err(CoreError::Other("folders aren't supported here".into()))
+    }
+
+    fn rename_folder(&self, id: &str, name: &str) -> Result<()> {
+        let _ = (id, name);
+        Err(CoreError::Other("folders aren't supported here".into()))
+    }
+
+    /// Its subscriptions go back to unfiled.
+    fn delete_folder(&self, id: &str) -> Result<()> {
+        let _ = id;
+        Err(CoreError::Other("folders aren't supported here".into()))
+    }
+
+    /// Move a folder to `index` in the display order (clamped).
+    fn move_folder(&self, id: &str, index: usize) -> Result<()> {
+        let _ = (id, index);
+        Err(CoreError::Other("folders aren't supported here".into()))
+    }
+
+    /// File a subscription in a folder, or unfile it (`None`).
+    fn set_subscription_folder(&self, sub_id: &str, folder: Option<&str>) -> Result<()> {
+        let _ = (sub_id, folder);
+        Err(CoreError::Other("folders aren't supported here".into()))
+    }
+
+    // --- end reader folders ---
+
+    // --- quote targets ---
+    // Opening a quote's (or a stub's, or a fork's) original that isn't held
+    // here: its public files, fetched unauthenticated with `PublicClient`
+    // (never the owner token) and only when the user opens it.
+
+    /// `{origin}items/{id}.json` as a post to show. Blocking. Additive; the
+    /// default refuses so implementors compile.
+    fn public_item(&self, origin: &str, id: &str) -> Result<PublicItem> {
+        let _ = (origin, id);
+        Err(CoreError::Other("not supported here".into()))
+    }
+
+    /// A pinned version of a post that isn't held, `{origin}items/{id}/v{n}.json`
+    /// (cached forever). Refused without a request when its changelog doesn't
+    /// mark `version` pinned (§8.4), as `remote_pinned` does. Additive.
+    fn public_pinned(&self, origin: &str, id: &str, version: u32) -> Result<PinnedVersion> {
+        let _ = (origin, id, version);
+        Err(CoreError::Other("not supported here".into()))
     }
 }

@@ -38,6 +38,7 @@ fn ri(
         stub_of: None,
         forked_from: None,
         transclusions: vec![],
+        lineage_known: false,
     }
 }
 
@@ -478,4 +479,273 @@ fn migration_purges_old_snapshots_and_withdrawn_content() {
         !hay.contains("WITHDRAWNTEXT"),
         "withdrawn bytes left on disk"
     );
+}
+
+// ---------------------------------------------------------------- post dates (#6)
+
+fn dated(rid: &str, observed: &str, created: Option<&str>, updated: Option<&str>) -> ReadingItem {
+    let mut it = ri("s", rid, "https://a.example/", None, 1, observed, rid);
+    it.created = created.map(str::to_string);
+    it.updated = updated.map(str::to_string);
+    it
+}
+
+fn order_of(s: &Store) -> Vec<String> {
+    s.reading().into_iter().map(|r| r.remote_id).collect()
+}
+
+#[test]
+fn sorts_by_the_posts_own_date_not_the_import_time() {
+    let s = store();
+    // All three imported at once (a fresh subscription): the post dates
+    // decide, not observed_at.
+    let obs = "2030-01-10T00:00:00Z";
+    let items = vec![
+        dated("old", obs, Some("2029-06-01T00:00:00Z"), None),
+        dated("new", obs, Some("2029-12-01T00:00:00+01:00"), None),
+        dated("mid", obs, None, Some("Mon, 01 Oct 2029 08:00:00 GMT")),
+    ];
+    s.merge_reading(&items, true, &HashMap::new()).unwrap();
+    assert_eq!(order_of(&s), ["new", "mid", "old"]);
+}
+
+#[test]
+fn an_edit_by_the_author_moves_the_post_up() {
+    let s = store();
+    let a = dated(
+        "a",
+        "2030-01-01T00:00:00Z",
+        Some("2029-01-01T00:00:00Z"),
+        Some("2029-01-01T00:00:00Z"),
+    );
+    let b = dated(
+        "b",
+        "2030-01-01T00:00:00Z",
+        Some("2029-02-01T00:00:00Z"),
+        Some("2029-02-01T00:00:00Z"),
+    );
+    s.merge_reading(&[a.clone(), b.clone()], true, &HashMap::new())
+        .unwrap();
+    assert_eq!(order_of(&s), ["b", "a"]);
+    let mut a2 = a.clone();
+    a2.version = 2;
+    a2.updated = Some("2029-03-01T00:00:00Z".into());
+    s.merge_reading(&[a2, b], true, &HashMap::new()).unwrap();
+    assert_eq!(order_of(&s), ["a", "b"], "edited post moves to the top");
+    let top = &s.reading()[0];
+    assert!(top.post_time().edited);
+    assert_eq!(top.post_time().at, "2029-03-01T00:00:00.000Z");
+}
+
+#[test]
+fn observed_at_is_only_the_fallback() {
+    let s = store();
+    let items = vec![
+        // No dates at all: imported time.
+        dated("nodate", "2030-01-05T00:00:00Z", None, None),
+        // Junk dates: imported time too.
+        dated(
+            "junk",
+            "2030-01-03T00:00:00Z",
+            Some("yesterday"),
+            Some("soon"),
+        ),
+        dated(
+            "dated",
+            "2030-01-09T00:00:00Z",
+            Some("2030-01-04T00:00:00Z"),
+            None,
+        ),
+    ];
+    s.merge_reading(&items, true, &HashMap::new()).unwrap();
+    assert_eq!(order_of(&s), ["nodate", "dated", "junk"]);
+    let all = s.reading();
+    let nodate = all.iter().find(|r| r.remote_id == "nodate").unwrap();
+    assert!(nodate.post_time().observed);
+    assert!(!nodate.post_time().edited);
+}
+
+#[test]
+fn migration_fills_sort_at_for_existing_rows() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("v4.db");
+    let row = |rid: &str, observed: &str, created: &str| {
+        serde_json::json!({
+            "subscription_id": "s", "remote_id": rid, "subscription_title": "s",
+            "origin": "https://a.example/", "kind": "fragment", "state": "current",
+            "version": 1, "created": created, "updated": null, "observed_at": observed,
+            "content_md": rid, "content_html": "", "author": null, "page": null,
+            "thumb": null, "hoppers": []
+        })
+        .to_string()
+    };
+    {
+        let mut c = rusqlite::Connection::open(&path).unwrap();
+        super::schema::migrate_to(&mut c, 4).unwrap();
+        for (rid, obs, created) in [
+            ("x", "2030-01-02T00:00:00Z", "2029-01-01T00:00:00Z"),
+            ("y", "2030-01-01T00:00:00Z", "2029-05-01T00:00:00Z"),
+        ] {
+            c.execute(
+                "INSERT INTO reading (subscription_id, remote_id, origin, observed_at, state, version, json) \
+                 VALUES ('s', ?1, 'https://a.example/', ?2, 'current', 1, ?3)",
+                rusqlite::params![rid, obs, row(rid, obs, created)],
+            )
+            .unwrap();
+        }
+    }
+    let s = Store::open(&path).unwrap();
+    assert_eq!(s.schema_version().unwrap(), super::schema::latest());
+    // By observed_at it would be x, y; by the posts' dates it's y, x.
+    assert_eq!(order_of(&s), ["y", "x"]);
+    let empty: i64 = s
+        .conn()
+        .query_row("SELECT COUNT(*) FROM reading WHERE sort_at = ''", [], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    assert_eq!(empty, 0);
+}
+
+#[test]
+fn read_state_survives_the_reorder() {
+    let s = store();
+    let a = dated(
+        "a",
+        "2030-01-01T00:00:00Z",
+        Some("2029-01-01T00:00:00Z"),
+        None,
+    );
+    s.merge_reading(std::slice::from_ref(&a), true, &HashMap::new())
+        .unwrap();
+    assert!(s.mark_read("s", "a").unwrap());
+    let mut a2 = a;
+    a2.version = 2;
+    a2.updated = Some("2029-09-01T00:00:00Z".into());
+    s.merge_reading(&[a2], true, &HashMap::new()).unwrap();
+    let r = &s.reading()[0];
+    assert_eq!(r.read_version, Some(1));
+    assert!(r.edited_since_read());
+}
+
+// ---------------------------------------------------------------- responses (#7)
+
+fn responder(sub: &str, rid: &str, origin: &str, sort: &str) -> ReadingItem {
+    let mut it = ri(sub, rid, origin, None, 1, sort, rid);
+    it.created = Some(sort.into());
+    it.kind = Kind::Thread;
+    it
+}
+
+#[test]
+fn responses_are_found_by_origin_and_id() {
+    let s = store();
+    let target = ri(
+        "sa",
+        "T1",
+        "https://ada.example/",
+        None,
+        2,
+        "2030-01-01T00:00:00Z",
+        "t",
+    );
+    let mut quote = responder("sb", "Q1", "https://bo.example/", "2030-01-03T00:00:00Z");
+    quote.transclusions = vec![TransclusionRef {
+        id: "t1".into(), // another spelling of the id
+        version: Some(2),
+        origin: Some("https://ADA.example".into()),
+        cited: None,
+        selector: None,
+    }];
+    let mut stub = responder("sc", "S1", "https://cy.example/", "2030-01-04T00:00:00Z");
+    stub.stub_of = Some(StubOf {
+        origin: Some("https://ada.example/".into()),
+        id: Some("T1".into()),
+        version: Some(1),
+        url: None,
+    });
+    let mut fork = responder("sc", "F1", "https://cy.example/", "2030-01-02T00:00:00Z");
+    fork.forked_from = Some(RemoteRef {
+        origin: "https://ada.example/".into(),
+        id: "T1".into(),
+        version: 1,
+    });
+    // Same id on another origin: not a response.
+    let mut other = responder("sd", "O1", "https://dee.example/", "2030-01-05T00:00:00Z");
+    other.stub_of = Some(StubOf {
+        origin: Some("https://elsewhere.example/".into()),
+        id: Some("T1".into()),
+        version: None,
+        url: None,
+    });
+    // A quote without an origin is from its own blyg.
+    let mut own = responder("sa", "A2", "https://ada.example/", "2030-01-06T00:00:00Z");
+    own.transclusions = vec![TransclusionRef {
+        id: "T1".into(),
+        version: None,
+        origin: None,
+        cited: None,
+        selector: None,
+    }];
+    s.merge_reading(
+        &[target, quote, stub.clone(), fork, other, own],
+        true,
+        &HashMap::new(),
+    )
+    .unwrap();
+    let r = s.responses_to("https://ada.example", "T1");
+    let got: Vec<(&str, crate::profile::Relation, Option<u32>)> = r
+        .iter()
+        .map(|x| (x.item.remote_id.as_str(), x.relation, x.version))
+        .collect();
+    use crate::profile::Relation::*;
+    assert_eq!(
+        got,
+        [
+            ("A2", Quotes, None),
+            ("S1", Stubs, Some(1)),
+            ("Q1", Quotes, Some(2)),
+            ("F1", Forks, Some(1)),
+        ]
+    );
+    // An edit that drops the stub drops the response; a pruned row too.
+    let mut edited = stub;
+    edited.stub_of = None;
+    s.merge_reading(&[edited], false, &HashMap::new()).unwrap();
+    assert!(
+        !s.responses_to("https://ada.example/", "t1")
+            .iter()
+            .any(|x| x.item.remote_id == "S1")
+    );
+    s.merge_reading(&[], true, &HashMap::new()).unwrap();
+    assert!(s.responses_to("https://ada.example/", "T1").is_empty());
+}
+
+#[test]
+fn migration_indexes_existing_rows_references() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("v5.db");
+    let json = serde_json::json!({
+        "subscription_id": "s", "remote_id": "R", "subscription_title": "s",
+        "origin": "https://b.example/", "kind": "thread", "state": "current",
+        "version": 1, "created": "2030-01-01T00:00:00Z", "updated": null,
+        "observed_at": "2030-01-01T00:00:00Z", "content_md": "r", "content_html": "",
+        "author": null, "page": null, "thumb": null, "hoppers": [],
+        "stub_of": { "origin": "https://a.example/", "id": "X", "version": 1 }
+    })
+    .to_string();
+    {
+        let mut c = rusqlite::Connection::open(&path).unwrap();
+        super::schema::migrate_to(&mut c, 5).unwrap();
+        c.execute(
+            "INSERT INTO reading (subscription_id, remote_id, origin, observed_at, state, version, json) \
+             VALUES ('s', 'R', 'https://b.example/', '2030-01-01T00:00:00Z', 'current', 1, ?1)",
+            [json],
+        )
+        .unwrap();
+    }
+    let s = Store::open(&path).unwrap();
+    let r = s.responses_to("https://a.example/", "x");
+    assert_eq!(r.len(), 1);
+    assert_eq!(r[0].relation, crate::profile::Relation::Stubs);
 }

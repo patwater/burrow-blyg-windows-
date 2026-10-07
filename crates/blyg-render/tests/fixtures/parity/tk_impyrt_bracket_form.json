@@ -1,0 +1,31 @@
+{
+  "name": "tk_impyrt_bracket_form",
+  "kind": "fragment",
+  "md": "A [TK]IMPYRT model-y[=]x = y[/TK] and [TK] impyrt = spaced[/TK] and [TK]impyrtx=not it[/TK].",
+  "html": "<p>A <span class=\"blyg-tk-gen\">x = y</span> and <span class=\"blyg-tk-gen\"> spaced</span> and <span class=\"blyg-tk-gen\">⚠ ungenerated — impyrtx=not it</span>.</p>\n",
+  "tk": {
+    "scopes": [
+      {
+        "instruction": "impyrt",
+        "generated": true,
+        "block": false,
+        "source_ids": []
+      },
+      {
+        "instruction": "impyrt",
+        "generated": true,
+        "block": false,
+        "source_ids": []
+      },
+      {
+        "instruction": "impyrtx=not it",
+        "generated": false,
+        "block": false,
+        "source_ids": []
+      }
+    ],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

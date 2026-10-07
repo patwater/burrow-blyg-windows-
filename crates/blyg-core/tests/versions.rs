@@ -672,9 +672,8 @@ fn pin_refuses_an_endcap_the_local_cache_did_not_know_about() {
         let it = st.items.get_mut(&sid).unwrap();
         it.version = 2;
         it.status = "withdrawn".into();
-        it.versions
-            .push(json!({ "version": 2, "published_at": now, "note": null,
-            "pinned": false, "endcap": true }));
+        let endcap = version_json(it, 2, &now, Value::Null, true);
+        it.versions.push(endcap);
     }
     assert!(matches!(
         b.pin(&id, 2),
@@ -683,7 +682,7 @@ fn pin_refuses_an_endcap_the_local_cache_did_not_know_about() {
     assert_eq!(
         env.mock
             .state()
-            .count(&format!("POST /api/items/{sid}/pin")),
+            .count(&format!("PUT /api/items/{sid}/versions/")),
         0
     );
 }
@@ -713,4 +712,67 @@ fn restore_only_loads_the_working_copy() {
     assert!(st.log.last().unwrap().starts_with("GET /api/items/"));
     let sid = it.server_id.unwrap().0;
     assert_eq!(st.items[&sid].version, 2, "nothing was published");
+}
+
+// --- quote targets --- a quote's original that no subscription holds.
+
+#[test]
+fn a_post_that_isnt_held_is_fetched_publicly_without_the_token() {
+    let env = Env::new();
+    let (f, origin) = foreign();
+    {
+        let mut st = f.state();
+        let mut doc = item_doc(
+            &origin,
+            "q1",
+            "quoted words",
+            &[(1, None, true), (2, Some("more"), false)],
+        );
+        doc["kind"] = json!("thread");
+        doc["stub_of"] = json!({ "origin": "https://ada.example.net/", "id": "a1", "version": 1 });
+        st.public.insert("/blyg/items/q1.json".into(), doc);
+        st.public.insert(
+            "/blyg/items/q1/v1.json".into(),
+            pin_doc(&origin, "q1", 1, "first words", None),
+        );
+    }
+    let b = env.manual();
+    let p = b.public_item(&origin, "q1").unwrap();
+    assert_eq!(p.item.subscription_id, "", "not subscribed");
+    assert_eq!(p.item.remote_id, "q1");
+    assert_eq!(p.item.origin, origin);
+    assert_eq!(p.item.kind, Kind::Thread);
+    assert_eq!(p.item.version, 2);
+    assert_eq!(p.item.content_md, "quoted words");
+    assert_eq!(p.item.subscription_title, "Them");
+    assert_eq!(
+        p.item.stub_of.as_ref().and_then(|s| s.id.as_deref()),
+        Some("a1")
+    );
+    assert_eq!(p.versions.iter().filter(|v| v.pinned).count(), 1);
+    // The pinned v1: allowed; v2 isn't pinned: refused without a request.
+    assert_eq!(
+        b.public_pinned(&origin, "q1", 1).unwrap().content_md,
+        "first words"
+    );
+    let before = public_gets(&f).len();
+    assert!(matches!(
+        b.public_pinned(&origin, "q1", 2),
+        Err(CoreError::Rejected { status: 404, .. })
+    ));
+    assert!(
+        public_gets(&f)[before..]
+            .iter()
+            .all(|g| !g.contains("/v2.json")),
+        "no request for an unpinned version"
+    );
+    let st = f.state();
+    assert!(!st.public_auth.is_empty());
+    assert!(
+        st.public_auth.iter().all(Option::is_none),
+        "no authorization to a foreign origin: {:?}",
+        st.public_auth
+    );
+    drop(st);
+    assert!(b.public_item(&origin, "nope").is_err());
 }

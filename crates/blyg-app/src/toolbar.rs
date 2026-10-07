@@ -327,6 +327,10 @@ pub fn row_width(buttons: &[Button], label_widths: Option<&[f32]>) -> f32 {
 pub struct ButtonTip {
     pub text: String,
     pub reason: Option<String>,
+    /// --- themes --- the theme's toast colours and chrome font.
+    pub bg: Hsla,
+    pub ink: Hsla,
+    pub font: &'static str,
 }
 
 impl Render for ButtonTip {
@@ -335,13 +339,14 @@ impl Render for ButtonTip {
             .px(px(7.))
             .py(px(3.))
             .rounded(px(5.))
-            .bg(gpui_kit::black().opacity(0.85))
-            .text_color(gpui_kit::white())
-            .font_family("Inter")
+            .bg(self.bg)
+            .text_color(self.ink)
+            .font_family(self.font)
             .text_size(px(11.))
+            .shadow_md()
             .child(self.text.clone())
             .when_some(self.reason.clone(), |d, r| {
-                d.child(div().text_color(gpui_kit::white().opacity(0.72)).child(r))
+                d.child(div().opacity(0.8).child(r))
             })
     }
 }
@@ -358,9 +363,12 @@ pub fn button_element(
     reason: Option<String>,
     active: bool,
     p: &Palette,
+    font: &'static str,
 ) -> Stateful<Div> {
     let enabled = reason.is_none();
-    let (ink, muted, sel, hover) = (p.ink, p.muted, p.sel, p.line);
+    // --- themes --- hover: a wash of the ink, which reads on this ground.
+    let (ink, muted, sel, hover) = (p.ink, p.muted, p.sel, p.ink.opacity(0.1));
+    let (tip_bg, tip_ink) = p.tip();
     let color = if !enabled {
         muted.opacity(0.45)
     } else if active {
@@ -404,6 +412,9 @@ pub fn button_element(
             cx.new(|_| ButtonTip {
                 text: tip.0.clone(),
                 reason: tip.1.clone(),
+                bg: tip_bg,
+                ink: tip_ink,
+                font,
             })
             .into()
         })
@@ -511,6 +522,42 @@ impl MainView {
         Some((fit(w, labels, icons, switcher, title), buttons))
     }
 
+    /// --- onboarding --- Where the button labelled `label` is drawn,
+    /// (x, y, w, h), by the same widths as `row_width` (`None`: buttons are
+    /// off, or that button isn't in the row now).
+    pub(crate) fn toolbar_button_rect(
+        &self,
+        label: &str,
+        window: &Window,
+        cx: &App,
+    ) -> Option<(f32, f32, f32, f32)> {
+        let (fit, buttons) = self.toolbar_fit(window, cx)?;
+        let ui: &str = self.prefs.ui().family;
+        let mut x = LEFT;
+        for (i, b) in buttons.iter().enumerate() {
+            if i > 0 {
+                x += if buttons[i - 1].group != b.group {
+                    SEPARATOR
+                } else {
+                    BUTTON_GAP
+                };
+            }
+            let w = if fit.labels() {
+                PAD_LABEL * 2.
+                    + ICON
+                    + ICON_GAP
+                    + self.text_width(b.label, LABEL_SIZE, FontWeight::NORMAL, ui, window)
+            } else {
+                PAD_ICON * 2. + ICON
+            };
+            if b.label == label {
+                return Some((x, (TITLEBAR_H - 22.) / 2., w, 22.));
+            }
+            x += w;
+        }
+        None
+    }
+
     /// Hook: the toolbar, over the left of the title bar.
     pub(crate) fn render_toolbar(
         &self,
@@ -519,7 +566,7 @@ impl MainView {
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
         let (fit, buttons) = fitted?;
-        let p = self.palette;
+        let p = self.palette.on_bar(); // --- themes --- on the title bar
         let mut row = div()
             .id("toolbar")
             .debug_selector(|| "toolbar".into())
@@ -553,6 +600,7 @@ impl MainView {
                 b.reason.clone(),
                 b.active,
                 &p,
+                self.theme.chrome_font(&self.prefs),
             )
             .on_click(cx.listener(move |this, _, window, cx| {
                 cx.stop_propagation();
@@ -566,18 +614,16 @@ impl MainView {
     /// Hook: Settings › Buttons, a row in the Appearance area.
     pub(crate) fn render_buttons_setting(&self, cx: &mut Context<Self>) -> AnyElement {
         let p = self.palette;
+        let theme = &*self.theme;
         let chip = |id: &'static str, label: &'static str, on: bool| {
             div()
                 .id(id)
                 .debug_selector(move || id.into())
                 .px(px(10.))
                 .py(px(3.))
-                .rounded_full()
-                .border_1()
+                .map(|d| crate::theme_ext::chip(d, theme, on))
                 .cursor_pointer()
-                .border_color(if on { p.accent } else { p.line })
-                .when(on, |d| d.text_color(p.accent))
-                .hover(|s| s.border_color(p.accent))
+                .hover(|s| s.border_color(p.accent).bg(p.hover()))
                 .child(label)
         };
         let on = self.prefs.show_buttons;
@@ -730,4 +776,4 @@ impl MainView {
 
 #[cfg(test)]
 #[path = "toolbar_tests.rs"]
-mod tests;
+pub(crate) mod tests;

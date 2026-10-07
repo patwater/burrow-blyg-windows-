@@ -82,6 +82,9 @@ pub struct GenResult {
     pub text: String,
     /// The model that actually answered (for provenance).
     pub model: String,
+    /// The blyg server only (studio 0.27.2+): the whole working copy with
+    /// the output spliced in, as the server saved it. `None` elsewhere.
+    pub content_md: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

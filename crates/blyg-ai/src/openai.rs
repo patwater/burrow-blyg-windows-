@@ -219,5 +219,9 @@ pub(crate) fn stream_responses<R: Read>(
             (true, None) => "provider returned no text content".into(),
         }));
     }
-    Ok(GenResult { text, model })
+    Ok(GenResult {
+        text,
+        model,
+        content_md: None,
+    })
 }

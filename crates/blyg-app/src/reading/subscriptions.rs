@@ -9,6 +9,7 @@ use gpui_kit::*;
 
 use super::RSheet;
 use crate::app::MainView;
+use crate::theme::Rule; // --- themes --- dividers
 
 impl MainView {
     pub(super) fn open_subscribe(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -155,7 +156,7 @@ impl MainView {
     }
 
     pub(super) fn render_subscriptions_screen(&self, cx: &mut Context<Self>) -> AnyElement {
-        let p = self.palette;
+        let p = self.palette.on_page();
         let add = self
             .chip("subscribe", "+ Subscribe…")
             .on_click(cx.listener(|this, _, window, cx| this.open_subscribe(window, cx)))
@@ -172,6 +173,14 @@ impl MainView {
             let (id1, id2, id3) = (s.id.clone(), s.id.clone(), s.id.clone());
             let origin = s.origin.clone();
             let blogroll = s.in_blogroll;
+            // --- reader folders --- which folder it's in (local only).
+            let id4 = s.id.clone();
+            let folder = self
+                .reading
+                .filed
+                .get(&s.id)
+                .and_then(|f| self.reading.folders.iter().find(|x| &x.id == f))
+                .map(|f| f.name.clone());
             div()
                 .id(("sub-row", i))
                 .flex()
@@ -179,9 +188,9 @@ impl MainView {
                 .gap(px(10.))
                 .px(px(16.))
                 .py(px(9.))
-                .border_b_1()
-                .border_color(p.line)
+                .rule_b(&p)
                 .when(selected, |d| d.bg(p.sel))
+                .map(|d| crate::ornament::page_row(&self.theme, d, selected))
                 .on_click(cx.listener(move |this, _, _, cx| {
                     this.reading.sub_sel = i;
                     cx.notify();
@@ -207,7 +216,7 @@ impl MainView {
                                 .child(
                                     div()
                                         .font_weight(FontWeight::MEDIUM)
-                                        .hover(|s| s.text_color(p.accent))
+                                        .hover(|s| s.text_color(p.accent_text()))
                                         .child(s.title.clone()),
                                 )
                                 .child(div().text_size(px(10.5)).text_color(p.muted).child(
@@ -222,8 +231,8 @@ impl MainView {
                                             .px(px(6.))
                                             .rounded_full()
                                             .text_size(px(10.5))
-                                            .bg(p.sel)
-                                            .text_color(p.amber)
+                                            .bg(p.notice_bg)
+                                            .text_color(p.notice)
                                             .child("paused"),
                                     )
                                 })
@@ -243,6 +252,32 @@ impl MainView {
                                 .truncate()
                                 .child(super::vm::host(&s.origin)),
                         ),
+                )
+                // --- reader folders --- choose its folder.
+                .child(
+                    self.chip(
+                        format!("folder-{i}"),
+                        format!("{} ▾", folder.as_deref().unwrap_or("No folder")),
+                    )
+                    .when(folder.is_none(), |d| d.text_color(p.muted))
+                    .tooltip(|_, cx| {
+                        cx.new(|_| {
+                            super::Tip("The Reader's folder for it (on this Mac only)".into())
+                        })
+                        .into()
+                    })
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(move |this, e: &MouseDownEvent, _, cx| {
+                            cx.stop_propagation();
+                            this.open_source_menu(
+                                super::sources::MenuTarget::Sub(id4.clone()),
+                                e.position,
+                                true,
+                                cx,
+                            )
+                        }),
+                    ),
                 )
                 .child(
                     self.chip(
@@ -297,7 +332,7 @@ impl MainView {
             .min_h_0()
             .flex()
             .flex_col()
-            .font_family("Inter")
+            .font_family(self.prefs.ui().family)
             .text_size(px(13.))
             .child(header)
             .child(
@@ -306,12 +341,13 @@ impl MainView {
                     .flex_1()
                     .overflow_y_scroll()
                     .when(self.reading.subs.is_empty(), |d| {
-                        d.child(self.muted_note(
+                        d.child(self.empty_note(
                             "No subscriptions yet. + Subscribe… adds a blyg or a feed.",
                         ))
                     })
                     .children(rows),
             )
+            .children(self.render_source_menu(cx)) // --- reader folders ---
             .into_any_element()
     }
 
@@ -320,7 +356,7 @@ impl MainView {
         sheet: &RSheet,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let p = self.palette;
+        let p = self.palette.on_page();
         let RSheet::Subscribe {
             input,
             previewed,
@@ -335,10 +371,10 @@ impl MainView {
                 .id("sub-preview")
                 .mt(px(10.))
                 .p(px(10.))
-                .rounded(px(8.))
+                .rounded(px(self.theme.radius))
                 .border_1()
                 .border_color(p.line)
-                .bg(p.bar)
+                .bg(p.panel())
                 .child(
                     div()
                         .flex()

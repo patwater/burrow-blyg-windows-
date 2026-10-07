@@ -34,7 +34,11 @@ fn run(engine: Arc<Engine>, rx: Receiver<Msg>) {
         let now = Instant::now();
         let mut deadline = next_pull;
         if let Some(due) = engine.store.earliest_due() {
-            let d = now + Duration::from_millis((due - now_ms()).max(0) as u64);
+            let mut d = now + Duration::from_millis((due - now_ms()).max(0) as u64);
+            // An autosave held back by `SAVE_GAP` (it keeps coalescing).
+            if let Some(p) = engine.paced_until() {
+                d = d.max(p);
+            }
             deadline = deadline.min(d);
         }
         if let Some(retry) = engine.retry_at() {
@@ -61,7 +65,9 @@ fn run(engine: Arc<Engine>, rx: Receiver<Msg>) {
             next_pull = match engine.pull() {
                 // Offline: try again when the backoff expires, not a full interval later.
                 Err(e) if is_transient(&e) => engine.retry_at().unwrap_or_else(Instant::now),
-                _ => Instant::now() + engine.opts.pull_interval,
+                // 15 s with `/api/changes` (an unchanged pull is one small
+                // read), else the full interval.
+                _ => Instant::now() + engine.pull_every(),
             };
         }
     }

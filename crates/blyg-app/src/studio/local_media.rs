@@ -64,6 +64,28 @@ pub fn inline_images(html: &str, find: impl Fn(&str) -> Option<PathBuf>) -> Stri
     out
 }
 
+/// Swap every `src="<url>"` for which `find` has a file for that file's
+/// bytes (the blyg's private draft media, see `images::own_media`).
+pub fn inline_srcs(html: &str, find: impl Fn(&str) -> Option<PathBuf>) -> String {
+    const NEEDLE: &str = "src=\"";
+    let mut out = String::with_capacity(html.len());
+    let mut rest = html;
+    while let Some(i) = rest.find(NEEDLE) {
+        let start = i + NEEDLE.len();
+        out.push_str(&rest[..start]);
+        let tail = &rest[start..];
+        let end = tail.find('"').unwrap_or(tail.len());
+        let url = &tail[..end];
+        match find(&url.replace("&amp;", "&")).and_then(|p| data_uri(&p)) {
+            Some(uri) => out.push_str(&uri),
+            None => out.push_str(url),
+        }
+        rest = &tail[end..];
+    }
+    out.push_str(rest);
+    out
+}
+
 pub(crate) fn base64(bytes: &[u8]) -> String {
     const T: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);

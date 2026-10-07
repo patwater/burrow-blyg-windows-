@@ -99,6 +99,8 @@ fn junk_read_version_is_ignored_leniently() {
         r[0]["read_version"] = json!("two");
         r[1]["read_version"] = json!(-3);
         st.reading = Some(r);
+        // Deliberately off-contract.
+        st.unchecked.push("/api/reading/imported".into());
     }
     let b = env.manual();
     b.sync_now().unwrap();
@@ -224,17 +226,10 @@ fn duplicates_are_marked_and_sent_per_row() {
     assert_eq!(b.reading().len(), 1, "one entry per post");
     b.mark_read("B", "A1").unwrap();
     b.sync_now().unwrap();
-    let mut reqs = read_requests(&env);
-    reqs.sort();
+    // Both rows go in one batch (owner write budgets: never a PUT burst).
     assert_eq!(
-        reqs,
-        vec![
-            "PUT /api/reading/B/A1/read".to_string(),
-            format!(
-                "PUT /api/reading/F/{}/read",
-                url::form_urlencoded::byte_serialize(page.as_bytes()).collect::<String>()
-            ),
-        ]
+        read_requests(&env),
+        vec!["POST /api/reading/read".to_string()]
     );
     assert_eq!(server_read(&env, "B", "A1"), Some(1));
     assert_eq!(server_read(&env, "F", page), Some(0));

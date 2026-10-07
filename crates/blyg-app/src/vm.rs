@@ -297,7 +297,7 @@ pub fn publish_decision(item: &Item) -> PublishDecision {
         return PublishDecision::AlreadyPublished(item.version);
     }
     PublishDecision::Sheet {
-        title: truncate_chars(&item.title(), 48),
+        title: truncate_chars(&item_title(item), 48),
         next_version: item.version + 1,
     }
 }
@@ -368,15 +368,28 @@ pub fn absolute_url(url: &str, base: Option<&str>) -> Option<String> {
     Some(format!("{base}/{}", url.trim_start_matches('/')))
 }
 
-/// The window title: `Blygger — <host>` for the connected blyg, else `Blygger`.
+/// The window title: `Burrow — <host>` for the connected blyg, else `Burrow`.
 pub fn window_title(blyg_url: Option<&str>) -> String {
     match blyg_url.and_then(url_host).filter(|h| !h.is_empty()) {
-        Some(host) => format!("Blygger — {host}"),
-        None => "Blygger".to_string(),
+        Some(host) => format!("Burrow — {host}"),
+        None => "Burrow".to_string(),
     }
 }
 
 /// The host of an http(s) URL, without port or path.
+/// Your post's title in the posts list: its own first line (never quoted
+/// text); a stub with nothing of its own yet names what it answers.
+pub fn item_title(item: &Item) -> String {
+    match (blyg_core::plain_title(&item.content_md), &item.stub_of) {
+        (Some(t), _) => t,
+        (None, Some(of)) => format!(
+            "In response to {}",
+            url_host(&of.origin).unwrap_or_else(|| of.origin.clone())
+        ),
+        (None, None) => item.title(),
+    }
+}
+
 pub fn url_host(url: &str) -> Option<String> {
     let rest = url.split_once("://").map(|(_, r)| r)?;
     let authority = rest.split(['/', '?', '#']).next().unwrap_or("");
@@ -501,13 +514,12 @@ pub fn link_paste(text: &str, sel: Range<usize>, clip: &str) -> Option<(String, 
     let lead = label.len() - label.trim_start().len();
     let core = label.trim();
     let tail = &label[lead + core.len()..];
-    let core = core.replace('[', "\\[").replace(']', "\\]");
-    let dest = if url.contains(['(', ')']) {
-        format!("<{url}>")
-    } else {
-        url.to_string()
-    };
-    let link = format!("{}[{core}]({dest})", &label[..lead]);
+    let link = format!(
+        "{}[{}]({})",
+        &label[..lead],
+        escape_link_text(core),
+        link_destination(url)
+    );
     let caret = sel.start + link.len();
     let mut out = String::with_capacity(text.len() + link.len());
     out.push_str(before);
@@ -515,6 +527,20 @@ pub fn link_paste(text: &str, sel: Range<usize>, clip: &str) -> Option<(String, 
     out.push_str(tail);
     out.push_str(&text[sel.end..]);
     Some((out, caret + tail.len()))
+}
+
+/// Link text as Markdown needs it inside `[…]`: brackets escaped.
+pub fn escape_link_text(text: &str) -> String {
+    text.replace('[', "\\[").replace(']', "\\]")
+}
+
+/// A link destination for `(…)`: wrapped in `<…>` when it has parentheses.
+pub fn link_destination(url: &str) -> String {
+    if url.contains(['(', ')']) {
+        format!("<{url}>")
+    } else {
+        url.to_string()
+    }
 }
 
 /// Insert the upload placeholder at byte `cursor`, on its own paragraph (as
@@ -854,9 +880,28 @@ mod tests {
             stub_of: None,
             forked_from: None,
             show_responses: false,
+            responses_mode: None,
             pending_sync: false,
             conflict: false,
+            highlight: false,
+            highlight_mode: None,
         }
+    }
+
+    #[test]
+    fn a_stub_is_titled_in_its_authors_words() {
+        let id = "0a1b2c3d4e5f6g7h8j9k0m1n2p";
+        let mut it = item("a", &format!("![[{id}]]\n> Their sentence.\n\nMine."));
+        it.kind = Kind::Thread;
+        assert_eq!(item_title(&it), "Mine.");
+        it.content_md = format!("![[{id}]]\n> Their sentence.\n");
+        assert_eq!(item_title(&it), "Untitled");
+        it.stub_of = Some(blyg_core::RemoteRef {
+            origin: "https://rue.blyg.example.com/".into(),
+            id: id.into(),
+            version: 2,
+        });
+        assert_eq!(item_title(&it), "In response to rue.blyg.example.com");
     }
 
     #[test]
@@ -1033,14 +1078,14 @@ mod tests {
 
         assert_eq!(
             window_title(Some("https://Blyg.Example.com:8443/sub/")),
-            "Blygger — blyg.example.com"
+            "Burrow — blyg.example.com"
         );
         assert_eq!(
             window_title(Some("http://127.0.0.1:8787")),
-            "Blygger — 127.0.0.1"
+            "Burrow — 127.0.0.1"
         );
-        assert_eq!(window_title(None), "Blygger");
-        assert_eq!(window_title(Some("not a url")), "Blygger");
+        assert_eq!(window_title(None), "Burrow");
+        assert_eq!(window_title(Some("not a url")), "Burrow");
     }
 
     #[test]

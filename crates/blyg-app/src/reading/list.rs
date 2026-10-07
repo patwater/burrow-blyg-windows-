@@ -9,7 +9,8 @@ use gpui_kit::*;
 use super::vm::{self, Key};
 use super::{Load, Opened};
 use crate::app::MainView;
-use crate::vm::DiffOp;
+use crate::theme::Rule;
+use crate::vm::DiffOp; // --- themes --- dividers
 
 /// What the detail pane shows under the post (for tests and render alike).
 #[derive(Debug, Clone, PartialEq)]
@@ -141,10 +142,12 @@ impl MainView {
             .as_ref()
             .and_then(|k| self.reading.shown_pos(k));
         match keep {
-            Some(ix) => self
-                .reading
-                .list_scroll
-                .scroll_to_item(ix, ScrollStrategy::Nearest),
+            Some(ix) => {
+                self.reading.stream.list.scroll_to_reveal_item(ix);
+                self.reading
+                    .list_scroll
+                    .scroll_to_item(ix, ScrollStrategy::Nearest)
+            }
             None => {
                 self.reading.sel = None;
                 self.reading.opened = None;
@@ -157,8 +160,8 @@ impl MainView {
     }
 
     /// The search field above the reading list.
-    fn render_reading_search(&self, cx: &mut Context<Self>) -> AnyElement {
-        let p = self.palette;
+    pub(super) fn render_reading_search(&self, cx: &mut Context<Self>) -> AnyElement {
+        let p = self.palette.on_page();
         let Some(search) = self.reading.search.as_ref() else {
             return div().into_any_element();
         };
@@ -170,14 +173,13 @@ impl MainView {
             .items_center()
             .gap(px(6.))
             .px(px(14.))
-            .border_b_1()
-            .border_color(p.line)
+            .rule_b(&p)
             .child(div().text_size(px(14.)).text_color(p.muted).child("⌕"))
             .child(
                 div()
                     .flex_1()
                     .min_w_0()
-                    .font_family("Inter")
+                    .font_family(self.prefs.ui().family)
                     .text_size(px(12.5))
                     .capture_action(cx.listener(|this, _: &MoveUp, window, cx| {
                         cx.stop_propagation();
@@ -209,6 +211,11 @@ impl MainView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        // --- stream --- the stream selects; the pane follows when open.
+        if self.reading.mode == super::stream_vm::ReadMode::Stream {
+            self.stream_move(delta, window, cx);
+            return;
+        }
         // ↑/↓ move through what the list shows (the search's matches).
         let n = self.reading.shown.len();
         if n == 0 {
@@ -247,9 +254,18 @@ impl MainView {
         else {
             return;
         };
+        // --- quote targets --- opened from a quote: show its version.
+        let want = self.reading.want_version.take();
         self.reading.sel = Some(key.clone());
+        // --- reader folders --- stays listed in its source once read.
+        self.reading.sticky.insert(key.clone());
         let tombstone = item.state == "tombstone";
+        let responses = self.backend.responses(&item.origin, &item.remote_id);
+        if self.is_own_origin(&item.origin) && matches!(self.reading.mentions, Load::Idle) {
+            self.load_mentions(cx);
+        }
         self.reading.opened = Some(Opened {
+            responses,
             key: key.clone(),
             item,
             changelog: if tombstone { Load::Idle } else { Load::Loading },
@@ -279,11 +295,18 @@ impl MainView {
                 let Some(o) = v.reading.opened.as_mut().filter(|o| o.key == key) else {
                     return;
                 };
+                let mut pick = None;
                 if let Some((base, log, shown)) = fetched {
                     o.diff_base = base;
                     o.changelog = Load::from_result(log);
                     o.shown = Load::from_result(shown.map(|s| vm::shown(&s)));
                     o.ix = o.shown.ready().and_then(|s| vm::current_ix(s));
+                    pick = want
+                        .and_then(|w| o.shown.ready()?.iter().position(|s| s.version == w))
+                        .filter(|&i| Some(i) != o.ix);
+                }
+                if let Some(i) = pick {
+                    v.select_version(i, cx);
                 }
                 cx.notify();
             });
@@ -323,8 +346,15 @@ impl MainView {
             let key = o.key.clone();
             let backend = self.backend.clone();
             let version = v.version;
-            let task =
-                cx.background_spawn(async move { backend.remote_pinned(&sub, &rid, version) });
+            // --- quote targets --- a post fetched without a subscription
+            // reads its pins straight from its origin.
+            let origin = super::original::is_external(&key).then(|| o.item.origin.clone());
+            let task = cx.background_spawn(async move {
+                match origin {
+                    Some(origin) => backend.public_pinned(&origin, &rid, version),
+                    None => backend.remote_pinned(&sub, &rid, version),
+                }
+            });
             cx.spawn(async move |this, cx| {
                 let r = task.await;
                 let _ = this.update(cx, |v, cx| {
@@ -343,13 +373,24 @@ impl MainView {
         let Some(o) = self.reading.opened.as_ref() else {
             return;
         };
+        self.toggle_thumb_for(o.key.clone(), o.item.thumb, up, cx);
+    }
+
+    /// 👍 / 👎 on a post whose thumb is `current` (again clears it).
+    pub(super) fn toggle_thumb_for(
+        &mut self,
+        key: Key,
+        current: Option<i8>,
+        up: bool,
+        cx: &mut Context<Self>,
+    ) {
         let want = if up { 1 } else { -1 };
-        let thumb = if o.item.thumb == Some(want) {
+        let thumb = if current == Some(want) {
             None
         } else {
             Some(want)
         };
-        let (sub, rid) = o.key.clone();
+        let (sub, rid) = key;
         let backend = self.backend.clone();
         let task = cx.background_spawn(async move { backend.signal(&sub, &rid, thumb) });
         cx.spawn(async move |this, cx| {
@@ -372,7 +413,7 @@ impl MainView {
         self.reading_action(action, window, cx)
     }
 
-    fn reading_action(
+    pub(crate) fn reading_action(
         &mut self,
         action: &'static str,
         window: &mut Window,
@@ -383,55 +424,16 @@ impl MainView {
         };
         let item = o.item.clone();
         let pinned = o.pinned_on_screen().cloned();
-        let blyg = self
-            .reading
-            .subs
-            .iter()
-            .find(|s| s.id == item.subscription_id)
-            .is_none_or(|s| s.kind == SubscriptionKind::Blyg);
         match action {
-            "Quote" => {
-                let snippet = if blyg {
-                    format!("![[{}]]", item.remote_id)
-                } else {
-                    // RSS items aren't transcludable: quote with a link.
-                    let text = vm::title(&item.content_md);
-                    let link = vm::web_url(&item).unwrap_or_default();
-                    format!("> {text}\n>\n> — [{}]({link})", vm::host(&item.origin))
-                };
-                self.quote_into_thread(snippet, window, cx);
+            // The current version's actions work on any post (the stream's
+            // selected one too); "AI reply" never on a pinned view. Reply
+            // quotes the whole post; a passage is chosen in the stub editor
+            // (studio 0.31).
+            "Quote" | "Reply" | "Link post" | "Open on web" => {
+                self.item_action(item, action, window, cx)
             }
-            "Reply" => {
-                let of = RemoteRef {
-                    origin: item.origin.clone(),
-                    id: item.remote_id.clone(),
-                    version: item.version,
-                };
-                match self
-                    .backend
-                    .create_stub(&of, &vm::stub_body(&item.remote_id))
-                {
-                    Ok(id) => {
-                        self.open_new_draft(&id, window, cx);
-                        self.show_toast(
-                            format!("Reply to {} · a stub thread", vm::host(&item.origin)),
-                            None,
-                            cx,
-                        );
-                    }
-                    Err(e) => self.show_toast(format!("Couldn't start a reply: {e}"), None, cx),
-                }
-            }
-            // --- follow-ups --- a stub with a generated reply, for review.
-            // Only ever the current version (pinned views don't offer it).
-            "AI reply" if pinned.is_none() => self.ai_reply_to(item, window, cx),
-            "Open on web" => match vm::web_url(&item) {
-                Some(u) => {
-                    cx.open_url(&u);
-                    self.show_toast("Opening in your browser…", None, cx);
-                }
-                None => self.show_toast("No web address for this post", None, cx),
-            },
+            "AI reply" if pinned.is_none() => self.item_action(item, action, window, cx),
+            "Notes" => self.notes_add_post(item, true, window, cx), // --- notes ---
             "Quote this version" => {
                 let Some(v) = pinned else { return };
                 let text = o
@@ -470,6 +472,7 @@ impl MainView {
                 })
                 .detach();
             }
+            "Subscribe" => self.follow_url(item.origin.clone(), cx),
             "Diff vs now" => {
                 if let Some(o) = self.reading.opened.as_mut() {
                     o.diff_vs_now = !o.diff_vs_now;
@@ -486,6 +489,93 @@ impl MainView {
         }
     }
 
+    /// The current version's actions on any post (the open one, or the
+    /// stream's selected one): Quote, Reply, AI reply, Open on web.
+    pub(super) fn item_action(
+        &mut self,
+        item: blyg_core::ReadingItem,
+        action: &'static str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let blyg = self
+            .reading
+            .subs
+            .iter()
+            .find(|s| s.id == item.subscription_id)
+            .is_none_or(|s| s.kind == SubscriptionKind::Blyg);
+        match action {
+            "Quote" => {
+                let snippet = if blyg {
+                    format!("![[{}]]", item.remote_id)
+                } else {
+                    // RSS items aren't transcludable: quote with a link.
+                    let text = vm::title(&item.content_md);
+                    let link = vm::web_url(&item).unwrap_or_default();
+                    format!("> {text}\n>\n> — [{}]({link})", vm::host(&item.origin))
+                };
+                self.quote_into_thread(snippet, window, cx);
+            }
+            "Reply" => self.start_stub(&item, window, cx),
+            // A plain `[[id]]` link in a new fragment: no stub_of, no mention.
+            "Link post" if blyg => match self.backend.create_draft(
+                blyg_core::Kind::Fragment,
+                &vm::link_post_body(&item.remote_id),
+            ) {
+                Ok(id) => {
+                    self.open_new_draft(&id, window, cx);
+                    self.show_toast(
+                        format!("New fragment linking {}", vm::host(&item.origin)),
+                        None,
+                        cx,
+                    );
+                }
+                Err(e) => self.show_toast(format!("Couldn't start a post: {e}"), None, cx),
+            },
+            "Link post" => self.show_toast("Feed posts can't be linked with [[…]]", None, cx),
+            // --- follow-ups --- a stub with a generated reply, for review.
+            "AI reply" => self.ai_reply_to(item, window, cx),
+            "Notes" => self.notes_add_post(item, false, window, cx), // --- notes ---
+            "Open on web" => match vm::web_url(&item) {
+                Some(u) => {
+                    cx.open_url(&u);
+                    self.show_toast("Opening in your browser…", None, cx);
+                }
+                None => self.show_toast("No web address for this post", None, cx),
+            },
+            _ => {}
+        }
+    }
+
+    /// Reply: a stub of `item` quoting the whole post (studio 0.31, the
+    /// server's own `![[id]]\n\n` prefill), the caret below the quote. The
+    /// stub editor's hint line then offers a passage instead
+    /// (`MainView::render_stub_bar`).
+    fn start_stub(
+        &mut self,
+        item: &blyg_core::ReadingItem,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let body = vm::stub_body(&item.remote_id);
+        let of = RemoteRef {
+            origin: item.origin.clone(),
+            id: item.remote_id.clone(),
+            version: item.version,
+        };
+        match self.backend.create_stub(&of, &body) {
+            Ok(id) => {
+                self.open_new_draft(&id, window, cx);
+                self.show_toast(
+                    format!("Reply to {} · a stub thread", vm::host(&item.origin)),
+                    Some("Quoting the whole post · choose a passage above the editor".into()),
+                    cx,
+                );
+            }
+            Err(e) => self.show_toast(format!("Couldn't start a reply: {e}"), None, cx),
+        }
+    }
+
     /// The action row under the open post: each chip names what it
     /// creates (a stub, a quote in a thread, a fork of a pin), with a
     /// one-sentence tooltip; Fork shows greyed on the current version.
@@ -494,6 +584,19 @@ impl MainView {
             return vec![];
         };
         let item = &o.item;
+        // --- quote targets --- not followed: Subscribe, Reply, Open on web.
+        if super::original::is_external(&o.key) {
+            let ctx = vm::ActionCtx {
+                blyg: true,
+                version: item.version,
+                current: item.version,
+                pins: vec![],
+            };
+            return ["Subscribe", "Reply", "Open on web"]
+                .into_iter()
+                .map(|id| vm::action_chip(id, &ctx))
+                .collect();
+        }
         let ids = match self.pill_model() {
             Some(pm) => pm.actions,
             None if item.state == "tombstone" => vec![],
@@ -519,6 +622,8 @@ impl MainView {
                 .collect(),
         };
         ids.into_iter()
+            // A feed post has no id to link.
+            .filter(|id| *id != "Link post" || ctx.blyg)
             .map(|id| vm::action_chip(id, &ctx))
             .collect()
     }
@@ -530,17 +635,34 @@ impl MainView {
         body_font: &SharedString,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let p = self.palette;
+        let p = self.palette.on_page();
         let unread = self.reading.rows.iter().filter(|r| r.is_unread()).count();
+        let stream = self.reading.mode == super::stream_vm::ReadMode::Stream;
+        let keys = if stream {
+            "j/k move · ⏎ read more · / search · esc back"
+        } else {
+            // --- reader folders ---
+            "←→ panes · j/k posts · space next unread · r/u read/unread · / search"
+        };
+        let picked = self.reading.picked.set.len();
         let hint = if !self.reading.available {
             String::new()
+        } else if picked > 0 {
+            // --- read/unread ---
+            format!("{picked} picked · r marks read · u unread · esc lets go")
         } else if unread > 0 {
             // Reader-local, private state: allowed (never social).
-            format!("{unread} to read · ↑↓ move · ←→ versions · / search · esc back")
+            format!("{unread} to read · {keys}")
         } else {
-            "↑↓ move · ←→ versions · / search · esc back".into()
+            keys.into()
         };
-        let header = self.screen_header("Reading", hint, vec![]);
+        // --- stream --- the Stream | Reader toggle (⌥⌘1 / ⌥⌘2).
+        let mut actions = vec![self.render_mode_toggle(cx)];
+        if !stream {
+            // --- reader folders --- the sources pane's button (⌥⌘S).
+            actions.insert(0, self.render_sources_button(cx));
+        }
+        let header = self.screen_header("Reading", hint, actions);
         if !self.reading.available {
             return div()
                 .flex_1()
@@ -550,23 +672,43 @@ impl MainView {
                 .child(self.unavailable())
                 .into_any_element();
         }
+        if stream {
+            return div()
+                .flex_1()
+                .min_h_0()
+                .flex()
+                .flex_col()
+                .child(header)
+                .child(self.render_stream_body(body_font, cx))
+                .into_any_element();
+        }
         let held = self.reading.rows.len();
         let count = self.reading.shown.len();
+        // --- reader folders --- a source with nothing in it (no search).
+        let empty_source = held > 0 && count == 0 && self.reading.query.trim().is_empty();
         let list = div()
-            .w(relative(0.38))
+            .id("reader-list-pane")
+            .w(relative(if self.reading.sources_open { 0.3 } else { 0.38 }))
             .flex_none()
             .h_full()
             .flex()
             .flex_col()
-            .border_r_1()
-            .border_color(p.line)
+            .rule_r(&p)
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(|this, _, _, cx| this.set_pane(super::sources_vm::Pane::List, cx)),
+            )
+            .when(held > 0, |d| d.child(self.render_source_title()))
             .when(held > 0, |d| d.child(self.render_reading_search(cx)))
             .when(held == 0, |d| {
-                d.child(self.muted_note(crate::keymap::hint(
+                d.child(self.empty_note(crate::keymap::hint(
                     "Nothing to read yet. Subscribe to a blyg or a feed (⇧⌘S).",
                 )))
             })
-            .when(held > 0 && count == 0, |d| {
+            .when(empty_source, |d| {
+                d.child(self.empty_note(super::sources_vm::empty_label(&self.reading.source)))
+            })
+            .when(held > 0 && count == 0 && !empty_source, |d| {
                 d.child(
                     div()
                         .id("reading-no-match")
@@ -582,7 +724,7 @@ impl MainView {
                         )
                         .child(
                             div()
-                                .font_family("Inter")
+                                .font_family(self.chrome())
                                 .text_size(px(11.5))
                                 .text_color(p.muted)
                                 .child(crate::keymap::hint(
@@ -615,19 +757,17 @@ impl MainView {
             .flex()
             .flex_col()
             .child(header)
-            .child(
-                div()
-                    .flex_1()
-                    .min_h_0()
-                    .flex()
-                    .child(list)
-                    .child(self.render_reading_detail(body_font, cx)),
-            )
+            // --- reader folders --- sources | list | post.
+            .child(self.render_three_panes(
+                list.into_any_element(),
+                self.render_reading_detail(body_font, cx),
+                cx,
+            ))
             .into_any_element()
     }
 
     fn render_reading_row(&self, ix: usize, cx: &mut Context<Self>) -> AnyElement {
-        let p = self.palette;
+        let p = self.palette.on_page();
         // `ix` is a position in the shown (searched) rows.
         let Some(r) = self
             .reading
@@ -639,12 +779,23 @@ impl MainView {
         };
         let key = vm::key(r);
         let selected = self.reading.sel.as_ref() == Some(&key);
+        // --- reader folders --- the selection is stronger in the pane with
+        // the keys: the theme's `row.selected` (the plain look: an accent
+        // wash), else the selected-row ground.
+        let focused = self.reading.pane == super::sources_vm::Pane::List
+            && self.reading.mode == super::stream_vm::ReadMode::Reader;
+        let shaped = self.theme.has(blyg_core::config::theme::Slot::RowSelected);
+        let sel_bg = if focused && !shaped {
+            p.accent.opacity(0.14)
+        } else {
+            p.sel
+        };
         let badge = vm::badge(r);
         let edited = r.edited_since_read() && r.state != "tombstone";
         let title = if r.state == "tombstone" && r.pinned_version_retained.is_none() {
             "(withdrawn)".to_string()
         } else {
-            vm::title(&r.content_md)
+            vm::post_title(r)
         };
         // The search's matches in the title, as the posts list shows them.
         let highlights: Vec<_> = crate::vm::highlight_ranges(&title, &self.reading.query)
@@ -660,16 +811,29 @@ impl MainView {
                 )
             })
             .collect();
-        let when = crate::vm::relative_time(&r.observed_at, self.now);
+        let when = vm::when_label(r, self.now);
+        // --- read/unread --- picked rows (⌘-click, ⇧-click, ⌘A).
+        let picked = self.reading.picked.contains(&key);
+        let menu_key = key.clone();
         div()
             .id(("reading-row", ix))
             .px(px(14.))
             .py(px(7.))
             .relative()
-            .border_b_1()
-            .border_color(p.line)
+            .rule_b(&p)
             .cursor_pointer()
-            .when(selected, |d| d.bg(p.sel))
+            .when(selected, |d| d.bg(sel_bg))
+            .when(picked, |d| d.bg(p.accent.opacity(0.22)))
+            .on_mouse_down(
+                MouseButton::Right,
+                cx.listener(move |this, e: &MouseDownEvent, _, cx| {
+                    cx.stop_propagation();
+                    this.open_post_menu(menu_key.clone(), e.position, cx)
+                }),
+            )
+            // --- themes --- the theme's selected-row shape (lit cell,
+            // outline, lantern…) on the page's selected ground.
+            .map(|d| crate::ornament::page_row(&self.theme, d, selected && focused && shaped))
             .when(r.is_unread() || edited, |d| {
                 // Unread / edited: an accent bar on the left, as in the mock.
                 d.child(
@@ -682,8 +846,13 @@ impl MainView {
                         .bg(p.accent),
                 )
             })
-            .on_click(cx.listener(move |this, _, window, cx| {
+            .on_click(cx.listener(move |this, e: &ClickEvent, window, cx| {
                 window.focus(&this.reading.focus, cx);
+                this.set_pane(super::sources_vm::Pane::List, cx);
+                // --- read/unread --- ⌘ / ⇧ pick instead of opening.
+                if this.pick_click(&key, e.modifiers(), cx) {
+                    return;
+                }
                 this.open_reading(key.clone(), window, cx)
             }))
             .child(
@@ -691,7 +860,7 @@ impl MainView {
                     .flex()
                     .items_center()
                     .gap(px(6.))
-                    .font_family("Inter")
+                    .font_family(self.chrome())
                     .text_size(px(11.))
                     .text_color(p.muted)
                     .child(if r.version > 1 {
@@ -704,12 +873,14 @@ impl MainView {
                         vm::source_line(r, &self.reading.subs)
                     })
                     .when_some(badge, |d, b| {
+                        // --- themes --- badges that read on the row and
+                        // on the selected ground alike.
                         let (fg, bg): (Hsla, Hsla) = if edited {
-                            edited_colors(p.dark)
+                            (p.edited, p.edited_bg)
                         } else if b == "new" {
-                            (p.amber, p.sel)
+                            p.badge()
                         } else {
-                            (p.muted, p.sel)
+                            p.quiet_badge()
                         };
                         d.child(
                             div()
@@ -721,6 +892,8 @@ impl MainView {
                                 .child(b),
                         )
                     })
+                    // --- lineage --- which kinds, never how many.
+                    .children(self.render_lineage_glyph(r, cx))
                     .child(div().flex_1())
                     .child(when),
             )
@@ -735,12 +908,12 @@ impl MainView {
             .into_any_element()
     }
 
-    fn render_reading_detail(
+    pub(super) fn render_reading_detail(
         &self,
         body_font: &SharedString,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let p = self.palette;
+        let p = self.palette.on_page();
         let Some(o) = self.reading.opened.as_ref() else {
             return div()
                 .flex_1()
@@ -790,6 +963,14 @@ impl MainView {
                 ),
                 None => (None, Some("Withdrawn by the author".into())),
             },
+            // --- quote targets --- fetched on demand, not from a subscription.
+            None if super::original::is_external(&o.key) => (
+                Some(item.content_md.clone()),
+                Some(format!(
+                    "From {}'s public files · you don't follow this blyg",
+                    vm::host(&item.origin)
+                )),
+            ),
             None => (Some(item.content_md.clone()), None),
         };
 
@@ -799,7 +980,7 @@ impl MainView {
             .items_center()
             .gap(px(8.))
             .mb(px(12.))
-            .font_family("Inter")
+            .font_family(self.chrome())
             .text_size(px(12.))
             .text_color(p.muted)
             // --- profiles --- the author's address opens their profile
@@ -807,8 +988,11 @@ impl MainView {
             .child(format!("· {kind}"))
             // --- end profiles ---
             .children(self.render_pill(o, cx))
+            .children(self.render_lineage_glyph(item, cx)) // --- lineage ---
             .child(div().flex_1())
-            .child(self.render_thumbs(item.thumb, cx))
+            .when(!super::original::is_external(&o.key), |d| {
+                d.child(self.render_thumbs(item.thumb, cx))
+            })
             // --- profiles --- "↳ stub of …" / "⑂ forked from …" on its own line
             .children(
                 self.render_lineage(
@@ -834,8 +1018,8 @@ impl MainView {
                     .mt(px(4.))
                     .pl(px(10.))
                     .border_l_2()
-                    .border_color(gpui_kit::rgb(0x8fb3d9))
-                    .font_family("Inter")
+                    .border_color(p.edited_rule)
+                    .font_family(self.chrome())
                     .text_size(px(12.5))
                     .text_color(p.muted)
                     .child(div().text_color(p.ink).child(heading))
@@ -860,11 +1044,11 @@ impl MainView {
                         .mb(px(10.))
                         .px(px(10.))
                         .py(px(6.))
-                        .rounded(px(7.))
-                        .font_family("Inter")
+                        .rounded(px(self.theme.corner(7.)))
+                        .font_family(self.chrome())
                         .text_size(px(12.5))
-                        .bg(gpui_kit::rgba(0xe7c07022))
-                        .text_color(gpui_kit::rgb(if p.dark { 0xe7c070 } else { 0x8a6a10 }))
+                        .bg(p.notice_bg)
+                        .text_color(p.notice)
                         .child(b),
                 )
             })
@@ -873,7 +1057,7 @@ impl MainView {
                     div()
                         .id("retained-pin")
                         .mb(px(10.))
-                        .font_family("Inter")
+                        .font_family(self.chrome())
                         .text_size(px(11.5))
                         .text_color(p.muted)
                         .cursor_pointer()
@@ -914,8 +1098,7 @@ impl MainView {
             .px(px(32.))
             .pt(px(10.))
             .pb(px(16.))
-            .border_t_1()
-            .border_color(p.line)
+            .rule_t(&p)
             .flex()
             .flex_wrap()
             .gap(px(6.))
@@ -952,6 +1135,8 @@ impl MainView {
             .child(div().px(px(32.)).flex_none().child(header))
             .child(notes)
             .child(body)
+            // --- responses --- a list, never a count.
+            .children(self.render_responses(&item.origin, &item.remote_id, &o.responses, cx))
             .child(actions_row)
             .into_any_element()
     }
@@ -963,7 +1148,7 @@ impl MainView {
         runs: &[(DiffOp, String)],
         body_font: &SharedString,
     ) -> AnyElement {
-        let p = self.palette;
+        let p = self.palette.on_page();
         let text: String = runs.iter().map(|(_, s)| s.as_str()).collect();
         let mut hl = Vec::new();
         let mut at = 0;
@@ -997,11 +1182,11 @@ impl MainView {
             .mt(px(14.))
             .pl(px(10.))
             .border_l_2()
-            .border_color(gpui_kit::rgb(0x8fb3d9))
+            .border_color(p.edited_rule)
             .child(
                 div()
                     .mb(px(4.))
-                    .font_family("Inter")
+                    .font_family(self.chrome())
                     .text_size(px(12.))
                     .text_color(p.muted)
                     .child(heading),
@@ -1017,7 +1202,7 @@ impl MainView {
     }
 
     fn render_thumbs(&self, thumb: Option<i8>, cx: &mut Context<Self>) -> AnyElement {
-        let p = self.palette;
+        let p = self.palette.on_page();
         let t = |id: &'static str, glyph: &'static str, on: bool, up: bool| {
             div()
                 .id(id)
@@ -1038,20 +1223,5 @@ impl MainView {
             .child(t("thumb-up", "👍", thumb == Some(1), true))
             .child(t("thumb-down", "👎", thumb == Some(-1), false))
             .into_any_element()
-    }
-}
-
-/// The "edited" badge: blue, as in the mock (`.fi .ed`).
-fn edited_colors(dark: bool) -> (Hsla, Hsla) {
-    if dark {
-        (
-            gpui_kit::rgb(0x8fb3d9).into(),
-            gpui_kit::rgb(0x1f2e40).into(),
-        )
-    } else {
-        (
-            gpui_kit::rgb(0x2f5f8f).into(),
-            gpui_kit::rgb(0xdfe9f4).into(),
-        )
     }
 }

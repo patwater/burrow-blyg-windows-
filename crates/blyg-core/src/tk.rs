@@ -20,7 +20,8 @@ pub struct Scope {
     pub instruction: String,
     /// `None` until generated (no `[=]`).
     pub output: Option<String>,
-    /// `![[id]]` refs anywhere in the scope, first occurrence first, deduplicated.
+    /// `![[id]]` refs in the instruction, first occurrence first, deduplicated
+    /// (studio 0.32.2: a ref only the output names is not a source).
     pub source_ids: Vec<String>,
 }
 
@@ -50,7 +51,7 @@ pub fn parse(md: &str) -> Option<Vec<Scope>> {
             end,
             instruction: instruction.trim().to_string(),
             output,
-            source_ids: source_ids(&md[tk..end]),
+            source_ids: source_ids(instruction),
         });
         i = end;
     }

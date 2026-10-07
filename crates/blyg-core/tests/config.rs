@@ -10,7 +10,7 @@ use blyg_core::config::migrate::migrate_legacy_files;
 use blyg_core::config::parse::{self, Disk};
 use blyg_core::config::paths::{ConfigFiles, data_dir_with, migrate_data_dir};
 use blyg_core::config::show::{ShowOptions, show_config};
-use blyg_core::config::{ConfigStore, Layout, Severity, Theme};
+use blyg_core::config::{ConfigStore, Layout, Severity};
 use blyg_core::state::AppState;
 
 fn load_text(text: &str) -> blyg_core::config::Loaded {
@@ -34,7 +34,7 @@ fn comments_blank_lines_and_quotes() {
     );
     assert!(l.diagnostics.is_empty(), "{:?}", l.diagnostics);
     let c = &l.config;
-    assert_eq!(c.theme(), Theme::Dark);
+    assert_eq!(c.theme(), "dark");
     assert_eq!(c.font_family_writing(), "Source Serif 4");
     assert_eq!(
         c.ai_style_prompt(),
@@ -53,7 +53,7 @@ fn comments_blank_lines_and_quotes() {
 fn later_values_win_and_empty_resets() {
     let l = load_text("theme = dark\ntheme = light\nlayout = stacked\nlayout =\n");
     assert!(l.diagnostics.is_empty(), "{:?}", l.diagnostics);
-    assert_eq!(l.config.theme(), Theme::Light);
+    assert_eq!(l.config.theme(), "light");
     assert_eq!(l.config.layout(), Layout::Side, "empty value resets");
 }
 
@@ -114,7 +114,7 @@ fn errors_carry_line_numbers_and_the_rest_still_loads() {
     assert!(l.diagnostics[0].message.contains("key = value"));
     assert!(l.diagnostics[3].message.contains("side, stacked"));
     assert_eq!(l.config.font_size(), 32.0, "out of range is clamped");
-    assert_eq!(l.config.theme(), Theme::Dark);
+    assert_eq!(l.config.theme(), "dark");
     assert_eq!(
         l.config.edited_posts(),
         blyg_core::config::EditedPosts::Stay
@@ -144,7 +144,7 @@ fn unknown_keys_are_warnings_with_a_hint() {
         l.diagnostics[0].message
     );
     assert!(!l.diagnostics[1].message.contains("did you mean"));
-    assert_eq!(l.config.theme(), Theme::Light);
+    assert_eq!(l.config.theme(), "light");
 }
 
 #[test]
@@ -169,7 +169,7 @@ fn config_file_includes() {
     .unwrap();
     let l = parse::load(std::slice::from_ref(&main), &Disk);
     assert_eq!(l.config.font_family_ui(), "Menlo");
-    assert_eq!(l.config.theme(), Theme::Light);
+    assert_eq!(l.config.theme(), "light");
     assert_eq!(l.config.layout(), Layout::Stacked);
     assert_eq!(l.files.len(), 2);
     let msgs: Vec<String> = l.diagnostics.iter().map(|d| d.short()).collect();
@@ -237,7 +237,7 @@ ai-style-prompt = \"  two  spaces\"
     );
     // What was written reads back as intended.
     let l = load_text(&out);
-    assert_eq!(l.config.theme(), Theme::Light);
+    assert_eq!(l.config.theme(), "light");
     assert_eq!(l.config.font_family_writing(), "Source Serif 4");
     assert_eq!(l.config.ai_enabled(), vec!["codex"]);
     assert_eq!(l.config.ai_style_prompt(), Some("  two  spaces"));
@@ -280,7 +280,7 @@ fn store_writes_each_key_where_it_was_set() {
         "font-size = 20\n"
     );
     assert!(!support.exists());
-    assert_eq!(store.config().theme(), Theme::Light);
+    assert_eq!(store.config().theme(), "light");
     assert_eq!(store.config().font_size(), 20.0);
 
     // A missing primary file is created with a commented header.
@@ -289,7 +289,7 @@ fn store_writes_each_key_where_it_was_set() {
     s.set(&[("blyg-url", Change::Set("https://blyg.example.com".into()))])
         .unwrap();
     let text = std::fs::read_to_string(&fresh).unwrap();
-    assert!(text.starts_with("# Blygger configuration."), "{text}");
+    assert!(text.starts_with("# Burrow configuration."), "{text}");
     assert!(
         text.ends_with("\nblyg-url = https://blyg.example.com\n"),
         "{text}"
@@ -302,7 +302,7 @@ fn in_memory_store_uses_the_same_write_back() {
     let mut s = ConfigStore::in_memory("# mine\ntheme = dark\n");
     s.set(&[("theme", Change::Set("light".into()))]).unwrap();
     assert_eq!(s.text(), Some("# mine\ntheme = light\n"));
-    assert_eq!(s.config().theme(), Theme::Light);
+    assert_eq!(s.config().theme(), "light");
 }
 
 // ------------------------------------------------------------ locations
@@ -372,7 +372,7 @@ fn later_location_overrides_earlier() {
     std::fs::write(&a, "theme = dark\nlayout = stacked\n").unwrap();
     std::fs::write(&b, "theme = light\n").unwrap();
     let l = parse::load(&[a, b], &Disk);
-    assert_eq!(l.config.theme(), Theme::Light);
+    assert_eq!(l.config.theme(), "light");
     assert_eq!(l.config.layout(), Layout::Stacked);
 }
 
@@ -426,7 +426,7 @@ fn legacy_toml_files_become_one_config() {
         assert!(data.join(format!("{f}.migrated")).exists());
     }
     let text = std::fs::read_to_string(&target).unwrap();
-    assert!(text.starts_with("# Blygger configuration."));
+    assert!(text.starts_with("# Burrow configuration."));
     assert!(
         text.contains("# Migrated from ui.toml\n# my fonts\n"),
         "{text}"
@@ -441,7 +441,7 @@ fn legacy_toml_files_become_one_config() {
     assert_eq!(c.blyg_url(), Some("https://blyg.example.com"));
     assert_eq!(c.font_family_writing(), "Source Serif 4");
     assert_eq!(c.font_size(), 21.0);
-    assert_eq!(c.theme(), Theme::Dark);
+    assert_eq!(c.theme(), "dark");
     assert_eq!(c.capture_hotkey(), "ctrl+alt+b");
     assert_eq!(c.ai_provider(), Some("anthropic"));
     assert_eq!(c.ai_model(), Some("claude-sonnet-5"));
@@ -474,7 +474,7 @@ fn migration_keeps_existing_settings_and_skips_broken_files() {
     assert_eq!(r.problems.len(), 1);
     assert!(data.join("ai.toml").exists(), "a broken file is left alone");
     let l = parse::load(std::slice::from_ref(&target), &Disk);
-    assert_eq!(l.config.theme(), Theme::Light, "the new file wins");
+    assert_eq!(l.config.theme(), "light", "the new file wins");
     assert_eq!(l.config.font_size(), 15.0);
     let text = std::fs::read_to_string(&target).unwrap();
     assert!(text.contains("# already set above: theme = dark"), "{text}");
@@ -562,6 +562,25 @@ fn capture_default_and_new_note_parse() {
     );
     assert!(out.contains("\ncapture-default = scratch\n"), "{out}");
     assert!(out.contains("\nnew-note = draft\n"), "{out}");
+}
+
+// ------------------------------------------------------------ spellcheck
+
+#[test]
+fn spellcheck_defaults_on_and_is_documented() {
+    assert!(load_text("").config.spellcheck(), "default true");
+    let l = load_text("spellcheck = false\n");
+    assert!(l.diagnostics.is_empty(), "{:?}", l.diagnostics);
+    assert!(!l.config.spellcheck());
+    let l = load_text("spellcheck = sometimes\n");
+    assert_eq!(l.diagnostics.len(), 1, "{:?}", l.diagnostics);
+    assert!(l.config.spellcheck(), "a bad value keeps the default");
+    let out = show_config(
+        &Default::default(),
+        ShowOptions::from_args(["--default", "--docs"]).unwrap(),
+    );
+    assert!(out.contains("\nspellcheck = true\n"), "{out}");
+    assert!(out.contains("Check Spelling While Typing"), "{out}");
 }
 
 // ------------------------------------------------------------ buttons

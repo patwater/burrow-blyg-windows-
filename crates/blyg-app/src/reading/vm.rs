@@ -4,8 +4,7 @@
 //! here and in `tests.rs` without pixels.
 
 use blyg_core::{
-    Item, Kind, Mention, ReadingItem, RemoteVersion, Status, Subscription, SubscriptionKind,
-    Version,
+    Item, Kind, Mention, ReadingItem, RemoteVersion, Subscription, SubscriptionKind, Version,
 };
 
 /// (subscription id, remote id): one reading row.
@@ -130,6 +129,20 @@ pub fn title(md: &str) -> String {
     blyg_core::plain_title(md).unwrap_or_else(|| "…".into())
 }
 
+/// A post's title in the reading list and stream: its own first line (never
+/// quoted text, see [`blyg_core::plain_title`]). A stub that only quotes
+/// names what it answers rather than borrowing the quoted sentence (studio
+/// 0.8.2).
+pub fn post_title(r: &ReadingItem) -> String {
+    if let Some(t) = blyg_core::plain_title(&r.content_md) {
+        return t;
+    }
+    match r.stub_of.as_ref().and_then(|s| s.target()) {
+        Some(target) => format!("In response to {}", host(target)),
+        None => "…".into(),
+    }
+}
+
 /// `rue.blyg.example.com` from an origin.
 pub fn host(origin: &str) -> String {
     crate::vm::url_host(origin).unwrap_or_else(|| origin.trim_end_matches('/').to_string())
@@ -145,6 +158,25 @@ pub fn badge(r: &ReadingItem) -> Option<String> {
         Some("new".into())
     } else {
         None
+    }
+}
+
+/// The date a row shows (issue #6): the post's own date, never the day you
+/// subscribed. "edited 3d ago" when the author edited it after publishing,
+/// else when it was published ("3h", "Sep 3"). Only a post with no usable
+/// date shows when it was imported.
+pub fn when_label(r: &ReadingItem, now: chrono::DateTime<chrono::Utc>) -> String {
+    let t = r.post_time();
+    let rel = crate::vm::relative_time(&t.at, now);
+    if !t.edited || rel.is_empty() {
+        return rel;
+    }
+    if rel == "now" {
+        "edited just now".into()
+    } else if rel.ends_with(['m', 'h']) && rel.chars().next().is_some_and(|c| c.is_ascii_digit()) {
+        format!("edited {rel} ago")
+    } else {
+        format!("edited {rel}")
     }
 }
 
@@ -217,7 +249,15 @@ pub struct Pill {
 
 /// Action ids under the current version. `Fork` is always shown there but
 /// disabled: it says where forking lives (a pin), rather than hiding it.
-pub const CURRENT_ACTIONS: [&str; 5] = ["Quote", "Reply", "AI reply", "Fork", "Open on web"];
+pub const CURRENT_ACTIONS: [&str; 7] = [
+    "Quote",
+    "Reply",
+    "AI reply",
+    "Fork",
+    "Link post",
+    "Open on web",
+    "Notes", // --- notes ---
+];
 pub const PINNED_ACTIONS: [&str; 4] = [
     "Quote this version",
     "Fork this pin",
@@ -288,9 +328,35 @@ pub fn action_chip(id: &'static str, cx: &ActionCtx) -> ActionChip {
             tip: fork_needs_pin(cx),
             enabled: false,
         },
+        // Named for what it makes, not for a relation: Reply is the one
+        // "I am responding" action. Blyg posts only (feed posts have no id).
+        "Link post" => on(
+            "Link post · new fragment",
+            "Starts a new fragment of yours containing [[…]], a plain link to this post: \
+             not a reply, so no stub_of and no mention."
+                .into(),
+        ),
         "Open on web" => on(
             "Open on web",
             "Opens this post's page in your browser.".into(),
+        ),
+        // --- notes ---
+        "Notes" if cx.blyg => on(
+            "→ Notes",
+            "Adds this post to your notes drawer (![[…]]), or quotes the passage \
+             you selected in it. ⇧⌘N opens the notes."
+                .into(),
+        ),
+        "Notes" => on(
+            "→ Notes",
+            "Adds a link to this post to your notes drawer, or quotes the passage \
+             you selected in it. ⇧⌘N opens the notes."
+                .into(),
+        ),
+        // --- quote targets --- a post shown without a subscription.
+        "Subscribe" => on(
+            "Subscribe",
+            "Follows this blyg, so its posts come to your reading list (private to you).".into(),
         ),
         "Quote this version" => on(
             "Quote this version",
@@ -327,7 +393,7 @@ pub fn action_chip(id: &'static str, cx: &ActionCtx) -> ActionChip {
 pub fn fork_needs_pin(cx: &ActionCtx) -> String {
     match cx.pins.last() {
         Some(pin) => format!(
-            "Fork needs a pinned version: pick 📌 v{pin} in ‹ v{} ▾ › (or press ←), \
+            "Fork needs a pinned version: pick 📌 v{pin} in ‹ v{} ▾ › (or press [), \
              then Fork this pin.",
             cx.current
         ),
@@ -627,63 +693,6 @@ pub fn group_mentions<'a>(
 
 // ---------------------------------------------------------------- quote picker
 
-/// Something already held that a thread can quote with `![[id]]`.
-#[derive(Debug, Clone, PartialEq)]
-pub struct Quotable {
-    pub id: String,
-    pub title: String,
-    /// `yours` or the source (`Rue · rue.blyg.example.com`).
-    pub source: String,
-}
-
-/// Held items only: your own published posts and imported posts from blyg
-/// subscriptions (still current). Never anything fetched by URL. `exclude`
-/// is the server id of the thread being written (it can't quote itself).
-pub fn quotables(
-    items: &[Item],
-    reading: &[ReadingItem],
-    subs: &[Subscription],
-    exclude: Option<&str>,
-    query: &str,
-) -> Vec<Quotable> {
-    let q = query.trim().to_lowercase();
-    let mut out = Vec::new();
-    for it in items {
-        let Some(sid) = &it.server_id else { continue };
-        if it.status != Status::Public || Some(sid.0.as_str()) == exclude {
-            continue;
-        }
-        out.push(Quotable {
-            id: sid.0.clone(),
-            title: it.title().to_string(),
-            source: "yours".into(),
-        });
-    }
-    for r in reading {
-        let blyg = subs
-            .iter()
-            .find(|s| s.id == r.subscription_id)
-            .is_some_and(|s| s.kind == SubscriptionKind::Blyg);
-        if !blyg || r.state != "current" || Some(r.remote_id.as_str()) == exclude {
-            continue;
-        }
-        if out.iter().any(|q: &Quotable| q.id == r.remote_id) {
-            continue;
-        }
-        out.push(Quotable {
-            id: r.remote_id.clone(),
-            title: title(&r.content_md),
-            source: format!("{} · {}", r.subscription_title, host(&r.origin)),
-        });
-    }
-    if q.is_empty() {
-        return out;
-    }
-    out.into_iter()
-        .filter(|x| x.title.to_lowercase().contains(&q) || x.source.to_lowercase().contains(&q))
-        .collect()
-}
-
 /// Can `item` take a quote? Transclusion is valid only in threads.
 pub fn can_quote_into(item: Option<&Item>) -> bool {
     item.is_some_and(|i| i.kind == Kind::Thread)
@@ -715,10 +724,113 @@ fn floor_boundary(s: &str, mut i: usize) -> usize {
     i
 }
 
-/// A reply stub: a thread that transcludes what it answers.
+/// A reply stub: a thread that transcludes what it answers, the whole post
+/// (studio 0.31; the stub editor then offers a passage instead).
 pub fn stub_body(remote_id: &str) -> String {
-    format!("![[{remote_id}]]\n\n")
+    blyg_render::stub_quote::stub_body(remote_id)
 }
+
+/// A link post: a new fragment holding `[[id]]`, a plain link that declares
+/// nothing on the wire (no `stub_of`, no mention). Not a reply: that's a stub.
+pub fn link_post_body(remote_id: &str) -> String {
+    format!("[[{remote_id}]]\n\n")
+}
+
+/// A partial transclusion: the directive with the (normalized) passage
+/// attached as a blockquote, no blank line between (spec §16.4).
+pub fn partial_quote(remote_id: &str, selection: &str) -> String {
+    format!("![[{remote_id}]]\n{}", quote_lines(selection))
+}
+
+/// Where a quoted passage came from (universal quoting).
+#[derive(Debug, Clone, PartialEq)]
+pub enum QuoteSource {
+    /// A blyg post we hold: its id, the HTML a passage is checked against,
+    /// and its page (for the plain form).
+    Blyg {
+        id: String,
+        html: String,
+        title: String,
+        url: Option<String>,
+    },
+    /// Any other page (or your notes: no `url`, maybe no title).
+    Page { title: String, url: Option<String> },
+}
+
+/// A highlighted passage as Markdown to put in a draft, without the blank
+/// line after it (the caller adds that); `None` for an empty selection.
+///
+/// - from a blyg post, into a thread, and the passage really is in the post
+///   we hold: a partial transclusion, [`partial_quote`];
+/// - otherwise (a fragment can't transclude, a web page, notes): the passage
+///   as a blockquote, one `>` block per line ([`quote_lines`]), then a
+///   source line inside the quote, `> — [title](url)`, when there's a page
+///   to link (or just the title when there's only that).
+pub fn quote_block(selection: &str, source: &QuoteSource, into_thread: bool) -> Option<String> {
+    let sel = normalize_selection(selection);
+    if sel.is_empty() {
+        return None;
+    }
+    let (title, url) = match source {
+        QuoteSource::Blyg { id, html, .. }
+            if into_thread && selection_text(html).contains(&sel) =>
+        {
+            return Some(partial_quote(id, &sel));
+        }
+        QuoteSource::Blyg { title, url, .. } | QuoteSource::Page { title, url } => (title, url),
+    };
+    let q = quote_lines(&sel);
+    Some(match url {
+        Some(u) => format!("{q}\n>\n> — {}", crate::app::notes::link(title, u)),
+        None if !title.trim().is_empty() => format!("{q}\n>\n> — {}", title.trim()),
+        None => q,
+    })
+}
+
+/// The held blyg post a web page shows, if any: same origin, and one of the
+/// URL's path segments is the post's id (`/t/{id}/`, `/items/{id}.json`, …).
+pub fn blyg_item_for_url<'a>(
+    url: &str,
+    rows: &'a [ReadingItem],
+    subs: &[Subscription],
+) -> Option<&'a ReadingItem> {
+    let path_of = |u: &str| -> Option<(String, String)> {
+        let host = crate::vm::url_host(u)?;
+        let rest = u.split_once("://")?.1;
+        let path = rest.split_once('/').map_or("", |(_, p)| p);
+        let path = path.split(['?', '#']).next().unwrap_or("");
+        Some((host, format!("/{path}")))
+    };
+    let (host, path) = path_of(url)?;
+    rows.iter().find(|r| {
+        let blyg = subs
+            .iter()
+            .find(|s| s.id == r.subscription_id)
+            .is_none_or(|s| s.kind == SubscriptionKind::Blyg);
+        let Some((rhost, base)) = path_of(&r.origin) else {
+            return false;
+        };
+        blyg && rhost == host
+            && path.starts_with(base.trim_end_matches('/'))
+            && path
+                .split('/')
+                .any(|seg| seg.trim_end_matches(".json") == r.remote_id)
+    })
+}
+
+/// A normalized selection as an attached blockquote: one `>` block per line,
+/// a bare `>` line between them (studio `quoteLines`).
+pub fn quote_lines(selection: &str) -> String {
+    selection
+        .split('\n')
+        .map(|l| format!("> {l}"))
+        .collect::<Vec<_>>()
+        .join("\n>\n")
+}
+
+/// The studio's `selectionText` / `normalizeSelection`, shared with the
+/// preview renderer so a stub is checked by the same rule publish uses.
+pub use blyg_render::{normalize_selection, selection_text};
 
 // ---------------------------------------------------------------- site settings
 
@@ -915,6 +1027,7 @@ mod tests {
             stub_of: None,
             forked_from: None,
             transclusions: vec![],
+            lineage_known: false,
         };
         for q in [
             "",
@@ -949,6 +1062,7 @@ mod tests {
             title: "Rue".into(),
             status: "active".into(),
             in_blogroll: false,
+            title_follows_source: true,
         };
         let mut r = ReadingItem {
             subscription_id: "s".into(),
@@ -972,19 +1086,20 @@ mod tests {
             stub_of: None,
             forked_from: None,
             transclusions: vec![],
+            lineage_known: false,
         };
-        let q = quotables(
+        let all = blyg_core::PickQuery::default();
+        let q = blyg_core::pick::search_in(
             &[],
             std::slice::from_ref(&r),
             std::slice::from_ref(&sub),
-            None,
-            "",
+            &all,
         );
         assert_eq!(q.len(), 1);
         assert_eq!(q[0].title, "Current words.");
         assert!(!q[0].id.contains('@') && !q[0].id.contains("/v"));
         r.state = "tombstone".into();
-        assert!(quotables(&[], &[r], &[sub], None, "").is_empty());
+        assert!(blyg_core::pick::search_in(&[], &[r], &[sub], &all).is_empty());
     }
 
     #[test]
@@ -1000,5 +1115,153 @@ mod tests {
         let s = screen_status(View::Subscriptions, 12);
         assert_eq!((s.post, s.to_read), (false, None));
         assert!(screen_status(View::Posts, 3).post);
+    }
+
+    /// Issue #6: a row shows the post's own date. Subscribing today never
+    /// makes an old post say "now"; an author's edit says "edited …".
+    #[test]
+    fn rows_show_the_posts_own_date() {
+        use chrono::{Duration, Utc};
+        let now = Utc::now();
+        let iso = |d: Duration| (now - d).to_rfc3339();
+        let mut r = crate::fake::reading_seed::seed(now).reading.remove(0);
+        r.observed_at = iso(Duration::seconds(5)); // just subscribed
+        r.created = Some(iso(Duration::hours(3)));
+        r.updated = r.created.clone();
+        assert_eq!(when_label(&r, now), "3h");
+        r.updated = Some(iso(Duration::minutes(20)));
+        assert_eq!(when_label(&r, now), "edited 20m ago");
+        r.updated = Some(iso(Duration::seconds(10)));
+        assert_eq!(when_label(&r, now), "edited just now");
+        r.created = Some(iso(Duration::days(40)));
+        r.updated = Some(iso(Duration::days(30)));
+        assert!(when_label(&r, now).starts_with("edited "));
+        assert!(!when_label(&r, now).ends_with("ago"), "a date, not 'ago'");
+        // A quick fix right after publishing isn't "edited".
+        r.created = Some(iso(Duration::hours(2)));
+        r.updated = Some(iso(Duration::hours(2) - Duration::minutes(3)));
+        assert_eq!(when_label(&r, now), "1h");
+        // No dates at all: the import time is all there is.
+        r.created = None;
+        r.updated = Some("not a date".into());
+        assert_eq!(when_label(&r, now), "now");
+    }
+
+    const ID: &str = "0a1b2c3d4e5f6g7h8j9k0m1n2p";
+
+    #[test]
+    fn selection_text_keeps_blocks_as_lines() {
+        let html = "<h1>On  Tides</h1>\n<p>The sea\nrises &amp; falls.<br/>Twice.</p>\
+                    <p></p><script>x()</script><ul><li>one</li><li><em>two</em></li></ul>";
+        assert_eq!(
+            selection_text(html),
+            "On Tides\nThe sea rises & falls.\nTwice.\none\ntwo"
+        );
+        assert_eq!(
+            normalize_selection("  The sea \r\n\n rises  "),
+            "The sea\nrises"
+        );
+    }
+
+    #[test]
+    fn quote_lines_puts_a_bare_marker_between_paragraphs() {
+        assert_eq!(quote_lines("one"), "> one");
+        assert_eq!(quote_lines("one\ntwo"), "> one\n>\n> two");
+    }
+
+    /// Studio 0.8.2: a thread is named in its author's words; one that only
+    /// quotes names what it answers.
+    #[test]
+    fn post_titles_are_the_authors_own_words() {
+        let now = chrono::Utc::now();
+        let mut r = crate::fake::reading_seed::seed(now).reading.remove(0);
+        r.content_md = format!("![[{ID}]]\n> Their sentence.\n\nMy reply.");
+        assert_eq!(post_title(&r), "My reply.");
+        r.content_md = format!("![[{ID}]]\n> Their sentence.\n");
+        r.stub_of = Some(blyg_core::StubOf {
+            origin: Some("https://rue.blyg.example.com/".into()),
+            id: Some(ID.into()),
+            version: Some(1),
+            url: None,
+        });
+        assert_eq!(post_title(&r), "In response to rue.blyg.example.com");
+        r.stub_of = None;
+        assert_eq!(post_title(&r), "…");
+    }
+
+    #[test]
+    fn quote_block_is_partial_only_where_it_can_be() {
+        let blyg = QuoteSource::Blyg {
+            id: ID.into(),
+            html: "<p>High water at 6:12.</p><p>Low at noon.</p>".into(),
+            title: "Tides".into(),
+            url: Some("https://rue.blyg.example.com/t/x/".into()),
+        };
+        let sel = "High water at 6:12.\n\nLow at noon.";
+        // Into a thread: the partial grammar, no blank line after ![[id]].
+        assert_eq!(
+            quote_block(sel, &blyg, true).unwrap(),
+            format!("![[{ID}]]\n> High water at 6:12.\n>\n> Low at noon.")
+        );
+        // A fragment can't transclude: the plain quote with a link.
+        assert_eq!(
+            quote_block("Low at noon.", &blyg, false).unwrap(),
+            "> Low at noon.\n>\n> — [Tides](https://rue.blyg.example.com/t/x/)"
+        );
+        // Not in the post we hold (edited since?): the plain form, even in a thread.
+        assert!(
+            quote_block("Something else", &blyg, true)
+                .unwrap()
+                .starts_with("> Something else\n>\n> — [Tides]")
+        );
+        // A web page: brackets escaped in the link.
+        let page = QuoteSource::Page {
+            title: "Tide tables [2026]".into(),
+            url: Some("https://example.com/t".into()),
+        };
+        assert_eq!(
+            quote_block("  a  passage ", &page, true).unwrap(),
+            "> a passage\n>\n> — [Tide tables \\[2026\\]](https://example.com/t)"
+        );
+        // Notes without a source: the quote alone.
+        let bare = QuoteSource::Page {
+            title: String::new(),
+            url: None,
+        };
+        assert_eq!(quote_block("mine", &bare, true).unwrap(), "> mine");
+        assert_eq!(quote_block(" \n ", &bare, true), None);
+    }
+
+    #[test]
+    fn a_page_is_a_held_blyg_post_by_origin_and_id() {
+        let now = chrono::Utc::now();
+        let seed = crate::fake::reading_seed::seed(now);
+        let (rows, subs) = (&seed.reading, &seed.subs);
+        let r = rows
+            .iter()
+            .find(|r| r.remote_id == crate::fake::reading_seed::LIN_GARDENS)
+            .unwrap();
+        let base = r.origin.trim_end_matches('/');
+        let id = &r.remote_id;
+        for url in [
+            format!("{base}/t/{id}/"),
+            format!("{base}/items/{id}.json"),
+            format!("{base}/f/{id}?utm=x#top"),
+        ] {
+            assert_eq!(
+                blyg_item_for_url(&url, rows, subs).map(|r| &r.remote_id),
+                Some(id),
+                "{url}"
+            );
+        }
+        assert!(blyg_item_for_url(&format!("{base}/"), rows, subs).is_none());
+        assert!(
+            blyg_item_for_url(&format!("https://other.example.com/t/{id}/"), rows, subs).is_none()
+        );
+    }
+
+    #[test]
+    fn link_post_is_a_plain_link() {
+        assert_eq!(link_post_body(ID), format!("[[{ID}]]\n\n"));
     }
 }

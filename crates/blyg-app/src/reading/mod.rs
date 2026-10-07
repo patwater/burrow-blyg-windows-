@@ -15,16 +15,38 @@
 //!   (type-to-confirm).
 //! - **Site settings** (Blyg › Site Settings…): the blyg's title, bio, links.
 //! - **Quote picker** (⌘K, threads only): inserts `![[id]]` from held items.
+//! - **Lineage** (⌘J): a post's neighbours one step each way, walkable, with
+//!   the reader's actions on a ring (`lineage.rs`, model in `lineage_vm.rs`).
 
 pub(crate) mod demo; // --- buttons --- (pub(crate): the toolbar demo snapshots too)
+mod lineage;
+pub(crate) mod lineage_vm;
 mod list;
+mod marks; // --- read/unread ---
 mod mentions;
+pub(crate) mod pick_vm; // --- read/unread ---
 mod quote_picker;
 mod site_settings;
+// --- stream --- (issue #1: the default reading mode)
+pub(crate) mod stream;
+pub(crate) mod stream_vm;
+// --- quote targets --- (issue #3)
+pub(crate) mod original;
+// --- responses --- (issue #7)
+pub(crate) mod responses;
 mod subscriptions;
+// --- stub quotes --- the stub editor's hint line and passage chooser.
+pub(crate) mod stub_bar;
 mod versions;
+// --- reader folders --- the Reader's sources pane (smart feeds, folders).
+pub(crate) mod sources;
+pub(crate) mod sources_vm;
 pub(crate) mod vm;
 
+#[cfg(test)]
+mod sources_tests; // --- reader folders ---
+#[cfg(test)]
+mod stream_tests;
 #[cfg(test)]
 mod tests;
 
@@ -39,7 +61,8 @@ use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
 use super::{MainView, TITLEBAR_H};
-use vm::Key;
+use crate::theme::Rule;
+use vm::Key; // --- themes --- dividers
 
 gpui_kit::actions!(
     blygger,
@@ -48,6 +71,7 @@ gpui_kit::actions!(
         ShowMentions,
         ShowSubscriptions,
         ShowVersions,
+        ShowLineage,
         QuotePicker,
         SiteSettings,
         SubscribeTo,
@@ -120,7 +144,7 @@ impl<T> Load<T> {
 
 pub const NOT_AVAILABLE: &str = "Not available on this server";
 pub const NOT_AVAILABLE_SUB: &str = "This blyg doesn't have the owner-API read extensions \
-     (GET /api/reading, /api/mentions, /api/settings). See docs/SERVER.md.";
+     (GET /api/reading/imported, /api/mentions, /api/settings). See docs/SERVER.md.";
 
 /// A reading item open in the detail pane.
 pub struct Opened {
@@ -138,6 +162,8 @@ pub struct Opened {
     pub dropdown: bool,
     pub pins: HashMap<u32, Load<PinnedVersion>>,
     pub diff_vs_now: bool,
+    // --- responses --- posts here that quote, stub or fork this one.
+    pub responses: Vec<blyg_core::Response>,
 }
 
 impl Opened {
@@ -185,18 +211,47 @@ pub enum RSheet {
         name: Entity<InputState>,
         bio: Entity<InputState>,
         links: Entity<TextareaState>,
+        /// IANA zone; shown only when the server has the setting (studio 0.8).
+        timezone: Entity<InputState>,
         load: Load<Settings>,
         error: Option<String>,
         busy: bool,
         focus: FocusHandle,
     },
+    // --- reader folders --- New Folder… / Rename…
+    Folder {
+        input: Entity<InputState>,
+        /// Renaming this folder (else a new one).
+        rename: Option<String>,
+        /// File this subscription in the new folder once it's made
+        /// ("Move to folder › New Folder…").
+        then_file: Option<String>,
+        error: Option<String>,
+        /// The name the error is about.
+        tried: String,
+    },
+    /// --- subscription names --- Rename… a subscription.
+    SubName {
+        input: Entity<InputState>,
+        sub: String,
+        error: Option<String>,
+        busy: bool,
+    },
+    /// Lineage (⌘J).
+    Lineage(Box<lineage::Sheet>),
+    /// The `[[` / `![[` picker with its own search box (⌘K, or typing the
+    /// brackets with `picker_typing = panel`).
     Quote {
         target: LocalId,
         input: Entity<InputState>,
         sel: usize,
-        /// Opened by typing `![[`: where that text was taken from, and the
-        /// text itself, so esc can put it back.
+        /// Opened by typing `![[` / `[[`: where that text was taken from,
+        /// and the text itself, so esc can put it back.
         typed: Option<(usize, String)>,
+        /// Link (`[[id]]`) or quote (`![[id]]`).
+        kind: crate::composer::picker::PickKind,
+        /// What the search found for the box and the filters.
+        rows: Vec<blyg_core::Pickable>,
     },
 }
 
@@ -226,10 +281,53 @@ pub struct State {
     /// Indices into `rows` that match `query`, in display order: what the
     /// list shows and ↑/↓ move through.
     pub shown: Vec<usize>,
+    // --- stream ---
+    /// Stream (the default) or Reader (list + post), remembered in state.json.
+    pub mode: stream_vm::ReadMode,
+    pub stream: stream::Stream,
+    // --- quote targets ---
+    /// The version to show once the post being opened has its versions
+    /// (a quote's version), when it's current or pinned.
+    pub want_version: Option<u32>,
+    // --- responses --- (and lineage)
+    /// What draws on each post (`post_key`s), as kinds: the glyph's right
+    /// side, never a count. From the rows, `own_refs` and the mentions.
+    pub down: HashMap<(String, String), lineage_vm::Kinds>,
+    /// What your own published posts point at, and your blyg's origin
+    /// (`MainView::refresh_own_lineage`).
+    pub own_refs: Vec<blyg_core::PostRef>,
+    pub own_origin: Option<String>,
+    // --- reader folders --- the Reader's three panes.
+    /// Local folders, in order, and subscription id → folder id.
+    pub folders: Vec<blyg_core::Folder>,
+    pub filed: HashMap<String, String>,
+    /// What the list shows (Reader mode; the stream shows everything).
+    pub source: sources_vm::Source,
+    /// Which pane has the keyboard.
+    pub pane: sources_vm::Pane,
+    /// The sources pane is shown (⌥⌘S), and its width (drag its edge).
+    pub sources_open: bool,
+    pub sources_w: f32,
+    /// Folders whose subscriptions are hidden.
+    pub collapsed: HashSet<String>,
+    /// Posts opened since the source was picked: they stay listed even when
+    /// they no longer match (read in "All unread", unthumbed in "Thumbed").
+    pub sticky: HashSet<Key>,
+    /// The sources pane's (or a subscription's) context menu.
+    pub src_menu: Option<sources::SourceMenu>,
+    /// (origin, avatar URL) of every cached profile, for the source rows.
+    pub avatars: Vec<(String, String)>,
+    /// --- stub quotes --- the stub editor's passage chooser, when open.
+    pub stub: Option<stub_bar::Chooser>,
+    /// --- read/unread --- posts picked in the list (⌘-click, ⇧-click, ⌘A).
+    pub picked: pick_vm::Picked,
 }
 
 impl State {
     pub fn new(backend: &dyn blyg_core::Backend, cx: &mut App) -> Self {
+        let data_dir = cx
+            .try_global::<crate::connection::Connection>()
+            .map(|c| c.data_dir.clone());
         Self {
             view: View::Posts,
             focus: cx.focus_handle(),
@@ -250,6 +348,27 @@ impl State {
             search: None,
             query: String::new(),
             shown: Vec::new(),
+            mode: stream_vm::load_mode(
+                cx.try_global::<crate::connection::Connection>()
+                    .map(|c| c.data_dir.as_path()),
+            ),
+            stream: stream::Stream::new(),
+            want_version: None,
+            down: HashMap::new(),
+            own_refs: Vec::new(),
+            own_origin: None,
+            folders: backend.folders(),
+            filed: backend.subscription_folders(),
+            source: sources_vm::Source::default(),
+            pane: sources_vm::Pane::default(),
+            sources_open: sources::load_open(data_dir.as_deref()),
+            sources_w: sources::load_width(data_dir.as_deref()),
+            collapsed: HashSet::new(),
+            sticky: HashSet::new(),
+            src_menu: None,
+            avatars: sources::avatars(backend),
+            stub: None,
+            picked: Default::default(),
         }
         .refiltered()
     }
@@ -261,7 +380,32 @@ impl State {
 
     /// Recompute `shown` after `rows` or `query` changed.
     pub fn refilter(&mut self) {
-        self.shown = vm::filter(&self.rows, &self.query);
+        let searched = vm::filter(&self.rows, &self.query);
+        // --- reader folders --- Reader lists the selected source only.
+        self.shown = if self.mode == stream_vm::ReadMode::Reader {
+            sources_vm::filter_source(
+                &self.rows,
+                &searched,
+                &self.source,
+                &self.filed,
+                &self.sticky,
+                chrono::Utc::now(),
+            )
+        } else {
+            searched
+        };
+        self.stream.sync(&self.rows, &self.shown);
+        // --- read/unread --- picks the list no longer shows let go.
+        if !self.picked.is_empty() {
+            let keys: Vec<vm::Key> = self.shown_rows().map(vm::key).collect();
+            self.picked.retain_shown(&keys);
+        }
+        self.down = lineage_vm::down_index(
+            &self.rows,
+            &self.own_refs,
+            self.mentions.ready().map(Vec::as_slice).unwrap_or(&[]),
+            self.own_origin.as_deref(),
+        );
     }
 
     /// The rows the list shows (all of them without a search).
@@ -306,10 +450,13 @@ impl MainView {
         .on_action(
             cx.listener(|this, _: &QuotePicker, window, cx| this.open_quote_picker(window, cx)),
         )
+        .on_action(cx.listener(|this, _: &ShowLineage, window, cx| this.toggle_lineage(window, cx)))
         .on_action(
             cx.listener(|this, _: &SiteSettings, window, cx| this.open_site_settings(window, cx)),
         )
         .on_action(cx.listener(|this, _: &SubscribeTo, window, cx| this.open_subscribe(window, cx)))
+        .map(|d| self.stream_actions(d, cx))
+        .map(|d| self.sources_actions(d, cx)) // --- reader folders ---
     }
 
     /// Hook: the reading/backend event (`CoreEvent::ReadingChanged`).
@@ -317,6 +464,10 @@ impl MainView {
         let r = &mut self.reading;
         r.available = self.backend.read_extensions_available();
         r.subs = self.backend.subscriptions();
+        // --- reader folders ---
+        r.folders = self.backend.folders();
+        r.filed = self.backend.subscription_folders();
+        r.avatars = sources::avatars(self.backend.as_ref());
         let fresh = self.backend.reading();
         if r.view == View::Reading {
             // Keep the order stable under the cursor: update rows in place,
@@ -336,6 +487,10 @@ impl MainView {
         } else {
             r.rows = vm::order(fresh);
         }
+        let (own_refs, own_origin) = self.own_lineage();
+        let r = &mut self.reading;
+        r.own_refs = own_refs;
+        r.own_origin = own_origin;
         r.refilter();
         if let Some(o) = &mut r.opened {
             // Fresh metadata (thumb, state), but keep the read version seen
@@ -345,6 +500,7 @@ impl MainView {
                 o.item = n.clone();
                 o.item.read_version = read;
             }
+            o.responses = self.backend.responses(&o.item.origin, &o.item.remote_id);
         }
         cx.notify();
     }
@@ -374,8 +530,16 @@ impl MainView {
             View::Reading => {
                 self.reading.available = self.backend.read_extensions_available();
                 self.reading.rows = vm::order(self.backend.reading());
+                // --- reader folders ---
+                self.reading.subs = self.backend.subscriptions();
+                self.reading.folders = self.backend.folders();
+                self.reading.filed = self.backend.subscription_folders();
+                (self.reading.own_refs, self.reading.own_origin) = self.own_lineage();
                 self.reading.refilter();
                 self.ensure_reading_search(window, cx);
+                if self.reading.mode == stream_vm::ReadMode::Stream {
+                    self.ensure_stream_timer(window, cx);
+                }
                 if self
                     .reading
                     .sel
@@ -389,6 +553,9 @@ impl MainView {
             View::Mentions => self.load_mentions(cx),
             View::Subscriptions => {
                 self.reading.subs = self.backend.subscriptions();
+                // --- reader folders --- the folder chooser on each row.
+                self.reading.folders = self.backend.folders();
+                self.reading.filed = self.backend.subscription_folders();
                 self.reading.unsub_confirm = None;
             }
         }
@@ -404,7 +571,7 @@ impl MainView {
 
     /// Hook: the segmented view switcher, on the right of the title bar.
     pub(super) fn render_view_switcher(&self, cx: &mut Context<Self>) -> AnyElement {
-        let p = self.palette;
+        let p = self.palette.on_bar(); // --- themes --- on the title bar
         let now = self.now;
         let tabs = View::ALL.iter().map(|&v| {
             let on = self.reading.view == v;
@@ -511,9 +678,22 @@ impl MainView {
             cx.stop_propagation();
             return;
         }
+        // --- read/unread --- ⌘A picks every post the Reader's list shows
+        // (the search field's own ⌘A is the field's).
+        if self.reading.view == View::Reading
+            && self.reading.mode == stream_vm::ReadMode::Reader
+            && k.modifiers.platform
+            && !(k.modifiers.control || k.modifiers.alt || k.modifiers.shift)
+            && k.key == "a"
+        {
+            self.pick_all(cx);
+            cx.stop_propagation();
+            return;
+        }
         if k.modifiers.platform || k.modifiers.control || k.modifiers.alt {
             return;
         }
+        let stream = self.reading.mode == stream_vm::ReadMode::Stream;
         let handled = match (self.reading.view, k.key.as_str()) {
             (View::Reading, "escape")
                 if self.reading.opened.as_ref().is_some_and(|o| o.dropdown) =>
@@ -524,6 +704,41 @@ impl MainView {
                 cx.notify();
                 true
             }
+            // --- reader folders --- a context menu takes esc first.
+            (View::Reading | View::Subscriptions, "escape") if self.reading.src_menu.is_some() => {
+                self.reading.src_menu = None;
+                cx.notify();
+                true
+            }
+            // --- read/unread --- esc lets go of the picks first; r / u
+            // mark the picks (else the open post) read / unread.
+            (View::Reading, "escape") if !self.reading.picked.is_empty() => {
+                self.reading.picked.clear();
+                cx.notify();
+                true
+            }
+            (View::Reading, "r") => {
+                self.mark_picked(true, cx);
+                true
+            }
+            (View::Reading, "u") => {
+                self.mark_picked(false, cx);
+                true
+            }
+            // [ / ] step through the versions (←/→ in the stream).
+            (View::Reading, "[") => {
+                self.step_version(-1, cx);
+                true
+            }
+            (View::Reading, "]") => {
+                self.step_version(1, cx);
+                true
+            }
+            // --- stream --- j/k select, ⏎/Space read more, esc closes the pane.
+            (View::Reading, key) if stream && self.stream_key(key, window, cx) => true,
+            // --- reader folders --- ←/→ between the panes, ↑/↓ within one,
+            // j/k posts from anywhere, Space pages then next unread.
+            (View::Reading, key) if !stream && self.reader_key(key, window, cx) => true,
             // esc clears a search before it leaves the screen.
             (View::Reading, "escape") if !self.reading.query.is_empty() => {
                 self.set_reading_query("", window, cx);
@@ -591,6 +806,9 @@ impl MainView {
             RSheet::Subscribe { .. } => (500., self.render_subscribe_sheet(sheet, cx)),
             RSheet::Site { .. } => (540., self.render_site_sheet(sheet, cx)),
             RSheet::Quote { .. } => (520., self.render_quote_sheet(sheet, cx)),
+            RSheet::Lineage(s) => (880., self.render_lineage_sheet(s, cx)),
+            RSheet::Folder { .. } => (420., self.render_folder_sheet(sheet, cx)), // --- reader folders ---
+            RSheet::SubName { .. } => (440., self.render_sub_name_sheet(sheet, cx)),
         };
         Some(self.sheet_frame(width, content, cx))
     }
@@ -615,7 +833,7 @@ impl MainView {
 
     /// The same drop-from-the-title-bar frame the main sheets use.
     fn sheet_frame(&self, width: f32, content: AnyElement, cx: &mut Context<Self>) -> AnyElement {
-        let p = self.palette;
+        let p = self.palette.on_page();
         let gen_ = self.reading.sheet_gen;
         div()
             .absolute()
@@ -630,22 +848,8 @@ impl MainView {
                     .occlude()
                     .w(px(width))
                     .max_w(relative(0.92))
-                    .bg(p.bg)
-                    .border_1()
-                    .border_t_0()
-                    .border_color(p.line)
-                    .rounded_b(px(12.))
-                    .shadow(vec![BoxShadow {
-                        color: p.shadow,
-                        offset: point(px(0.), px(18.)),
-                        blur_radius: px(40.),
-                        spread_radius: px(-12.),
-                        inset: false,
-                    }])
-                    .px(px(18.))
-                    .py(px(16.))
-                    .font_family("Inter")
-                    .text_size(px(13.))
+                    .map(|d| self.sheet_style(d))
+                    .text_color(p.ink)
                     // Windows: Esc closes the sheet from anywhere inside it,
                     // not only from its text field (which loses focus after
                     // a click or an error).
@@ -668,15 +872,66 @@ impl MainView {
             .into_any_element()
     }
 
-    fn kbd(&self, k: &'static str) -> Div {
+    /// A sheet's ground, edge, corners and shadow, as the theme draws the
+    /// main sheets (`sheet.radius`, `sheet.border`), in the interface font.
+    pub(crate) fn sheet_style<E: Styled>(&self, d: E) -> E {
         let p = self.palette;
+        let drop = BoxShadow {
+            color: p.shadow,
+            offset: point(px(0.), px(18.)),
+            blur_radius: px(40.),
+            spread_radius: px(-12.),
+            inset: false,
+        };
+        crate::ornament::border_with_shadow(
+            d.bg(p.bg),
+            self.theme.sheet_border,
+            p.line,
+            p.bg,
+            Some(drop),
+        )
+        .border_t_0()
+        .rounded_b(px(self.theme.sheet_radius))
+        .px(px(18.))
+        .py(px(16.))
+        .font_family(self.prefs.ui().family)
+        .text_size(px(13.))
+    }
+
+    /// The small-label font: the theme's chrome font (Inter unless the
+    /// theme or the interface font says otherwise), as the posts list's
+    /// metadata uses.
+    pub(crate) fn chrome(&self) -> &'static str {
+        self.theme.chrome_font(&self.prefs)
+    }
+
+    /// The mark on something new (an unread post, a new mention): the
+    /// theme's `marker.new` (Fortress's `*`), else a small dot in `color`.
+    pub(crate) fn unread_marker(&self, color: Hsla) -> AnyElement {
+        crate::ornament::marker(
+            &self.theme,
+            blyg_core::config::theme::Slot::MarkerNew,
+            color,
+            self.chrome(),
+        )
+        .unwrap_or_else(|| {
+            div()
+                .size(px(6.))
+                .rounded_full()
+                .bg(color)
+                .into_any_element()
+        })
+    }
+
+    fn kbd(&self, k: &'static str) -> Div {
+        let p = self.palette.on_page();
         div()
             .px(px(6.))
             .py(px(1.))
             .min_w(px(20.))
             .flex()
             .justify_center()
-            .rounded(px(5.))
+            .rounded(px(self.theme.corner(5.)))
             .border_1()
             .border_b_2()
             .border_color(p.line)
@@ -714,11 +969,11 @@ impl MainView {
     }
 
     fn input_box(&self, el: AnyElement, error: bool) -> Div {
-        let p = self.palette;
+        let p = self.palette.on_page();
         div()
             .px(px(10.))
             .py(px(7.))
-            .rounded(px(7.))
+            .rounded(px(self.theme.corner(7.)))
             .border_1()
             .border_color(if error { p.over } else { p.line })
             .text_size(px(13.5))
@@ -727,16 +982,16 @@ impl MainView {
 
     /// A small bordered action chip (`Quote`, `Reply`, …).
     fn chip(&self, id: impl Into<SharedString>, label: impl Into<SharedString>) -> Stateful<Div> {
-        let p = self.palette;
+        let p = self.palette.on_page();
         div()
             .id(ElementId::Name(id.into()))
             .px(px(8.))
             .py(px(3.))
-            .rounded(px(6.))
-            .border_1()
-            .border_color(p.line)
+            // --- themes --- `chip.radius` and `chip.border`.
+            .rounded(px(self.theme.chip_radius))
+            .map(|d| crate::ornament::border(d, self.theme.chip_border, p.line))
             .cursor_pointer()
-            .font_family("Inter")
+            .font_family(self.chrome())
             .text_size(px(11.5))
             .font_weight(FontWeight::MEDIUM)
             .text_color(p.ink)
@@ -750,16 +1005,16 @@ impl MainView {
         id: impl Into<SharedString>,
         label: impl Into<SharedString>,
     ) -> Stateful<Div> {
-        let p = self.palette;
+        let p = self.palette.on_page();
         div()
             .id(ElementId::Name(id.into()))
             .px(px(8.))
             .py(px(3.))
-            .rounded(px(6.))
+            .rounded(px(self.theme.chip_radius))
             .border_1()
             .border_dashed()
             .border_color(p.line)
-            .font_family("Inter")
+            .font_family(self.chrome())
             .text_size(px(11.5))
             .font_weight(FontWeight::MEDIUM)
             .text_color(p.muted)
@@ -768,7 +1023,7 @@ impl MainView {
 
     /// The screen header: a title, a hint, and actions on the right.
     fn screen_header(&self, title: &'static str, hint: String, actions: Vec<AnyElement>) -> Div {
-        let p = self.palette;
+        let p = self.palette.on_page();
         div()
             .h(px(super::OMNI_H))
             .flex_none()
@@ -776,8 +1031,7 @@ impl MainView {
             .items_center()
             .gap(px(10.))
             .px(px(14.))
-            .border_b_1()
-            .border_color(p.line)
+            .rule_b(&p)
             .child(
                 div()
                     .font_weight(FontWeight::SEMIBOLD)
@@ -787,7 +1041,7 @@ impl MainView {
             .child(
                 div()
                     .flex_1()
-                    .font_family("Inter")
+                    .font_family(self.chrome())
                     .text_size(px(12.))
                     .text_color(p.muted)
                     .truncate()
@@ -798,7 +1052,7 @@ impl MainView {
 
     /// "Not available on this server", centred.
     fn unavailable(&self) -> AnyElement {
-        let p = self.palette;
+        let p = self.palette.on_page();
         div()
             .id("not-available")
             .flex_1()
@@ -832,6 +1086,23 @@ impl MainView {
             .text_size(px(12.5))
             .text_color(self.palette.muted)
             .child(s.into())
+            .into_any_element()
+    }
+
+    /// An empty list's message, under the theme's `empty.art` (a lit burrow
+    /// room, a compass rose…) as the empty posts list shows it.
+    fn empty_note(&self, s: impl Into<SharedString>) -> AnyElement {
+        let Some(art) = crate::ornament::empty_art_on(&self.theme, self.palette.bg) else {
+            return self.muted_note(s);
+        };
+        div()
+            .id("reading-empty")
+            .pt(px(16.))
+            .px(px(16.))
+            .flex()
+            .flex_col()
+            .child(art)
+            .child(div().mx(px(-16.)).child(self.muted_note(s)))
             .into_any_element()
     }
 
@@ -892,7 +1163,7 @@ impl MainView {
 
 /// Insert a block of markdown on its own paragraph at `cursor`; returns the
 /// text and the caret after the block.
-fn insert_block(text: &str, cursor: usize, block: &str) -> (String, usize) {
+pub(crate) fn insert_block(text: &str, cursor: usize, block: &str) -> (String, usize) {
     if block.starts_with("![[") && !block.contains('\n') {
         let id = block.trim_start_matches("![[").trim_end_matches("]]");
         return vm::insert_transclusion(text, cursor, id);
@@ -920,13 +1191,15 @@ pub struct Tip(pub String);
 
 impl Render for Tip {
     fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        // --- themes --- the theme's toast colours and chrome font.
+        let s = crate::theme::tip_style();
         div()
             .px(px(7.))
             .py(px(3.))
-            .rounded(px(5.))
-            .bg(gpui_kit::black().opacity(0.85))
-            .text_color(gpui_kit::white())
-            .font_family("Inter")
+            .rounded(px(s.radius))
+            .bg(s.bg)
+            .text_color(s.ink)
+            .font_family(s.font)
             .text_size(px(11.))
             .child(self.0.clone())
     }

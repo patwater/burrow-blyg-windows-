@@ -1,0 +1,17 @@
+{
+  "name": "link_in_link_text_unresolved",
+  "kind": "fragment",
+  "md": "[see [[0zzzzzzzzzzzzzzzzzzzzzzzzz]] here](https://x.test/) and [**bold [[01j9zq3k4m5n6p7q8r9s0t1v2w]]**](/p)",
+  "html": "<p><a href=\"https://x.test/\">see [[0zzzzzzzzzzzzzzzzzzzzzzzzz]] here</a> and <a href=\"/p\"><strong>bold “Small tools, used daily, beat big tools used rarely.”</strong></a></p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": [
+    {
+      "directive": "[[0zzzzzzzzzzzzzzzzzzzzzzzzz]]",
+      "reason": "unknown item"
+    }
+  ]
+}

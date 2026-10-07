@@ -1,0 +1,19 @@
+{
+  "name": "tk_in_fence_after_scope",
+  "kind": "fragment",
+  "md": "[TK]x[=]out[/TK]\n\n```\n[TK]example[=]literal[/TK]\n```\n\nand `[TK]y[/TK]` inline.",
+  "html": "<div class=\"blyg-tk-gen\"><p>out</p>\n</div>\n<pre><code>[TK]example[=]literal[/TK]\n</code></pre>\n<p>and <code>[TK]y[/TK]</code> inline.</p>\n",
+  "tk": {
+    "scopes": [
+      {
+        "instruction": "x",
+        "generated": true,
+        "block": true,
+        "source_ids": []
+      }
+    ],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

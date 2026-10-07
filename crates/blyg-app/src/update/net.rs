@@ -59,7 +59,7 @@ impl UreqHttp {
             .timeout_connect(Duration::from_secs(15))
             .timeout_read(Duration::from_secs(60))
             .user_agent(concat!(
-                "Blygger-Desktop/",
+                "Burrow/",
                 env!("CARGO_PKG_VERSION"),
                 " (update check)"
             ))

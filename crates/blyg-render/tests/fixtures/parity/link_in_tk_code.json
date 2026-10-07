@@ -1,0 +1,19 @@
+{
+  "name": "link_in_tk_code",
+  "kind": "fragment",
+  "md": "[TK]x[=]`[[01j9zq3k4m5n6p7q8r9s0t1v2w]]` and [[01j9zq3k4m5n6p7q8r9s0t1v2w]][/TK]\n\nAnd `[[0zzzzzzzzzzzzzzzzzzzzzzzzz]]`.",
+  "html": "<div class=\"blyg-tk-gen\"><p><code>[[01j9zq3k4m5n6p7q8r9s0t1v2w]]</code> and <a href=\"/blyg/f/01j9zq3k4m5n6p7q8r9s0t1v2w/\">“Small tools, used daily, beat big tools used rarely.”</a></p>\n</div>\n<p>And <code>[[0zzzzzzzzzzzzzzzzzzzzzzzzz]]</code>.</p>\n",
+  "tk": {
+    "scopes": [
+      {
+        "instruction": "x",
+        "generated": true,
+        "block": true,
+        "source_ids": []
+      }
+    ],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

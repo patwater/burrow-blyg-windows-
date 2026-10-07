@@ -14,16 +14,17 @@ impl MainView {
         self.show_toast(text, None, cx);
     }
 
-    /// "Blygger X is ready · Restart to update · What's new" (or available,
+    /// "Burrow X is ready · Restart to update · What's new" (or available,
     /// or can't update in place), when there's something to say.
     pub(super) fn render_update_notice(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         let notice = update::notice(cx)?;
-        let p = self.palette;
+        // --- themes --- links on the status bar's own ground.
+        let link_color = self.palette.on_status_text(self.palette.accent);
         let link = |id: &'static str, label: &'static str| {
             div()
                 .id(id)
                 .cursor_pointer()
-                .text_color(p.accent)
+                .text_color(link_color)
                 .hover(|s| s.underline())
                 .child(label)
         };

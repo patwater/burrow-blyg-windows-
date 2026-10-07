@@ -32,6 +32,27 @@ pub enum SurfaceEvent {
     OpenUrl(String),
     /// A quote from another blyg was clicked: open that origin's profile.
     OpenOrigin(String),
+    // --- quote targets ---
+    /// A quote's text was clicked: open the original post (`origin` from the
+    /// quote box's footer, the quoted `version` when the markup has it).
+    OpenQuote {
+        origin: String,
+        id: String,
+        version: Option<u32>,
+    },
+    // --- reader folders ---
+    /// Space in the Reader when the page was already scrolled to its end:
+    /// go on to the next post to read.
+    PageEnd,
+    // --- selection ---
+    /// The page's text selection became non-empty (`true`) or went away
+    /// (`false`). A selection the page keeps through a focus change (see
+    /// [`HOST_SCRIPT`]) doesn't count as going away.
+    Selected(bool),
+    /// The pill by the selection: "Quote in draft". (Its "Reply with this"
+    /// went with studio 0.31: Reply quotes the whole post, and a passage is
+    /// chosen in the stub editor.)
+    QuoteSelection,
 }
 
 /// A place to show the preview page. `wry` implements it for real; tests use
@@ -53,6 +74,11 @@ pub trait PreviewSurface {
     fn set_dark(&mut self, dark: bool);
     /// `BLYGGER_TIMING=1`: print what the page shows (smoke tests).
     fn probe(&mut self) {}
+    /// --- notes --- Send the page's selected text on `reply` ("" when
+    /// nothing is selected).
+    fn selection(&mut self, reply: async_channel::Sender<String>) {
+        let _ = reply.try_send(String::new());
+    }
 }
 
 /// Reports the page's geometry and what it rendered, as one JSON line.
@@ -110,9 +136,32 @@ pub fn parse_ipc(msg: &str) -> Option<SurfaceEvent> {
     if msg == "focus" {
         return Some(SurfaceEvent::Refocus);
     }
+    if msg == "end" {
+        return Some(SurfaceEvent::PageEnd); // --- reader folders ---
+    }
+    // --- selection ---
+    match msg {
+        "sel:1" => return Some(SurfaceEvent::Selected(true)),
+        "sel:0" => return Some(SurfaceEvent::Selected(false)),
+        "act:quote" => return Some(SurfaceEvent::QuoteSelection),
+        _ => {}
+    }
     if let Some(o) = msg.strip_prefix("origin:") {
         let web = o.starts_with("https://") || o.starts_with("http://");
         return web.then(|| SurfaceEvent::OpenOrigin(o.to_string()));
+    }
+    // --- quote targets --- `quote:<origin>\u{1f}<id>\u{1f}<version>`
+    if let Some(q) = msg.strip_prefix("quote:") {
+        let mut parts = q.split('\u{1f}');
+        let (origin, id, version) = (parts.next()?, parts.next()?, parts.next().unwrap_or(""));
+        let web = origin.starts_with("https://") || origin.starts_with("http://");
+        let id_ok =
+            !id.is_empty() && id.len() <= 64 && id.chars().all(|c| c.is_ascii_alphanumeric());
+        return (web && id_ok).then(|| SurfaceEvent::OpenQuote {
+            origin: origin.to_string(),
+            id: id.to_string(),
+            version: version.parse().ok(),
+        });
     }
     msg.strip_prefix("line:")
         .and_then(|n| n.parse().ok())
@@ -183,6 +232,22 @@ pub fn scroll_js(index: usize) -> String {
     format!("window.__blyg && window.__blyg.scrollTo({index});")
 }
 
+/// --- reader folders --- Space in the Reader: a page down, or `end` when
+/// the page is already at its bottom.
+pub const PAGE_DOWN_JS: &str = "window.__blyg && window.__blyg.page(1);";
+
+/// --- selection --- Turn on the pill that follows a text selection
+/// ("Quote in draft ⇧⌘D"). Off by default: the studio preview never shows it.
+pub const SELECTION_UI_JS: &str = "window.__blyg && window.__blyg.selectionUi({});";
+
+/// ↑/↓ with the post pane focused: scroll a little.
+pub fn nudge_js(down: bool) -> String {
+    format!(
+        "window.__blyg && window.__blyg.nudge({});",
+        if down { 1 } else { -1 }
+    )
+}
+
 /// Host-side helpers, injected at document start (main frame only).
 #[cfg_attr(test, allow(dead_code))]
 pub const HOST_SCRIPT: &str = r#"
@@ -220,31 +285,182 @@ pub const HOST_SCRIPT: &str = r#"
     if (b.top >= 0 && b.bottom <= window.innerHeight) return;
     el.scrollIntoView({ block: b.height > window.innerHeight ? "start" : "center", behavior: "smooth" });
   }
+  // --- selection --- WebKit drops a page's selection as soon as the view
+  // gives up the keyboard, and a click here hands it back to the app
+  // ("focus", "line:"). So the last range is kept, and put back when a
+  // collapse comes with a blur (in either order); a new press in the page
+  // starts over. The pill by the selection (off unless `selectionUi`)
+  // quotes it without leaving the page.
+  var kept = null, lostAt = 0, blurAt = 0, pressing = false, hasSel = false;
+  var ui = null, pill = null, timer = 0, pending = 0;
+  function selected() {
+    var s = window.getSelection();
+    return s && s.rangeCount && !s.isCollapsed && String(s).trim() ? s : null;
+  }
+  function restore() {
+    var k = kept;
+    setTimeout(function () {
+      var s = window.getSelection();
+      if (k && s && (!s.rangeCount || s.isCollapsed)) { s.removeAllRanges(); s.addRange(k); }
+    }, 0);
+  }
+  function schedule(ms) { clearTimeout(timer); timer = setTimeout(update, ms); }
+  function update() {
+    var s = selected(), on = !!s;
+    if (on !== hasSel) { hasSel = on; post(on ? "sel:1" : "sel:0"); }
+    if (on && ui && !pressing) showPill(s); else hidePill();
+  }
+  document.addEventListener("selectionchange", function () {
+    if (selected()) { kept = window.getSelection().getRangeAt(0).cloneRange(); schedule(60); return; }
+    if (!kept) { schedule(60); return; }
+    lostAt = Date.now();
+    if (lostAt - blurAt < 300) { restore(); return; }
+    schedule(350); // a blur may still come
+  });
+  window.addEventListener("blur", function () {
+    blurAt = Date.now();
+    if (kept && blurAt - lostAt < 300) restore();
+  });
+  function inPill(t) { return !!(pill && t && pill.contains(t)); }
+  document.addEventListener("mousedown", function (e) {
+    if (inPill(e.target)) { e.preventDefault(); return; } // keep the selection
+    if (e.button === 0) { pressing = true; kept = null; hidePill(); }
+  }, true);
+  document.addEventListener("mouseup", function () { pressing = false; schedule(60); }, true);
+  function hidePill() { if (pill) pill.style.display = "none"; }
+  function button(act, label, key, tip) {
+    var b = document.createElement("button");
+    b.setAttribute("data-act", act);
+    b.setAttribute("data-label", label);
+    if (key) b.setAttribute("data-key", key);
+    b.title = tip;
+    return b;
+  }
+  function showPill(s) {
+    if (!pill) {
+      var st = document.createElement("style");
+      st.textContent = ".blyg-selpill{position:absolute;z-index:2147483647;display:none;gap:2px;padding:3px;" +
+        "border-radius:8px;background:var(--paper,Canvas);border:1px solid var(--rule,#ccc);" +
+        "box-shadow:0 4px 14px rgba(0,0,0,.18);font:12px/1 Inter,-apple-system,system-ui,sans-serif;" +
+        "-webkit-user-select:none;user-select:none}" +
+        ".blyg-selpill button{all:unset;cursor:pointer;padding:5px 8px;border-radius:5px;" +
+        "color:var(--ink,CanvasText);white-space:nowrap}" +
+        ".blyg-selpill button:hover{background:var(--wash,rgba(127,127,127,.15));color:var(--accent,#a4271b)}" +
+        ".blyg-selpill button::after{content:attr(data-label)}" +
+        ".blyg-selpill button[data-key]::before{content:attr(data-key);opacity:.55;margin-right:6px}";
+      (document.head || document.documentElement).appendChild(st);
+      pill = document.createElement("div");
+      pill.className = "blyg-selpill";
+      pill.setAttribute("role", "toolbar");
+      document.body.appendChild(pill);
+      pill.addEventListener("click", function (e) {
+        var b = e.target.closest && e.target.closest("button[data-act]");
+        e.stopPropagation();
+        if (b) post("act:" + b.getAttribute("data-act"));
+      });
+    }
+    // The labels are CSS content, so they never join a selection's text.
+    if (!pill.firstChild) {
+      pill.appendChild(button("quote", "Quote in draft", "⇧⌘D",
+        "Quote this passage in your draft, with a link to the post"));
+    }
+    var range = s.getRangeAt(0), rects = range.getClientRects();
+    var last = rects.length ? rects[rects.length - 1] : range.getBoundingClientRect();
+    pill.style.display = "flex";
+    var w = pill.offsetWidth, h = pill.offsetHeight;
+    var top = last.bottom + 6;
+    if (top + h > window.innerHeight - 4) top = (rects.length ? rects[0].top : last.top) - h - 6;
+    var left = Math.min(Math.max(8, last.right - w / 2), window.innerWidth - w - 8);
+    pill.style.top = (top + window.scrollY) + "px";
+    pill.style.left = (left + window.scrollX) + "px";
+  }
+  function selectionUi(o) { ui = o || null; update(); }
+  function go(m) {
+    // Wait out a double-click: its first click mustn't leave the page
+    // before the second one selects a word.
+    clearTimeout(pending);
+    pending = setTimeout(function () { if (!selected()) post(m); }, 260);
+  }
   document.addEventListener("click", function (e) {
     var t = e.target;
-    if (!t || !t.closest || t.closest("a[href]") || t.closest(".blyg-yt")) return;
-    // A quote from another blyg: its profile.
-    var q = t.closest("blockquote[data-blyg-origin]");
-    if (q) { post("origin:" + q.getAttribute("data-blyg-origin")); return; }
+    if (!t || !t.closest || inPill(t)) return;
+    if (t.closest("a[href]") || t.closest(".blyg-yt")) return;
+    // A drag or a double-click that selected text isn't a click on what's
+    // under it: hand the keyboard back (the selection is kept) and stop.
+    if (selected() || e.detail > 1) { clearTimeout(pending); post("focus"); return; }
+    // --- quote targets --- a quote box: its footer's name opens the
+    // profile, the rest opens the original post (the footer is the reader's).
+    var qo = t.closest(".blyg-qorigin");
+    if (qo) { go("origin:" + qo.getAttribute("data-blyg-origin")); return; }
+    var q = t.closest("blockquote.blyg-transclusion[data-blyg-id]");
+    var qf = q && q.querySelector(":scope > .blyg-qfoot .blyg-qorigin");
+    if (q && qf) {
+      go("quote:" + qf.getAttribute("data-blyg-origin") + "\u001f" + q.getAttribute("data-blyg-id") +
+        "\u001f" + (q.getAttribute("data-blyg-version") || ""));
+      return;
+    }
+    if (q && q.hasAttribute("data-blyg-origin")) { go("origin:" + q.getAttribute("data-blyg-origin")); return; }
     var b = t.closest(".item-content [data-line]");
     post(b ? "line:" + b.getAttribute("data-line") : "focus");
   }, true);
+  // --- reader folders --- Space pages down; at the bottom it says "end".
+  function scroller() { return document.scrollingElement || document.documentElement; }
+  function page(d) {
+    var el = scroller(), h = window.innerHeight;
+    if (d > 0 && el.scrollTop + h >= el.scrollHeight - 4) { post("end"); return; }
+    window.scrollBy({ top: d * Math.max(40, h * 0.85), behavior: "smooth" });
+  }
+  function nudge(d) { window.scrollBy({ top: d * 48 }); }
   document.addEventListener("DOMContentLoaded", function () { tag(); post("ready"); });
-  window.__blyg = { patch: patch, scrollTo: scrollTo };
+  window.__blyg = { patch: patch, scrollTo: scrollTo, page: page, nudge: nudge, selectionUi: selectionUi };
 })();
 "#;
+
+#[cfg(all(target_os = "macos", not(test)))]
+pub(crate) use wry_surface::{Keyboard, keyboard_of, rect, set_appearance};
+
+// --- browser --- The modifier keys held when a link was followed (⌘ and ⌥),
+// read when WebKit asks about the navigation, so the browser pane knows a
+// ⌘-click from a click even though the event reaches it a moment later.
+thread_local! {
+    static CLICK_MODIFIERS: std::cell::Cell<Option<(std::time::Instant, bool, bool)>> =
+        const { std::cell::Cell::new(None) };
+}
+
+/// (⌘, ⌥) for the link just followed in a reader or preview page, if one was
+/// followed in the last second.
+pub fn take_click_modifiers() -> Option<(bool, bool)> {
+    CLICK_MODIFIERS
+        .take()
+        .filter(|(t, ..)| t.elapsed() < std::time::Duration::from_secs(1))
+        .map(|(_, cmd, alt)| (cmd, alt))
+}
+
+#[cfg(all(target_os = "macos", not(test)))]
+fn note_click_modifiers() {
+    // SAFETY: `+[NSEvent modifierFlags]` is a plain class getter of the
+    // keys held right now; main thread (WebKit's delegate callbacks).
+    let flags: usize = unsafe { objc2::msg_send![objc2::class!(NSEvent), modifierFlags] };
+    const COMMAND: usize = 1 << 20;
+    const OPTION: usize = 1 << 19;
+    CLICK_MODIFIERS.set(Some((
+        std::time::Instant::now(),
+        flags & COMMAND != 0,
+        flags & OPTION != 0,
+    )));
+}
 
 #[cfg(all(target_os = "macos", not(test)))]
 mod wry_surface {
     use super::*;
     use wry::dpi::{LogicalPosition, LogicalSize};
-    use wry::{NewWindowResponse, Rect, WebView, WebViewBuilder, WebViewExtMacOS};
+    use wry::{NewWindowResponse, Rect, WebView, WebViewBuilder, WebViewExtMacOS, WryWebView};
 
     pub struct WrySurface {
         view: WebView,
     }
 
-    fn rect(b: Bounds<Pixels>) -> Rect {
+    pub(crate) fn rect(b: Bounds<Pixels>) -> Rect {
         Rect {
             position: LogicalPosition::new(f64::from(b.origin.x), f64::from(b.origin.y)).into(),
             size: LogicalSize::new(
@@ -255,9 +471,9 @@ mod wry_surface {
         }
     }
 
-    /// Where the window's keyboard is, as far as the WebView is concerned.
-    #[derive(PartialEq, Eq)]
-    enum Keyboard {
+    /// Where the window's keyboard is, as far as a WebView is concerned.
+    #[derive(Debug, PartialEq, Eq)]
+    pub(crate) enum Keyboard {
         /// The WebView (or something inside it) is first responder.
         InPage,
         /// No view has it: the window itself (or nothing) is first responder.
@@ -266,34 +482,57 @@ mod wry_surface {
         Elsewhere,
     }
 
+    /// Who has the keyboard, relative to `wk` (the preview's, the reader's
+    /// or the browser pane's WKWebView).
+    pub(crate) fn keyboard_of(wk: &WryWebView) -> Keyboard {
+        // SAFETY: main thread; plain AppKit getters on live objects.
+        unsafe {
+            use objc2::runtime::AnyObject;
+            let win: *mut AnyObject = objc2::msg_send![wk, window];
+            if win.is_null() {
+                return Keyboard::Elsewhere;
+            }
+            let responder: *mut AnyObject = objc2::msg_send![win, firstResponder];
+            if responder.is_null() || std::ptr::eq(responder, win) {
+                return Keyboard::Nowhere;
+            }
+            let is_view: bool = objc2::msg_send![
+                responder,
+                respondsToSelector: objc2::sel!(isDescendantOf:)
+            ];
+            if !is_view {
+                return Keyboard::Nowhere;
+            }
+            let mine: bool = objc2::msg_send![responder, isDescendantOf: wk];
+            if mine {
+                Keyboard::InPage
+            } else {
+                Keyboard::Elsewhere
+            }
+        }
+    }
+
+    /// Follow the app's light/dark choice (the page's `prefers-color-scheme`).
+    pub(crate) fn set_appearance(wk: &WryWebView, dark: bool) {
+        let name = if dark {
+            "NSAppearanceNameDarkAqua"
+        } else {
+            "NSAppearanceNameAqua"
+        };
+        // SAFETY: main thread (GPUI's foreground); `wk` is a live WKWebView,
+        // and NSAppearance/appearanceNamed: is a plain AppKit class method.
+        unsafe {
+            use objc2::runtime::AnyObject;
+            let ns_name = objc2_foundation_string(name);
+            let cls = objc2::class!(NSAppearance);
+            let appearance: *mut AnyObject = objc2::msg_send![cls, appearanceNamed: ns_name];
+            let _: () = objc2::msg_send![wk, setAppearance: appearance];
+        }
+    }
+
     impl WrySurface {
         fn keyboard(&self) -> Keyboard {
-            let wk = self.view.webview();
-            // SAFETY: main thread; plain AppKit getters on live objects.
-            unsafe {
-                use objc2::runtime::AnyObject;
-                let win: *mut AnyObject = objc2::msg_send![&*wk, window];
-                if win.is_null() {
-                    return Keyboard::Elsewhere;
-                }
-                let responder: *mut AnyObject = objc2::msg_send![win, firstResponder];
-                if responder.is_null() || std::ptr::eq(responder, win) {
-                    return Keyboard::Nowhere;
-                }
-                let is_view: bool = objc2::msg_send![
-                    responder,
-                    respondsToSelector: objc2::sel!(isDescendantOf:)
-                ];
-                if !is_view {
-                    return Keyboard::Nowhere;
-                }
-                let mine: bool = objc2::msg_send![responder, isDescendantOf: &*wk];
-                if mine {
-                    Keyboard::InPage
-                } else {
-                    Keyboard::Elsewhere
-                }
-            }
+            keyboard_of(&self.view.webview())
         }
 
         pub fn new(window: &mut Window, tx: Sender<SurfaceEvent>) -> Result<Self, String> {
@@ -312,6 +551,7 @@ mod wry_surface {
                 .with_navigation_handler(move |url| match navigation(&url) {
                     Nav::Allow => true,
                     Nav::OpenExternally(u) => {
+                        note_click_modifiers();
                         let _ = nav_tx.try_send(SurfaceEvent::OpenUrl(u));
                         false
                     }
@@ -319,6 +559,7 @@ mod wry_surface {
                 })
                 .with_new_window_req_handler(move |url, _| {
                     if let Nav::OpenExternally(u) = navigation(&url) {
+                        note_click_modifiers();
                         let _ = new_tx.try_send(SurfaceEvent::OpenUrl(u));
                     }
                     NewWindowResponse::Deny
@@ -373,21 +614,17 @@ mod wry_surface {
         }
 
         fn set_dark(&mut self, dark: bool) {
-            let wk = self.view.webview();
-            let name = if dark {
-                "NSAppearanceNameDarkAqua"
-            } else {
-                "NSAppearanceNameAqua"
-            };
-            // SAFETY: main thread (GPUI's foreground); `wk` is a live WKWebView,
-            // and NSAppearance/appearanceNamed: is a plain AppKit class method.
-            unsafe {
-                use objc2::runtime::AnyObject;
-                let ns_name = objc2_foundation_string(name);
-                let cls = objc2::class!(NSAppearance);
-                let appearance: *mut AnyObject = objc2::msg_send![cls, appearanceNamed: ns_name];
-                let _: () = objc2::msg_send![&*wk, setAppearance: appearance];
-            }
+            set_appearance(&self.view.webview(), dark);
+        }
+
+        // --- notes ---
+        fn selection(&mut self, reply: async_channel::Sender<String>) {
+            let _ = self.view.evaluate_script_with_callback(
+                crate::app::notes::SELECTION_JS,
+                move |json| {
+                    let _ = reply.try_send(crate::app::notes::parse_selection(&json));
+                },
+            );
         }
     }
 
@@ -591,6 +828,16 @@ mod wry_surface_windows {
                 None => p.dark = Some(dark),
             }
         }
+
+        // --- notes --- (nothing is selected before the page exists)
+        fn selection(&mut self, reply: async_channel::Sender<String>) {
+            match self.0.borrow_mut().view.as_mut() {
+                Some(v) => v.selection(reply),
+                None => {
+                    let _ = reply.try_send(String::new());
+                }
+            }
+        }
     }
 
     pub struct WrySurface {
@@ -702,6 +949,20 @@ mod wry_surface_windows {
                 .view
                 .set_theme(if dark { Theme::Dark } else { Theme::Light });
         }
+
+        // --- notes ---
+        fn selection(&mut self, reply: async_channel::Sender<String>) {
+            let fallback = reply.clone();
+            let sent = self.view.evaluate_script_with_callback(
+                crate::app::notes::SELECTION_JS,
+                move |json| {
+                    let _ = reply.try_send(crate::app::notes::parse_selection(&json));
+                },
+            );
+            if sent.is_err() {
+                let _ = fallback.try_send(String::new());
+            }
+        }
     }
 }
 
@@ -713,6 +974,7 @@ mod tests {
     fn ipc_messages() {
         assert_eq!(parse_ipc("ready"), Some(SurfaceEvent::Ready));
         assert_eq!(parse_ipc("focus"), Some(SurfaceEvent::Refocus));
+        assert_eq!(parse_ipc("end"), Some(SurfaceEvent::PageEnd));
         assert_eq!(parse_ipc("line:12"), Some(SurfaceEvent::JumpToLine(12)));
         assert_eq!(parse_ipc("line:x"), None);
         assert_eq!(
@@ -720,7 +982,53 @@ mod tests {
             Some(SurfaceEvent::OpenOrigin("https://ada.example.net/".into()))
         );
         assert_eq!(parse_ipc("origin:javascript:alert(1)"), None);
+        assert_eq!(
+            parse_ipc("quote:https://ada.example.net/\u{1f}01K2ADA0TIDES0000000000001\u{1f}2"),
+            Some(SurfaceEvent::OpenQuote {
+                origin: "https://ada.example.net/".into(),
+                id: "01K2ADA0TIDES0000000000001".into(),
+                version: Some(2),
+            })
+        );
+        assert_eq!(
+            parse_ipc("quote:https://ada.example.net/\u{1f}01K2ADA0TIDES0000000000001\u{1f}"),
+            Some(SurfaceEvent::OpenQuote {
+                origin: "https://ada.example.net/".into(),
+                id: "01K2ADA0TIDES0000000000001".into(),
+                version: None,
+            })
+        );
+        assert_eq!(parse_ipc("quote:javascript:x\u{1f}01K2\u{1f}1"), None);
+        assert_eq!(
+            parse_ipc("quote:https://a.example/\u{1f}../../x\u{1f}1"),
+            None
+        );
         assert_eq!(parse_ipc("<script>"), None);
+        // --- selection ---
+        assert_eq!(parse_ipc("sel:1"), Some(SurfaceEvent::Selected(true)));
+        assert_eq!(parse_ipc("sel:0"), Some(SurfaceEvent::Selected(false)));
+        assert_eq!(parse_ipc("act:quote"), Some(SurfaceEvent::QuoteSelection));
+        assert_eq!(parse_ipc("act:reply"), None, "the pill has no reply (0.31)");
+        assert_eq!(parse_ipc("act:publish"), None);
+    }
+
+    /// The host script keeps a selection through a focus change, doesn't
+    /// treat the click that ends a drag as a click on what's under it, and
+    /// has the pill (off until the host turns it on).
+    #[test]
+    fn the_host_script_keeps_selections() {
+        for part in [
+            "selectionchange",
+            "s.addRange(k)",
+            "window.addEventListener(\"blur\"",
+            "if (selected() || e.detail > 1) { clearTimeout(pending); post(\"focus\"); return; }",
+            "post(\"act:\" + b.getAttribute(\"data-act\"))",
+            "selectionUi: selectionUi",
+            "content:attr(data-label)", // labels never join the selection's text
+        ] {
+            assert!(HOST_SCRIPT.contains(part), "{part}");
+        }
+        assert!(!HOST_SCRIPT.contains("Reply with this"));
     }
 
     #[test]

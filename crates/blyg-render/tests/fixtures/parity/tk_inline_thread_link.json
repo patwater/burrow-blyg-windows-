@@ -1,0 +1,24 @@
+{
+  "name": "tk_inline_thread_link",
+  "kind": "thread",
+  "md": "Para with [TK]x[=]a [[01j9zq3k4m5n6p7q8r9s0t1v2w]] link[/TK].\n\n![[01j9zq3k4m5n6p7q8r9s0t1v2w]]",
+  "html": "<p>Para with <span class=\"blyg-tk-gen\">a <a href=\"/blyg/f/01j9zq3k4m5n6p7q8r9s0t1v2w/\">“Small tools, used daily, beat big tools used rarely.”</a> link</span>.</p>\n\n<blockquote class=\"blyg-transclusion\" data-blyg-id=\"01j9zq3k4m5n6p7q8r9s0t1v2w\" data-blyg-version=\"3\">\n<p>Small tools, used daily, beat big tools used rarely.</p>\n\n\n<p class=\"provenance\"><a href=\"/blyg/f/01j9zq3k4m5n6p7q8r9s0t1v2w/\">fragment ↗</a> · snapshot of v3</p></blockquote>",
+  "tk": {
+    "scopes": [
+      {
+        "instruction": "x",
+        "generated": true,
+        "block": false,
+        "source_ids": []
+      }
+    ],
+    "errors": []
+  },
+  "transclusions": [
+    {
+      "id": "01j9zq3k4m5n6p7q8r9s0t1v2w",
+      "version": 3
+    }
+  ],
+  "errors": []
+}

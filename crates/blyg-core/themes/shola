@@ -1,0 +1,42 @@
+# Shola: the cosy, healthy thicket, dense and alive, with the sea somewhere
+# beyond the mist. After the Western Ghats cloud forest, laterite and moss.
+name = Shola
+family = woody
+base = light
+
+color-bg = #f1f3e8
+color-ink = #1f2a1c
+color-muted = #5c6953
+color-line = #cdd6bd
+color-accent = #a8441f
+color-sel = #fff8e8
+color-sel-ink = #1f2a1c
+color-sel-muted = #5c6953
+color-bar = #dfe6cf
+color-bar-ink = #3d4a36
+color-side = #2f4a2a
+color-side-ink = #e9f1dc
+color-side-muted = #bcd0a4
+color-side-accent = #ffd08a
+color-side-line = #26401f
+color-status = #a8441f
+color-status-ink = #fbe7d6
+color-status-line = #a8441f
+color-quote-bg = #e3ecd2
+color-quote-rule = #b8cf96
+color-toast = #1f2a1c
+color-toast-ink = #f1f3e8
+
+font-writing = Source Serif 4
+font-ui = Inter
+radius = 14
+sheet.radius = 18
+toast.radius = 14
+
+titlebar.band = gradient(#e9eedc #dfe6cf)
+sidebar.ground = moss(#8cbe5a #6eaa50 #a0c864, opacity=0.3)
+scroll.edge = mist(#f1f3e8, opacity=0.5)
+row.selected = cushion(#7fa85a)
+quote.frame = cushion(#b8cf96)
+texture = laterite-speckle(#a8441f, opacity=0.5)
+empty.art = moss(#8cbe5a #6eaa50)

@@ -65,8 +65,13 @@ impl Tools for FakeTools {
     }
 }
 
+/// A bundle under its old name, as 0.6.0 and earlier installed it.
 fn make_bundle(dir: &Path, id: &str, version: &str, marker: &str) -> PathBuf {
-    let app = dir.join("Blygger.app");
+    make_named_bundle(dir, "Blygger.app", id, version, marker)
+}
+
+fn make_named_bundle(dir: &Path, name: &str, id: &str, version: &str, marker: &str) -> PathBuf {
+    let app = dir.join(name);
     std::fs::create_dir_all(app.join("Contents/MacOS")).unwrap();
     std::fs::write(
         app.join("Contents/Info.plist"),
@@ -106,7 +111,8 @@ fn hex(b: &[u8]) -> String {
 
 const BASE: &str = "https://github.com/example/blygger-desktop/releases/download/v9.9.9";
 
-/// A temp world: an installed 0.2.0 bundle, and a signed 9.9.9 release.
+/// A temp world: an installed 0.2.0 bundle (on disk as `Blygger.app`), and
+/// a signed 9.9.9 release (by default `Burrow-9.9.9-…zip` with `Burrow.app`).
 struct World {
     _tmp: tempfile::TempDir,
     target: PathBuf,
@@ -121,6 +127,10 @@ struct ReleaseSpec<'a> {
     plist_version: &'a str,
     sign_with: SigningKey,
     tamper_zip: bool,
+    /// The bundle's name inside the zip.
+    app_name: &'a str,
+    /// Publish the zip under the old `Blygger-…` name.
+    legacy_zip: bool,
 }
 
 impl Default for ReleaseSpec<'_> {
@@ -130,6 +140,8 @@ impl Default for ReleaseSpec<'_> {
             plist_version: "9.9.9",
             sign_with: test_key(),
             tamper_zip: false,
+            app_name: "Burrow.app",
+            legacy_zip: false,
         }
     }
 }
@@ -142,12 +154,16 @@ fn world(spec: ReleaseSpec) -> World {
     std::fs::create_dir_all(&tmp_root).unwrap();
 
     let build = tmp.path().join("build");
-    let new = make_bundle(&build, spec.id, spec.plist_version, "new");
+    let new = make_named_bundle(&build, spec.app_name, spec.id, spec.plist_version, "new");
     let version = Version::parse("9.9.9").unwrap();
-    let zip_name = check::zip_name(&version);
+    let zip_name = if spec.legacy_zip {
+        check::legacy_zip_name(&version)
+    } else {
+        check::zip_name(&version)
+    };
     let mut zip = zip_bundle(&new, &tmp.path().join(&zip_name));
     let sums = format!(
-        "{}  {zip_name}\n{}  Blygger-9.9.9-macos-universal.dmg\n",
+        "{}  {zip_name}\n{}  Burrow-9.9.9-macos-universal.dmg\n",
         hex(&verify::sha256(&zip)),
         hex(&verify::sha256(b"dmg"))
     );
@@ -225,7 +241,11 @@ fn a_signed_release_is_staged_and_installed_over_the_old_bundle() {
         .unwrap()
         .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
         .collect();
-    assert_eq!(left, ["Blygger.app"], "the old bundle is gone");
+    assert_eq!(
+        left,
+        ["Blygger.app"],
+        "the old bundle is gone, and the install keeps its on-disk name"
+    );
     assert_eq!(
         tools
             .plist_string(
@@ -235,6 +255,38 @@ fn a_signed_release_is_staged_and_installed_over_the_old_bundle() {
             .unwrap(),
         "9.9.9"
     );
+}
+
+#[test]
+fn the_old_zip_and_bundle_names_are_still_accepted() {
+    // A release from before the rename, or the old-name zip published for
+    // 0.6.0 clients: `Blygger-9.9.9-…zip` with `Blygger.app` inside.
+    let w = world(ReleaseSpec {
+        app_name: "Blygger.app",
+        legacy_zip: true,
+        ..Default::default()
+    });
+    let staged = w.stage(true).unwrap();
+    assert!(staged.app.ends_with("Blygger.app"));
+    let tools = FakeTools { codesign_ok: true };
+    let current = Version::parse("0.2.0").unwrap();
+    install::install_staged(&w.target, &staged, &current, &tools).unwrap();
+    assert_eq!(w.installed_marker(), "new");
+}
+
+#[test]
+fn a_zip_without_either_bundle_name_is_refused() {
+    let w = world(ReleaseSpec {
+        app_name: "Other.app",
+        ..Default::default()
+    });
+    let err = w.stage(true).unwrap_err();
+    assert!(
+        err.to_string()
+            .contains("Burrow.app or Blygger.app isn't in the zip"),
+        "{err}"
+    );
+    assert_eq!(w.installed_marker(), "old");
 }
 
 #[test]
@@ -549,7 +601,7 @@ fn the_notice_says_what_to_do() {
     }
     .notice()
     .unwrap();
-    assert_eq!(n.text, "Blygger 0.3.0 is ready");
+    assert_eq!(n.text, "Burrow 0.3.0 is ready");
     assert_eq!(n.action, Some(("Restart to update", NoticeAction::Restart)));
     assert_eq!(n.link.unwrap().0, "What's new");
 
@@ -559,7 +611,7 @@ fn the_notice_says_what_to_do() {
     }
     .notice()
     .unwrap();
-    assert_eq!(n.text, "Blygger 0.3.0 is available");
+    assert_eq!(n.text, "Burrow 0.3.0 is available");
     assert_eq!(n.action, Some(("Download", NoticeAction::Download)));
 
     let why = cant_update_in_place("it isn't running from an app bundle");
@@ -571,7 +623,7 @@ fn the_notice_says_what_to_do() {
     .unwrap();
     assert_eq!(
         n.text,
-        "Blygger 0.3.0 is available · Can't update in place: it isn't running from an app \
+        "Burrow 0.3.0 is available · Can't update in place: it isn't running from an app \
          bundle; download from the release page"
     );
     assert_eq!(n.action, None);
@@ -598,4 +650,47 @@ fn unsigned_releases_and_unwritable_installs_are_notify_only() {
 fn tests_never_check() {
     assert_eq!(disabled_reason(), Some("test build"));
     check::current_version(); // CARGO_PKG_VERSION is semver
+}
+
+#[test]
+fn a_ready_update_asks_to_restart_and_an_available_one_to_download() {
+    let staged = install::Staged {
+        version: Version::parse("0.3.0").unwrap(),
+        app: "/tmp/x".into(),
+        dir: "/tmp".into(),
+    };
+    let a = Phase::Ready {
+        offer: offer(true),
+        staged,
+    }
+    .ask()
+    .unwrap();
+    assert_eq!(a.text, "Burrow 0.3.0 is ready to install");
+    assert_eq!(a.yes, "Restart Now");
+    assert!(a.ready);
+
+    let a = Phase::Available {
+        offer: offer(true),
+        blocked: None,
+    }
+    .ask()
+    .unwrap();
+    assert_eq!(a.yes, "Download and Install");
+    assert!(!a.ready);
+
+    // Nothing to ask when it can't be installed from here, or mid-way.
+    let blocked = Phase::Available {
+        offer: offer(true),
+        blocked: Some("no".into()),
+    };
+    assert_eq!(blocked.ask(), None);
+    assert_eq!(Phase::Idle.ask(), None);
+    assert_eq!(
+        Phase::Downloading {
+            offer: offer(true),
+            shown: true
+        }
+        .ask(),
+        None
+    );
 }

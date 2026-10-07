@@ -1,0 +1,25 @@
+{
+  "name": "tk_inline_link_text",
+  "kind": "fragment",
+  "md": "Go to [the [TK]x[=]docs[/TK] page](https://docs.example.org/) or [TK]x[=]**bold**[/TK].",
+  "html": "<p>Go to <a href=\"https://docs.example.org/\">the <span class=\"blyg-tk-gen\">docs</span> page</a> or <span class=\"blyg-tk-gen\"><strong>bold</strong></span>.</p>\n",
+  "tk": {
+    "scopes": [
+      {
+        "instruction": "x",
+        "generated": true,
+        "block": false,
+        "source_ids": []
+      },
+      {
+        "instruction": "x",
+        "generated": true,
+        "block": false,
+        "source_ids": []
+      }
+    ],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

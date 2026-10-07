@@ -21,6 +21,21 @@ pub const OMAR_YEAR: &str = "01K2OMAR0YEAR0000000000001";
 pub const ADA_GONE: &str = "01K2ADA0GONE00000000000001";
 pub const RUE_KEPT: &str = "01K2RUE0KEPT00000000000001";
 pub const ADA_TIDES: &str = "01K2ADA0TIDES0000000000001";
+// --- stream --- posts that stub, fork and quote each other (issue #1).
+/// Ada's reply to Lin's bench note: a stub thread that quotes it.
+pub const ADA_REPLY: &str = "01K2ADA0REPLY0000000000001";
+/// Lin's thread forked from Ada's pinned first draft of the tides post.
+pub const LIN_FORK: &str = "01K2LIN0FORK00000000000001";
+/// A fragment of Lin's with emphasis, code and a bare link.
+pub const LIN_BENCH: &str = "01K2LIN0BENCH0000000000001";
+pub const LIN_REREAD: &str = "01K2LIN0REREAD000000000001";
+/// A blyg nobody here follows, and the post of Kit's that Lin's fork quotes:
+/// opening it fetches it "publicly" (`Backend::public_item`).
+pub const KIT: &str = "https://kit.blyg.example.net/";
+pub const KIT_TIDES: &str = "01K2KIT0T1DES0000000000001";
+// --- reader folders ---
+pub const FOLDER_FRIENDS: &str = "fld-friends";
+pub const FOLDER_GARDENS: &str = "fld-gardens";
 
 /// Lin's thread as Lin's blyg published it: the quote of Ada's post baked in
 /// as a transclusion snapshot, and an image with a relative (origin-relative)
@@ -48,6 +63,13 @@ pub struct Seed {
     pub own_texts: HashMap<(LocalId, u32), String>,
     /// Own posts: local id → versions with notes and pins.
     pub own_versions: HashMap<LocalId, Vec<Version>>,
+    // --- quote targets --- public posts of blygs nobody here follows.
+    pub public: Vec<PublicItem>,
+    pub public_pins: Vec<PinnedVersion>,
+    // --- reader folders --- local folders of subscriptions.
+    pub folders: Vec<Folder>,
+    /// Subscription id → folder id.
+    pub filed: HashMap<String, String>,
 }
 
 fn sub(
@@ -68,6 +90,7 @@ fn sub(
         title: title.into(),
         status: "active".into(),
         in_blogroll: blogroll,
+        title_follows_source: true,
     }
 }
 
@@ -112,6 +135,7 @@ fn post(
         stub_of: None,
         forked_from: None,
         transclusions: vec![],
+        lineage_known: false,
     }
 }
 
@@ -218,6 +242,19 @@ pub fn seed(now: DateTime<Utc>) -> Seed {
         ),
     ];
     for r in reading.iter_mut() {
+        // Issue #6: the whole list was imported ten minutes ago (a fresh
+        // subscription), but each post keeps its own dates; the edited ones
+        // were published well before their last edit.
+        let published = match r.remote_id.as_str() {
+            RUE_TRUST => Some(now - d(6)),
+            LIN_GARDENS => Some(now - d(9)),
+            ADA_TIDES => Some(now - d(4)),
+            _ => None,
+        };
+        if let Some(p) = published {
+            r.created = Some(p.to_rfc3339());
+        }
+        r.observed_at = (now - Duration::minutes(10)).to_rfc3339();
         match r.remote_id.as_str() {
             LIN_GARDENS => r.content_html = LIN_GARDENS_HTML.into(),
             // An RSS item that carries only text: the Markdown is rendered
@@ -226,6 +263,92 @@ pub fn seed(now: DateTime<Utc>) -> Seed {
             _ => {}
         }
     }
+    // --- stream --- threads and fragments that point at each other.
+    let mut reply = post(
+        &ada,
+        ADA_REPLY,
+        Kind::Thread,
+        1,
+        None,
+        now - h(2),
+        "Ada",
+        "On turning beds over\n\nLin's bench note made me think about how often I tear a post down to the studs.\n\n![[01K2LIN0BENCH0000000000001]]\n\nMy rule of thumb: *keep the first line*, rewrite the rest, and say what changed in the version note. A few things I have learned:\n\n- Short notes age better than long ones.\n- A pin is a promise; an edit is a conversation.\n- Links rot, quotes don't.\n\nMore on this [in the protocol notes](https://blyg.example.org/notes).",
+    );
+    reply.stub_of = Some(StubOf {
+        origin: Some(LIN.into()),
+        id: Some(LIN_BENCH.into()),
+        version: Some(1),
+        url: None,
+    });
+    reply.transclusions = vec![TransclusionRef {
+        id: LIN_BENCH.into(),
+        version: Some(1),
+        origin: Some(LIN.into()),
+        cited: None,
+        selector: None,
+    }];
+    reading.push(reply);
+    // A quote of a post not held here (the stream shows the citation Lin's
+    // blyg froze) and an `[[id]]` link to one that is.
+    let mut reread = post(
+        &lin,
+        LIN_REREAD,
+        Kind::Thread,
+        1,
+        Some(1),
+        now - h(4),
+        "Lin",
+        "Worth rereading\n\n![[01K2RUE0W0RN00000000000001]]\n\nIt sits well next to my [[01K2LIN0BENCH0000000000001]] note.",
+    );
+    reread.transclusions = vec![TransclusionRef {
+        id: "01K2RUE0W0RN00000000000001".into(),
+        version: Some(2),
+        origin: Some(RUE.into()),
+        cited: Some(blyg_core::Cited {
+            source: Some("Rue's Notebook".into()),
+            author: Some("Rue".into()),
+            excerpt: Some("An edit you can't read is a rewrite you have to trust.".into()),
+            url: None,
+            retrieved: None,
+        }),
+        selector: None,
+    }];
+    reading.push(reread);
+    let mut fork = post(
+        &lin,
+        LIN_FORK,
+        Kind::Thread,
+        2,
+        None,
+        now - d(2),
+        "Lin",
+        "Tides, revised\n\nForked from Ada's pinned first draft. Kit put it best:\n\n![[01K2KIT0T1DES0000000000001]]\n\n> A promise the sea never signed.\n\nAnd yet we plan the day around them, as if the moon owed us something.\n\n```\nhigh  06:12  4.1m\nlow   12:30  0.6m\n```",
+    );
+    fork.created = Some((now - d(2)).to_rfc3339());
+    fork.updated = Some((now - h(30)).to_rfc3339());
+    fork.forked_from = Some(RemoteRef {
+        origin: ADA.into(),
+        id: ADA_TIDES.into(),
+        version: 1,
+    });
+    fork.transclusions = vec![TransclusionRef {
+        id: KIT_TIDES.into(),
+        version: Some(1),
+        origin: Some(KIT.into()),
+        cited: None,
+        selector: None,
+    }];
+    reading.push(fork);
+    reading.push(post(
+        &lin,
+        LIN_BENCH,
+        Kind::Fragment,
+        1,
+        None,
+        now - h(26),
+        "Lin",
+        "Three things on the bench this week: **seed trays**, a borrowed _dibber_, and `twine` that refuses to stay wound. Notes at https://lin.blyg.example.com/notes",
+    ));
     // Withdrawn, never signalled: hidden.
     let mut gone = post(
         &ada,
@@ -299,6 +422,8 @@ pub fn seed(now: DateTime<Utc>) -> Seed {
                         id: ADA_TIDES.into(),
                         version: Some(2),
                         origin: Some(ADA.into()),
+                        cited: None,
+                        selector: None,
                     }],
                 },
                 ..rv(4, now - d(1), Some("linked the reply"), false, true)
@@ -397,6 +522,11 @@ pub fn seed(now: DateTime<Utc>) -> Seed {
             label: "Feed".into(),
             url: format!("{}/feed.json", super::ORIGIN),
         }],
+        accept_mentions: Some(true),
+        timezone: Some("Europe/Lisbon".into()),
+        show_responses_default: Some(false),
+        highlight_generated_default: Some(false),
+        picker_typing: Some(PickerTyping::Auto),
     };
 
     // "On friction": v1 first, v2 pinned, v3 current.
@@ -438,7 +568,75 @@ pub fn seed(now: DateTime<Utc>) -> Seed {
         ],
     );
 
+    // Kit's post, as its public item document would give it.
+    let kit_text = "The tide keeps its own calendar, and we keep borrowing it.";
+    let kit_item = ReadingItem {
+        subscription_id: String::new(),
+        remote_id: KIT_TIDES.into(),
+        subscription_title: "Kit".into(),
+        origin: KIT.into(),
+        kind: Kind::Fragment,
+        state: "current".into(),
+        version: 3,
+        created: Some((now - d(12)).to_rfc3339()),
+        updated: Some((now - d(10)).to_rfc3339()),
+        observed_at: now.to_rfc3339(),
+        content_md: kit_text.into(),
+        content_html: blyg_render::render_markdown(kit_text),
+        author: Some(Author {
+            name: Some("Kit".into()),
+            url: Some(KIT.into()),
+        }),
+        page: Some(format!("f/{KIT_TIDES}")),
+        thumb: None,
+        hoppers: vec![],
+        pinned_version_retained: None,
+        read_version: None,
+        stub_of: None,
+        forked_from: None,
+        transclusions: vec![],
+        lineage_known: false,
+    };
+    let public = vec![PublicItem {
+        item: kit_item,
+        versions: vec![
+            rv(1, now - d(12), Some("first"), true, false),
+            rv(2, now - d(11), None, false, false),
+            rv(3, now - d(10), Some("borrowing"), false, true),
+        ],
+    }];
+    let public_pins = vec![pin(
+        KIT,
+        KIT_TIDES,
+        1,
+        now - d(12),
+        "The tide keeps its own calendar.",
+    )];
+
+    // --- reader folders --- two folders; Omar's feed and the sample
+    // "Shoreline Notes" stay unfiled.
+    let folders = vec![
+        Folder {
+            id: FOLDER_FRIENDS.into(),
+            name: "Friends".into(),
+            position: 0,
+        },
+        Folder {
+            id: FOLDER_GARDENS.into(),
+            name: "Gardens".into(),
+            position: 1,
+        },
+    ];
+    let filed = HashMap::from([
+        (rue.id.clone(), FOLDER_FRIENDS.to_string()),
+        (ada.id.clone(), FOLDER_FRIENDS.to_string()),
+        (lin.id.clone(), FOLDER_GARDENS.to_string()),
+    ]);
     Seed {
+        folders,
+        filed,
+        public,
+        public_pins,
         reading,
         subs: vec![rue, ada, lin, omar],
         changelogs,

@@ -1,12 +1,18 @@
 #!/usr/bin/env bash
-# Install the latest Blygger Desktop release.
+# Install the latest Burrow release. Burrow is a blygger client.
 #
 #   curl -fsSL https://raw.githubusercontent.com/aneeshsathe/blygger-desktop/main/scripts/install.sh | bash
 #
-# What it does: downloads Blygger-macos-universal.zip from the latest GitHub
+# What it does: downloads Burrow-macos-universal.zip from the latest GitHub
 # release, checks it against the release's SHA256SUMS (and that file's
-# Ed25519 signature, when OpenSSL 3 is installed), and unzips Blygger.app
+# Ed25519 signature, when OpenSSL 3 is installed), and unzips Burrow.app
 # into /Applications (or ~/Applications if /Applications isn't writable).
+#
+# Burrow was called Blygger up to 0.6.0. A Blygger.app in the same folder is
+# the same app (same bundle ID), so it's replaced by Burrow.app. Only the
+# app bundle goes: your posts, settings, config file and Keychain items live
+# elsewhere and carry over. Releases from before the rename (BLYGGER_VERSION
+# of 0.6.0 or earlier) install as Blygger.app, as they always did.
 #
 # Files downloaded with curl don't get macOS's quarantine attribute, so
 # Gatekeeper doesn't block the unsigned app. The script also strips the
@@ -20,8 +26,10 @@
 set -euo pipefail
 
 REPO="aneeshsathe/blygger-desktop" # set with scripts/set-repo.sh
-ASSET="Blygger-macos-universal.zip"
-APP="Blygger.app"
+ASSET="Burrow-macos-universal.zip"
+LEGACY_ASSET="Blygger-macos-universal.zip" # releases up to 0.6.0
+LEGACY_APP="Blygger.app"
+BUNDLE_ID="org.blygger.desktop"
 # The release signing key (raw Ed25519 public key, base64); the same one is
 # embedded in the app (crates/blyg-app/src/update/verify.rs).
 UPDATE_PUBKEY="mnXJcOWPGSTrMKx38w6FqoKQxky6+pj3Ch2IVPrk3+I="
@@ -29,9 +37,9 @@ UPDATE_PUBKEY="mnXJcOWPGSTrMKx38w6FqoKQxky6+pj3Ch2IVPrk3+I="
 say() { printf '%s\n' "$*"; }
 die() { printf 'blygger install: %s\n' "$*" >&2; exit 1; }
 
-[ "$(uname -s)" = Darwin ] || die "Blygger Desktop is macOS-only."
+[ "$(uname -s)" = Darwin ] || die "Burrow is macOS-only."
 major="$(sw_vers -productVersion | cut -d. -f1)"
-[ "$major" -ge 11 ] || die "Blygger needs macOS 11 or later (this is $(sw_vers -productVersion))."
+[ "$major" -ge 11 ] || die "Burrow needs macOS 11 or later (this is $(sw_vers -productVersion))."
 
 if [ -n "${BLYGGER_BASE_URL:-}" ]; then # a mirror, or a local server for testing
   base="${BLYGGER_BASE_URL%/}"
@@ -53,8 +61,13 @@ mkdir -p "$dest"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
-say "Downloading $ASSET…"
-curl -fL --progress-bar -o "$tmp/$ASSET" "$base/$ASSET" || die "download failed: $base/$ASSET"
+say "Downloading ${ASSET}…"
+if ! curl -fL --progress-bar -o "$tmp/$ASSET" "$base/$ASSET"; then
+  # A release from before the rename has only the old name.
+  say "Not found; trying ${LEGACY_ASSET} (a release from before the rename)…"
+  ASSET="$LEGACY_ASSET"
+  curl -fL --progress-bar -o "$tmp/$ASSET" "$base/$ASSET" || die "download failed: $base/$ASSET"
+fi
 
 if [ -z "${BLYGGER_NO_VERIFY:-}" ]; then
   curl -fsSL -o "$tmp/SHA256SUMS" "$base/SHA256SUMS" || die "couldn't download SHA256SUMS"
@@ -87,18 +100,49 @@ if [ -z "${BLYGGER_NO_VERIFY:-}" ]; then
 fi
 
 ditto -x -k "$tmp/$ASSET" "$tmp/unpacked"
-[ -d "$tmp/unpacked/$APP" ] || die "$APP not found in the archive"
+if [ -d "$tmp/unpacked/Burrow.app" ]; then
+  APP="Burrow.app"
+elif [ -d "$tmp/unpacked/$LEGACY_APP" ]; then
+  APP="$LEGACY_APP"
+else
+  die "Burrow.app not found in the archive"
+fi
+name="${APP%.app}"
+
+# An install from before the rename, to replace with Burrow.app: only if
+# it's really this app (same bundle ID), never anything else of that name.
+old=""
+if [ "$APP" != "$LEGACY_APP" ] && [ -d "$dest/$LEGACY_APP" ]; then
+  old_id="$(defaults read "$dest/$LEGACY_APP/Contents/Info" CFBundleIdentifier 2>/dev/null || true)"
+  if [ "$old_id" = "$BUNDLE_ID" ]; then
+    old="$dest/$LEGACY_APP"
+  else
+    say "(Leaving $dest/$LEGACY_APP alone: it isn't $BUNDLE_ID.)"
+  fi
+fi
+
+for running in "$dest/$APP" "$old"; do
+  if [ -n "$running" ] && [ -d "$running" ] && pgrep -qf "$running/Contents/MacOS/"; then
+    die "$(basename "$running" .app) is running from $running. Quit it (⌘Q) and run this again."
+  fi
+done
 
 if [ -d "$dest/$APP" ]; then
-  if pgrep -qf "$dest/$APP/Contents/MacOS/"; then
-    die "Blygger is running from $dest/$APP. Quit it (⌘Q) and run this again."
-  fi
   rm -rf "${dest:?}/${APP:?}"
 fi
 ditto "$tmp/unpacked/$APP" "$dest/$APP"
 xattr -dr com.apple.quarantine "$dest/$APP" 2>/dev/null || true
+if [ -n "$old" ]; then
+  # Only the old bundle: posts, settings and Keychain items aren't in it.
+  rm -rf "${old:?}"
+fi
 
 version="$(defaults read "$dest/$APP/Contents/Info" CFBundleShortVersionString 2>/dev/null || echo '?')"
 say ""
-say "Installed Blygger $version to $dest/$APP"
+say "Installed $name $version to $dest/$APP"
+if [ -n "$old" ]; then
+  say "Blygger is now called Burrow: it replaced $old."
+  say "Your posts, settings and sign-ins carry over. Keep-in-Dock icons for the"
+  say "old name may need re-adding."
+fi
 say "Open it from Launchpad or Spotlight, or run:  open \"$dest/$APP\""

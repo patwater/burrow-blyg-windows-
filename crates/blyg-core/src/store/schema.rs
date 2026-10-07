@@ -147,6 +147,109 @@ const MIGRATIONS: &[&str] = &[
         fetched_at  INTEGER NOT NULL    -- unix ms
     );
     "#,
+    // v5: the reading list sorts by the post's own date (issue #6), not by
+    // when the server imported it. `sort_at` = `ReadingItem::sort_at()`
+    // (updated, else created, else observed_at; normalized UTC), written on
+    // every upsert. Existing rows are filled in by `Store::init`
+    // (`backfill_sort_at`), which parses dates the way the app does.
+    r#"
+    ALTER TABLE reading ADD COLUMN sort_at TEXT NOT NULL DEFAULT '';
+    CREATE INDEX reading_sort ON reading(sort_at DESC, subscription_id, remote_id);
+    "#,
+    // v6 --- responses --- (issue #7): what each reading row quotes, stubs
+    // or forks (`ReadingItem::references`), so "who responded to this post,
+    // in your network" is an index lookup. Derived from `reading.json`,
+    // rewritten on every upsert, filled for existing rows by `Store::init`.
+    r#"
+    CREATE TABLE reading_refs (
+        subscription_id  TEXT NOT NULL,
+        remote_id        TEXT NOT NULL,
+        target_origin    TEXT NOT NULL,   -- normalized (post_key)
+        target_id        TEXT NOT NULL,   -- lowercased
+        relation         TEXT NOT NULL,   -- quotes | stubs | forks
+        version          INTEGER,
+        PRIMARY KEY (subscription_id, remote_id, target_origin, target_id, relation)
+    );
+    CREATE INDEX reading_refs_target ON reading_refs(target_id, target_origin);
+    "#,
+    // v7 --- reader folders --- the Reader's folders of subscriptions. Local
+    // only (never synced; the server's hoppers are something else). One
+    // folder per subscription; deleting a folder unfiles its subscriptions.
+    // Membership is keyed by subscription id without a foreign key, because
+    // `subscriptions` is rewritten on every pull.
+    r#"
+    CREATE TABLE folders (
+        id        TEXT PRIMARY KEY,
+        name      TEXT NOT NULL,
+        position  INTEGER NOT NULL
+    );
+    CREATE TABLE folder_members (
+        subscription_id  TEXT PRIMARY KEY,
+        folder_id        TEXT NOT NULL REFERENCES folders(id) ON DELETE CASCADE
+    );
+    CREATE INDEX folder_members_folder ON folder_members(folder_id);
+    "#,
+    // v8: the item's own responses choice (studio 0.8): 'default' | 'show' |
+    // 'hide', NULL when the server hasn't reported one. `show_responses`
+    // stays the effective state.
+    r#"
+    ALTER TABLE items ADD COLUMN responses_mode TEXT;
+    "#,
+    // v9: one reference per (post, target), the strongest relation winning
+    // (fork > stub > quote), and whether the quote is of a passage. The
+    // backfill after any migration rebuilds the rows under the new rule.
+    r#"
+    ALTER TABLE reading_refs ADD COLUMN partial INTEGER NOT NULL DEFAULT 0;
+    "#,
+    // v10: the item's generated-text highlight (studio 0.27), like v8's
+    // responses: `highlight_mode` is its own choice ('default' | 'show' |
+    // 'hide', NULL = unreported), `highlight` the effective state.
+    r#"
+    ALTER TABLE items ADD COLUMN highlight_mode TEXT;
+    ALTER TABLE items ADD COLUMN highlight INTEGER NOT NULL DEFAULT 0;
+    "#,
+    // v11: full-text search over imported posts for the `[[` / `![[`
+    // picker (studio 0.29), a trigram index like `items_fts`. Keyed by the
+    // reading row's rowid and kept current by triggers, so the reading
+    // code never has to think about it. The text is the post's Markdown
+    // (an RSS row without any: its HTML).
+    r#"
+    CREATE VIRTUAL TABLE reading_fts USING fts5(body, tokenize='trigram');
+    INSERT INTO reading_fts(rowid, body)
+        SELECT rowid, COALESCE(NULLIF(json_extract(json, '$.content_md'), ''),
+                               json_extract(json, '$.content_html'), '')
+          FROM reading;
+    CREATE TRIGGER reading_fts_ai AFTER INSERT ON reading BEGIN
+        DELETE FROM reading_fts WHERE rowid = new.rowid;
+        INSERT INTO reading_fts(rowid, body) VALUES (new.rowid,
+            COALESCE(NULLIF(json_extract(new.json, '$.content_md'), ''),
+                     json_extract(new.json, '$.content_html'), ''));
+    END;
+    CREATE TRIGGER reading_fts_ad AFTER DELETE ON reading BEGIN
+        DELETE FROM reading_fts WHERE rowid = old.rowid;
+    END;
+    CREATE TRIGGER reading_fts_au AFTER UPDATE OF json ON reading BEGIN
+        DELETE FROM reading_fts WHERE rowid = old.rowid;
+        INSERT INTO reading_fts(rowid, body) VALUES (new.rowid,
+            COALESCE(NULLIF(json_extract(new.json, '$.content_md'), ''),
+                     json_extract(new.json, '$.content_html'), ''));
+    END;
+    "#,
+    // v12 --- read/unread --- (store/read_sync.rs)
+    // `read_at`: when the row was marked read here (unix ms), until the
+    //   server confirms it (then NULL). Sent as `read_at` to a server that
+    //   can clear read state, so an old read can't undo a newer "unread".
+    //   Reads from before this migration have no known time: 0.
+    // `read_floor`: the row was marked unread here; server read versions at
+    //   or below it are stale and don't re-mark it read.
+    // Subscriptions gain `title_follows_source` (studio 0.30): unknown
+    //   until the next pull, so false (the name stays as it is).
+    r#"
+    ALTER TABLE reading ADD COLUMN read_at INTEGER;
+    ALTER TABLE reading ADD COLUMN read_floor INTEGER;
+    UPDATE reading SET read_at = 0 WHERE read_version IS NOT NULL;
+    UPDATE subscriptions SET json = json_insert(json, '$.title_follows_source', json('false'));
+    "#,
 ];
 
 /// Returns whether any migration ran.

@@ -1,0 +1,25 @@
+{
+  "name": "link_in_tk",
+  "kind": "fragment",
+  "md": "a [TK]x[=]see [[01j9zq3k4m5n6p7q8r9s0t1v2w]][/TK] b\n\n[TK]write[=]One [[01j9zq3k4m5n6p7q8r9s0t1v2w]].\n\nTwo.[/TK]\n\nEnd",
+  "html": "<p>a <span class=\"blyg-tk-gen\">see <a href=\"/blyg/f/01j9zq3k4m5n6p7q8r9s0t1v2w/\">“Small tools, used daily, beat big tools used rarely.”</a></span> b</p>\n<div class=\"blyg-tk-gen\"><p>One <a href=\"/blyg/f/01j9zq3k4m5n6p7q8r9s0t1v2w/\">“Small tools, used daily, beat big tools used rarely.”</a>.</p>\n<p>Two.</p>\n</div>\n<p>End</p>\n",
+  "tk": {
+    "scopes": [
+      {
+        "instruction": "x",
+        "generated": true,
+        "block": false,
+        "source_ids": []
+      },
+      {
+        "instruction": "write",
+        "generated": true,
+        "block": true,
+        "source_ids": []
+      }
+    ],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

@@ -1,0 +1,17 @@
+{
+  "name": "link_autolink_literal",
+  "kind": "fragment",
+  "md": "<https://x.test/[[01j9zq3k4m5n6p7q8r9s0t1v2w]]> and \\<https://x.test/[[01j9zq3k4m5n6p7q8r9s0t1v2w]]> and <mailto:a@x.test?[[0zzzzzzzzzzzzzzzzzzzzzzzzz]]>",
+  "html": "<p><a href=\"https://x.test/%5B%5B01j9zq3k4m5n6p7q8r9s0t1v2w%5D%5D\">https://x.test/[[01j9zq3k4m5n6p7q8r9s0t1v2w]]</a> and &lt;<a href=\"https://x.test/%5B%5B01j9zq3k4m5n6p7q8r9s0t1v2w%5D%5D\">https://x.test/[[01j9zq3k4m5n6p7q8r9s0t1v2w]]</a>&gt; and <a href=\"mailto:a@x.test?%5B%5B0zzzzzzzzzzzzzzzzzzzzzzzzz%5D%5D\">mailto:a@x.test?[[0zzzzzzzzzzzzzzzzzzzzzzzzz]]</a></p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": [
+    {
+      "directive": "[[0zzzzzzzzzzzzzzzzzzzzzzzzz]]",
+      "reason": "unknown item"
+    }
+  ]
+}

@@ -1,0 +1,24 @@
+{
+  "name": "link_tk_block_nested",
+  "kind": "thread",
+  "md": "[TK]list[=]- [see [[01j9zq3k4m5n6p7q8r9s0t1v2w]]](https://x.test/)\n- <https://x.test/[[01j9zq3k4m5n6p7q8r9s0t1v2w]]>\n- https://x.test/[[01j9zq3k4m5n6p7q8r9s0t1v2w]][/TK]\n\nBody [[0zzzzzzzzzzzzzzzzzzzzzzzzz]]",
+  "html": "<div class=\"blyg-tk-gen\"><ul>\n<li><a href=\"https://x.test/\">see “Small tools, used daily, beat big tools used rarely.”</a></li>\n<li><a href=\"https://x.test/%5B%5B01j9zq3k4m5n6p7q8r9s0t1v2w%5D%5D\">https://x.test/[[01j9zq3k4m5n6p7q8r9s0t1v2w]]</a></li>\n<li><a href=\"https://x.test/%5B%5B01j9zq3k4m5n6p7q8r9s0t1v2w%5D\">https://x.test/[[01j9zq3k4m5n6p7q8r9s0t1v2w]</a>]</li>\n</ul>\n</div>\n<p>Body <span class=\"blyg-link-unresolved\" style=\"color:#b3412b\">⚠ unknown item</span></p>\n",
+  "tk": {
+    "scopes": [
+      {
+        "instruction": "list",
+        "generated": true,
+        "block": true,
+        "source_ids": []
+      }
+    ],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": [
+    {
+      "directive": "[[0zzzzzzzzzzzzzzzzzzzzzzzzz]]",
+      "reason": "unknown item"
+    }
+  ]
+}

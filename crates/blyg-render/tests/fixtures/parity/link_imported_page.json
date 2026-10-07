@@ -1,0 +1,12 @@
+{
+  "name": "link_imported_page",
+  "kind": "fragment",
+  "md": "[[02abcdefghjkmnpqrstvwxyz02]]",
+  "html": "<p><a href=\"https://other.example.org/posts/on-margins/\">“Margins are where the reading happens.”</a></p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

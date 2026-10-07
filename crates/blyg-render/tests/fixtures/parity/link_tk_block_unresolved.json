@@ -1,0 +1,24 @@
+{
+  "name": "link_tk_block_unresolved",
+  "kind": "fragment",
+  "md": "[TK]write[=]Bad [[0zzzzzzzzzzzzzzzzzzzzzzzzz]] and good [[02abcdefghjkmnpqrstvwxyz01]].\n\n`[[01j9zq3k4m5n6p7q8r9s0t1v2w]]` in code.[/TK]",
+  "html": "<div class=\"blyg-tk-gen\"><p>Bad <span class=\"blyg-link-unresolved\" style=\"color:#b3412b\">⚠ unknown item</span> and good <a href=\"https://blyg.example.com/f/02abcdefghjkmnpqrstvwxyz01/\">“Writing is thinking with a pencil.”</a>.</p>\n<p><code>[[01j9zq3k4m5n6p7q8r9s0t1v2w]]</code> in code.</p>\n</div>\n",
+  "tk": {
+    "scopes": [
+      {
+        "instruction": "write",
+        "generated": true,
+        "block": true,
+        "source_ids": []
+      }
+    ],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": [
+    {
+      "directive": "[[0zzzzzzzzzzzzzzzzzzzzzzzzz]]",
+      "reason": "unknown item"
+    }
+  ]
+}

@@ -123,6 +123,16 @@ pub(crate) fn render(src: &str, line_of: Option<&dyn Fn(usize) -> usize>) -> (St
     (root.render(), stats)
 }
 
+/// The parsed tree before any HTML rewriting (links linkified, bare YouTube
+/// links turned into [`YtFacade`]s), for `native.rs`. Rendering never uses
+/// this, so it can't change the published HTML.
+pub(crate) fn parse_tree(src: &str) -> Node {
+    let mut root = engine().parse(src);
+    linkify_core(&mut root);
+    youtube_facades(&mut root);
+    root
+}
+
 /// The engine's block rules alone: block structure never depends on inline
 /// parsing, so this finds the same code blocks as [`engine`] without paying
 /// for emphasis and linkify.
@@ -161,6 +171,87 @@ pub(crate) fn code_lines(src: &str) -> Vec<bool> {
         }
     });
     flags
+}
+
+/// The Worker's `codeRanges` (code-ranges.ts): `[start, end)` byte offsets
+/// of `text` where `![[id]]`, `[[id]]` and `[TK]` are inert. Code blocks
+/// (fenced or indented, at any depth) cover whole lines, as markdown-it's
+/// block parser maps them; code spans pair a run of N backticks with the
+/// next run of exactly N, never across a blank line.
+pub(crate) fn code_ranges(text: &str) -> Vec<(usize, usize)> {
+    let starts = line_starts(text);
+    let mut ranges: Vec<(usize, usize)> = Vec::new();
+    for (i, code) in code_lines(text).into_iter().enumerate() {
+        if !code {
+            continue;
+        }
+        let a = starts[i];
+        let b = starts.get(i + 1).copied().unwrap_or(text.len());
+        match ranges.last_mut() {
+            Some(last) if last.1 == a => last.1 = b,
+            _ => ranges.push((a, b)),
+        }
+    }
+    let blocks = ranges.len();
+    let in_block = |pos: usize| ranges[..blocks].iter().any(|&(s, e)| pos >= s && pos < e);
+    let mut runs: Vec<(usize, usize)> = Vec::new();
+    let bytes = text.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'`' {
+            let s = i;
+            while i < bytes.len() && bytes[i] == b'`' {
+                i += 1;
+            }
+            if !in_block(s) {
+                runs.push((s, i - s));
+            }
+        } else {
+            i += 1;
+        }
+    }
+    let mut spans = Vec::new();
+    let mut i = 0;
+    while i < runs.len() {
+        let (open, n) = runs[i];
+        for (j, &(at, len)) in runs.iter().enumerate().skip(i + 1) {
+            if has_blank_line(&text[open + n..at]) {
+                break;
+            }
+            if len == n {
+                spans.push((open, at + n));
+                i = j;
+                break;
+            }
+        }
+        i += 1;
+    }
+    ranges.extend(spans);
+    ranges
+}
+
+/// `/\n[ \t]*\n/`
+fn has_blank_line(s: &str) -> bool {
+    let mut rest = s;
+    while let Some(nl) = rest.find('\n') {
+        let after = rest[nl + 1..].trim_start_matches([' ', '\t']);
+        if after.starts_with('\n') {
+            return true;
+        }
+        rest = &rest[nl + 1..];
+    }
+    false
+}
+
+pub(crate) fn in_ranges(ranges: &[(usize, usize)], pos: usize) -> bool {
+    ranges.iter().any(|&(s, e)| pos >= s && pos < e)
+}
+
+/// code-ranges.ts `htmlCodeRanges`: every `<code>…</code>` of rendered HTML.
+pub(crate) fn html_code_ranges(html: &str) -> Vec<(usize, usize)> {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    let re = RE.get_or_init(|| Regex::new(r"(?is)<code[\s>].*?</code>").expect("code re"));
+    re.find_iter(html).map(|m| (m.start(), m.end())).collect()
 }
 
 fn is_block(node: &Node) -> bool {
@@ -534,11 +625,10 @@ fn is_remote(src: &str) -> bool {
     rest.starts_with("//")
 }
 
-/// markdown-it `renderInlineAsText`: `text` tokens, breaks as `\n`, nested
-/// images; everything else is skipped, including inline code. Escapes and
-/// entities (`text_special`) count as text: the Worker's
-/// `blyg_image_alt_text` rule joins them inside images, so the alt matches
-/// what the same text renders as outside an image.
+/// The Worker's image `altText` (studio#6): `text`, `text_special` (escapes
+/// and entities) and inline code count as text, breaks as `\n`, nested
+/// images recurse; so the alt matches what the same text renders as outside
+/// an image.
 fn inline_as_text(nodes: &[Node], out: &mut String) {
     for n in nodes {
         if let Some(t) = n.cast::<Text>() {
@@ -547,8 +637,6 @@ fn inline_as_text(nodes: &[Node], out: &mut String) {
             out.push_str(&t.content);
         } else if n.is::<Softbreak>() || n.is::<Hardbreak>() {
             out.push('\n');
-        } else if n.is::<CodeInline>() {
-            // skipped
         } else {
             inline_as_text(&n.children, out);
         }

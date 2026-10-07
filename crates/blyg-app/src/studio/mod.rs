@@ -42,9 +42,10 @@ use gpui_kit::*;
 
 use super::{MainView, Mode};
 use crate::theme::Palette;
+use crate::theme::Rule;
 use resolver::{StoreResolver, render_kind};
 use style_cache::Theme;
-use webview::{Factory, FactoryGlobal, PreviewSurface, SurfaceEvent};
+use webview::{Factory, FactoryGlobal, PreviewSurface, SurfaceEvent}; // --- themes --- dividers
 
 gpui_kit::actions!(blygger, [ViewWrite, ViewSplit, ViewStudio]);
 
@@ -125,6 +126,9 @@ struct PageKey {
     item: Option<LocalId>,
     kind: blyg_render::Kind,
     theme_gen: u64,
+    /// The post's `<article>` class for highlighting generated text (studio
+    /// 0.27): `Some(true)` = `gen-on`, `Some(false)` = `gen-off`.
+    highlight: Option<bool>,
 }
 
 /// The native view and where it was last put, shared with the pane's canvas.
@@ -135,6 +139,10 @@ struct Slot {
     visible: bool,
     /// A sheet is open: stay hidden even though the pane is laid out.
     suppressed: bool,
+    /// --- browser --- The browser pane's left edge, while it's open: the
+    /// view is cut off there (hidden if nothing is left), since a native
+    /// view would cover the pane's GPUI chrome.
+    clip_right: Option<Pixels>,
 }
 
 impl Slot {
@@ -142,6 +150,18 @@ impl Slot {
         let Some(s) = self.surface.as_mut() else {
             return;
         };
+        // --- browser ---
+        let mut bounds = bounds;
+        if let Some(edge) = self.clip_right {
+            bounds.size.width = bounds.size.width.min(edge - bounds.origin.x);
+            if bounds.size.width < px(40.) {
+                if self.visible {
+                    s.set_visible(false);
+                    self.visible = false;
+                }
+                return;
+            }
+        }
         if self.frame != Some(bounds) {
             s.set_frame(bounds);
             self.frame = Some(bounds);
@@ -154,6 +174,22 @@ impl Slot {
 
     fn hide(&mut self) {
         if let (Some(s), true) = (self.surface.as_mut(), self.visible) {
+            s.set_visible(false);
+            self.visible = false;
+        }
+    }
+
+    /// --- browser --- See `clip_right`; hides at once when nothing is left.
+    fn set_clip(&mut self, edge: Option<Pixels>) {
+        if self.clip_right == edge {
+            return;
+        }
+        self.clip_right = edge;
+        self.frame = None;
+        if let (Some(e), Some(s)) = (edge, self.surface.as_mut())
+            && e <= px(40.)
+            && self.visible
+        {
             s.set_visible(false);
             self.visible = false;
         }
@@ -195,6 +231,9 @@ pub struct Studio {
     /// The Reading screen's body (its own WebView, never on screen with
     /// this one).
     pub reader: reader::Reader,
+    /// `images::own_media_gen` as of the last render: a private image
+    /// landing since means rendering again.
+    own_media_gen: u64,
     /// Loads and patches sent (tests).
     #[cfg(test)]
     pub(crate) loads: usize,
@@ -206,6 +245,13 @@ impl Studio {
     pub fn reclaim_keyboard(&self) {
         self.slot.borrow_mut().with(|s| s.reclaim_keyboard());
         self.reader.reclaim_keyboard();
+    }
+
+    /// --- browser --- Keep the preview and the reader out from under the
+    /// browser pane (`None`: it's closed).
+    pub fn clip_webviews(&self, edge: Option<Pixels>) {
+        self.slot.borrow_mut().set_clip(edge);
+        self.reader.set_clip(edge);
     }
 
     pub fn new(data_dir: Option<PathBuf>) -> Studio {
@@ -232,6 +278,7 @@ impl Studio {
             caret_line: 0,
             dark: None,
             reader: reader::Reader::new(),
+            own_media_gen: 0,
             #[cfg(test)]
             loads: 0,
         }
@@ -256,7 +303,10 @@ impl Studio {
         }
         if self.page.as_ref() != Some(&key) {
             let base = self.base_href();
-            let body = blyg_render::article_html(key.kind, &out.html, None, None);
+            let body = with_highlight(
+                &blyg_render::article_html(key.kind, &out.html, None, None),
+                key.highlight,
+            );
             let page = blyg_render::page_shell_with(
                 &self.theme.css,
                 &body,
@@ -329,6 +379,7 @@ fn count(n: usize, one: &str, many: &str) -> String {
 pub fn stats_label(s: &Stats) -> Option<String> {
     let parts: Vec<String> = [
         (s.quotes, "quote", "quotes"),
+        (s.links, "link", "links"),
         (s.ai_spans, "AI span", "AI spans"),
         (s.videos, "video", "videos"),
         (s.images, "image", "images"),
@@ -340,16 +391,20 @@ pub fn stats_label(s: &Stats) -> Option<String> {
     (!parts.is_empty()).then(|| parts.join(" · "))
 }
 
-/// "⚠ N quote(s) can't be resolved" (publish would refuse them).
+/// "⚠ N quote(s) and M link(s) can't be resolved" (publish would refuse them).
 pub fn unresolved_warning(s: &Stats) -> Option<String> {
-    let n = s.unresolved.len();
-    (n > 0).then(|| {
-        if n == 1 {
-            "⚠ 1 quote can't be resolved".to_string()
-        } else {
-            format!("⚠ {n} quotes can't be resolved")
-        }
-    })
+    let quotes = s
+        .unresolved
+        .iter()
+        .filter(|u| u.directive.starts_with('!'))
+        .count();
+    let links = s.unresolved.len() - quotes;
+    let parts: Vec<String> = [(quotes, "quote", "quotes"), (links, "link", "links")]
+        .into_iter()
+        .filter(|(n, ..)| *n > 0)
+        .map(|(n, one, many)| count(n, one, many))
+        .collect();
+    (!parts.is_empty()).then(|| format!("⚠ {} can't be resolved", parts.join(" and ")))
 }
 
 /// How many `![[id]]` quote lines a fragment holds. They publish as literal
@@ -399,7 +454,7 @@ fn render_opts(base_url: Option<&str>, item: Option<&Item>) -> RenderOpts {
 fn prepare(backend: &dyn Backend, item: Option<&Item>, md: &str) -> (StoreResolver, RenderOpts) {
     let base = backend.base_url();
     let opts = render_opts(base.as_deref(), item);
-    let resolver = if md.contains("![[") {
+    let resolver = if md.contains("[[") {
         StoreResolver::snapshot(backend, &opts.mount)
     } else {
         StoreResolver::empty(&opts.mount)
@@ -413,6 +468,63 @@ pub fn render_doc(backend: &dyn Backend, item: Option<&Item>, md: &str) -> Rende
     let kind = render_kind(item.map_or(blyg_core::Kind::Fragment, |i| i.kind));
     let mut out = blyg_render::render_preview(md, kind, &resolver, &opts);
     with_local_images(backend, md, &mut out);
+    out
+}
+
+/// The blyg's own draft media is private (studio 0.28) and the WebView
+/// reads images anonymously: inline the ones only the owner can read.
+fn with_own_media(backend: &std::sync::Arc<dyn Backend>, out: &mut Rendered) {
+    let Some(base) = backend.base_url() else {
+        return;
+    };
+    if !out.html.contains("/media/") {
+        return;
+    }
+    let origin = |u: &str| url::Url::parse(u).ok().map(|u| u.origin());
+    let Some(own_origin) = origin(&base) else {
+        return;
+    };
+    let b = backend.clone();
+    let fetch: crate::images::OwnFetch =
+        std::sync::Arc::new(move |u: &str| b.fetch_own_media(u).map_err(|e| e.to_string()));
+    out.html = local_media::inline_srcs(&out.html, |u| {
+        if !u.contains("/media/") || origin(u).as_ref() != Some(&own_origin) {
+            return None;
+        }
+        match crate::images::own_media(u, &fetch) {
+            crate::images::OwnMedia::Private(p) => Some(p),
+            _ => None,
+        }
+    });
+}
+
+/// The post's own highlight class, as pages.ts `highlightClass` gives it:
+/// `gen-on` for show, `gen-off` for hide. On `default` the blyg's
+/// style.css decides; when that default is on, `gen-on` says the same, so
+/// a cached theme from before the default rule still shows it.
+fn highlight_class(it: &Item) -> Option<bool> {
+    use blyg_core::HighlightMode as M;
+    match it.highlight_mode {
+        Some(M::Show) => Some(true),
+        Some(M::Hide) => Some(false),
+        _ => it.highlight.then_some(true),
+    }
+}
+
+/// The `<article>` with the post's highlight class (see [`highlight_class`]).
+fn with_highlight(article: &str, on: Option<bool>) -> String {
+    let Some(on) = on else {
+        return article.to_string();
+    };
+    let class = if on { "gen-on" } else { "gen-off" };
+    let mut out = article.to_string();
+    for kind in ["fragment", "thread"] {
+        let from = format!("<article class=\"{kind}\"");
+        if out.starts_with(&from) {
+            out.replace_range(..from.len(), &format!("<article class=\"{kind} {class}\""));
+            break;
+        }
+    }
     out
 }
 
@@ -502,6 +614,12 @@ impl MainView {
             }
             SurfaceEvent::OpenUrl(url) => cx.open_url(&url),
             SurfaceEvent::OpenOrigin(origin) => self.open_profile(origin, window, cx),
+            // --- quote targets --- in the studio preview, still the profile.
+            SurfaceEvent::OpenQuote { origin, .. } => self.open_profile(origin, window, cx),
+            SurfaceEvent::PageEnd => {} // --- reader folders --- (the reader's)
+            // --- selection --- the preview shows no pill (it is your own
+            // draft, the one a quote would go into).
+            SurfaceEvent::Selected(_) | SurfaceEvent::QuoteSelection => {}
         }
     }
 
@@ -552,6 +670,8 @@ impl MainView {
         self.studio.requested = Some(key.clone());
         let (resolver, opts) = prepare(&*self.backend, item.as_ref(), &md);
         let backend = self.backend.clone();
+        let live = crate::connection::mode(cx) == Some(crate::connection::Mode::Live);
+        self.studio.own_media_gen = crate::images::own_media_gen();
         self.studio.render_gen += 1;
         let gen_ = self.studio.render_gen;
         let delay = if now { None } else { Some(DEBOUNCE) };
@@ -563,6 +683,9 @@ impl MainView {
                 .background_spawn(async move {
                     let mut out = blyg_render::render_preview(&md, key.kind, &resolver, &opts);
                     with_local_images(&*backend, &md, &mut out);
+                    if live {
+                        with_own_media(&backend, &mut out);
+                    }
                     out
                 })
                 .await;
@@ -623,6 +746,7 @@ impl MainView {
                     .map_or(blyg_core::Kind::Fragment, |i| i.kind),
             ),
             theme_gen: self.studio.theme_gen,
+            highlight: self.current.as_ref().and_then(highlight_class),
         }
     }
 
@@ -640,8 +764,12 @@ impl MainView {
         // The Reading screen's body first: where it shows, this one doesn't.
         self.reader_frame(window, cx);
         let wanted = self.studio.view.preview_visible();
-        // Another item or kind (⌘T, a sync) without an edit: render it now.
-        if wanted && self.studio.requested.as_ref() != Some(&self.studio_key()) {
+        // Another item or kind (⌘T, a sync) without an edit, or a private
+        // image just arrived: render it now.
+        if wanted
+            && (self.studio.requested.as_ref() != Some(&self.studio_key())
+                || self.studio.own_media_gen != crate::images::own_media_gen())
+        {
             self.studio_refresh(true, cx);
         }
         if wanted && self.studio.failed.is_none() && self.studio.slot.borrow().surface.is_none() {
@@ -690,8 +818,7 @@ impl MainView {
             .min_w_0()
             .min_h_0()
             .h_full()
-            .border_l_1()
-            .border_color(p.line)
+            .rule_l(p)
             .bg(p.bg);
         if let Some(msg) = self.studio.failed().map(str::to_string) {
             return base
@@ -701,7 +828,7 @@ impl MainView {
                 .p(px(24.))
                 .text_color(p.muted)
                 .text_size(px(13.))
-                .font_family("Inter")
+                .font_family(self.theme.chrome_font(&self.prefs))
                 .child(msg)
                 .into_any_element();
         }
@@ -737,7 +864,13 @@ impl MainView {
                 .flex()
                 .gap(px(10.))
                 .children(label)
-                .when_some(warn, |d, w| d.child(div().text_color(p.warn).child(w)))
+                .when_some(warn, |d, w| {
+                    d.child(
+                        div()
+                            .text_color(self.palette.on_status_text(p.warn))
+                            .child(w),
+                    )
+                })
                 .into_any_element(),
         )
     }
@@ -779,7 +912,7 @@ impl MainView {
             div()
                 .id("fragment-quotes")
                 .cursor_pointer()
-                .text_color(warn)
+                .text_color(self.palette.on_status_text(warn))
                 .hover(move |s| s.text_color(ink))
                 .tooltip(move |_, cx| cx.new(|_| crate::app::reading::Tip(tip.into())).into())
                 .on_click(cx.listener(move |this, _, window, cx| {
@@ -812,14 +945,11 @@ impl MainView {
         }
     }
 
-    /// The publish sheet's warning about quotes publish would refuse.
+    /// The publish sheet's warning about quotes and links publish would refuse.
     pub(super) fn studio_publish_warning(&self, cx: &App) -> Option<String> {
         let item = self.current.as_ref()?;
-        if item.kind != blyg_core::Kind::Thread {
-            return None;
-        }
         let md = self.editor.read(cx).value();
-        if !md.contains("![[") {
+        if !md.contains("[[") {
             return None;
         }
         unresolved_warning(&render_doc(&*self.backend, Some(item), &md).stats)
@@ -947,5 +1077,16 @@ mod tests {
             unresolved_warning(&s).as_deref(),
             Some("⚠ 2 quotes can't be resolved")
         );
+        s.unresolved.push(blyg_render::Unresolved {
+            line: 5,
+            directive: "[[x]]".into(),
+            reason: blyg_render::UnresolvedReason::UnknownItem,
+        });
+        assert_eq!(
+            unresolved_warning(&s).as_deref(),
+            Some("⚠ 2 quotes and 1 link can't be resolved")
+        );
+        s.links = 1;
+        assert!(stats_label(&s).unwrap().contains("1 link"));
     }
 }

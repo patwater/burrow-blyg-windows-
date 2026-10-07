@@ -6,6 +6,16 @@ the same commit (`docs/tk-core-plan.md`, `docs/v0.3-plan.md`, `docs/v0.2-plan.md
 `docs/css-contract.md`, `docs/roadmap.md`, `DEVLOG.md`, `CLAUDE.md`). Behaviour
 was checked against the reference Worker source at upstream `75f74d9`.
 
+> **Update 2026-09-28: protocol 0.3.** The spec is now 0.3 (pinned snapshot
+> `https://blygger.org/spec/0.3/2026-09-28/`), and the reference client moved to
+> `blygger/blygger-studio` (v0.7.0). What changed for this app: inline `[[id]]`
+> links (§16.2; resolve like a quote, bake nothing, notify nobody; an unresolvable
+> one fails publish with "one or more references do not resolve"), a `cited` object
+> beside every reference on the wire (§16.1), the manifest's `generator_url` and
+> `level: 2`, an optional `kind` on `PUT /api/items/:id`, `accept_mentions` in site
+> settings, and mentions re-sent only when the target version changed. The
+> sections below still describe 0.2 unless they say otherwise.
+
 Conventions: **§n** means spec 0.2 section n. "Ref" means the reference worker.
 "(inferred)" marks my own reading, not something a source states.
 

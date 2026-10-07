@@ -1,0 +1,27 @@
+{
+  "name": "tk_impyrt_with_source",
+  "kind": "thread",
+  "md": "[TK]impyrt=see ![[01j9zq3k4m5n6p7q8r9s0t1v2w]] here[/TK] and [TK]use ![[01j9zq3k4m5n6p7q8r9s0t1v2w]][=]made[/TK]",
+  "html": "<p><span class=\"blyg-tk-gen\">see ![[01j9zq3k4m5n6p7q8r9s0t1v2w]] here</span> and <span class=\"blyg-tk-gen\">made</span></p>\n",
+  "tk": {
+    "scopes": [
+      {
+        "instruction": "impyrt",
+        "generated": true,
+        "block": false,
+        "source_ids": []
+      },
+      {
+        "instruction": "use ![[01j9zq3k4m5n6p7q8r9s0t1v2w]]",
+        "generated": true,
+        "block": false,
+        "source_ids": [
+          "01j9zq3k4m5n6p7q8r9s0t1v2w"
+        ]
+      }
+    ],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Regenerate packaging/Blygger.icns (and packaging/icon-512.png, which the
+# Regenerate packaging/Burrow.icns (and packaging/icon-512.png, which the
 # bare binary embeds as its Dock icon) from packaging/icon.svg.
 # Needs macOS (sips, iconutil) and an SVG rasteriser: rsvg-convert
 # (`brew install librsvg`) when present, otherwise Quick Look (qlmanage).
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SVG="$ROOT/packaging/icon.svg"
-OUT="${1:-$ROOT/packaging/Blygger.icns}"
+OUT="${1:-$ROOT/packaging/Burrow.icns}"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
@@ -18,7 +18,7 @@ else
   mv "$WORK/$(basename "$SVG").png" "$MASTER"
 fi
 
-SET="$WORK/Blygger.iconset"
+SET="$WORK/Burrow.iconset"
 mkdir -p "$SET"
 for s in 16 32 128 256 512; do
   sips -z "$s" "$s" "$MASTER" --out "$SET/icon_${s}x${s}.png" >/dev/null

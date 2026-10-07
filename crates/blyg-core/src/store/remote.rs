@@ -106,6 +106,26 @@ impl Store {
         Some((serde_json::from_str(&json).ok()?, at))
     }
 
+    /// Every cached profile, one per origin.
+    pub fn cached_profiles(&self) -> Vec<crate::profile::Profile> {
+        let c = self.conn();
+        let Ok(mut st) = c.prepare("SELECT DISTINCT json FROM profiles") else {
+            return Vec::new();
+        };
+        let Ok(rows) = st.query_map([], |r| r.get::<_, String>(0)) else {
+            return Vec::new();
+        };
+        let mut out: Vec<crate::profile::Profile> = Vec::new();
+        for json in rows.flatten() {
+            if let Ok(p) = serde_json::from_str::<crate::profile::Profile>(&json)
+                && !out.iter().any(|o| o.origin == p.origin)
+            {
+                out.push(p);
+            }
+        }
+        out
+    }
+
     /// Cache a fetched profile under each of `keys`.
     pub fn put_profile(&self, keys: &[&str], p: &crate::profile::Profile) -> Result<()> {
         let json = serde_json::to_string(p).map_err(|e| CoreError::Storage(e.to_string()))?;

@@ -37,6 +37,13 @@
       "status": "public",
       "version": 1,
       "content_html": "<p>This is the thread being edited.</p>\n"
+    },
+    {
+      "id": "01j9zq3k4m5n6p7q8r9s0t1vss",
+      "kind": "fragment",
+      "status": "public",
+      "version": 2,
+      "content_html": "<p onclick=\"steal()\" style=\"color:red\" class=\"lead\">Markup from <a href=\"javascript:alert(1)\" title=\"t\">a stranger</a>, <a href=\"https://site.example.net/a?b=1&amp;c=2\" target=\"_blank\">a link</a> and <a href=\"tel:+15550100\">a phone</a>.</p>\n<script>alert(1)</script><style>p{display:none}</style>\n<iframe src=\"https://www.youtube-nocookie.com/embed/x\"></iframe>\n<p><img src=\"data:image/png;base64,AAAA\" alt=\"inline data\" loading=\"lazy\"><img src=\"https://images.example.org/k.png\" alt=\"kite\" referrerpolicy=\"no-referrer\" width=\"10\"></p>\n<font color=\"red\">unwrapped <b data-x=\"1\" data-blyg-note=\"kept\">bold</b></font>\n<svg><circle r=\"4\"/></svg><form action=\"/x\"><input value=\"v\"></form>\n<table><tr><td style=\"x\" colspan=\"2\">cell</td></tr></table>\n<p>Sneaky <a href=\"java&#x09;script:alert(2)\">entity</a>.</p>\n"
     }
   ],
   "imported": [

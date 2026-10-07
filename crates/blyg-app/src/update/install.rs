@@ -1,7 +1,7 @@
 //! Installing a verified release over the running bundle.
 //!
 //! The zip is extracted with `ditto` into a staging directory on the same
-//! volume as the running `Blygger.app`, the extracted bundle is checked
+//! volume as the running bundle, the extracted bundle is checked
 //! (identifier, version, `codesign --verify`), and on restart or quit it
 //! replaces the running bundle: old bundle aside, new bundle in, old bundle
 //! removed, and the old one put back if anything fails. Nothing but the
@@ -20,8 +20,12 @@ use semver::Version;
 use super::UpdateError;
 
 pub const BUNDLE_ID: &str = "org.blygger.desktop";
-/// The bundle's name inside the release zip (`ditto -c -k --keepParent`).
-pub const ZIP_APP: &str = "Blygger.app";
+/// The bundle's name inside the release zip (`ditto -c -k --keepParent`),
+/// preferred first: `Burrow.app` from 0.7.0, `Blygger.app` before the
+/// rename (and in the old-name zip releases keep publishing for 0.6.0
+/// clients). Whatever the zip calls it, it replaces the running bundle at
+/// the running bundle's own path, so an install keeps its on-disk name.
+pub const ZIP_APPS: [&str; 2] = ["Burrow.app", "Blygger.app"];
 const STAGING_NAME: &str = "org.blygger.desktop.update";
 
 /// The external tools the installer runs, behind a trait so tests can stub
@@ -153,7 +157,7 @@ pub fn staging_dir(target: &Path, tmp_root: &Path) -> PathBuf {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Staged {
     pub version: Version,
-    /// `<staging>/unpacked/Blygger.app`.
+    /// `<staging>/unpacked/Burrow.app` (or `Blygger.app`).
     pub app: PathBuf,
     /// The staging directory (removed after installing).
     pub dir: PathBuf,
@@ -177,10 +181,13 @@ pub fn stage(
         let unpacked = dir.join("unpacked");
         tools.extract_zip(&zip_path, &unpacked)?;
         let _ = std::fs::remove_file(&zip_path);
-        let app = unpacked.join(ZIP_APP);
-        if !app.is_dir() {
-            return Err(UpdateError::Install(format!("{ZIP_APP} isn't in the zip")));
-        }
+        let app = ZIP_APPS
+            .iter()
+            .map(|name| unpacked.join(name))
+            .find(|app| app.is_dir())
+            .ok_or_else(|| {
+                UpdateError::Install(format!("{} isn't in the zip", ZIP_APPS.join(" or ")))
+            })?;
         verify_bundle(&app, expected, current, tools)?;
         Ok(Staged {
             version: expected.clone(),
@@ -271,7 +278,7 @@ pub fn swap(target: &Path, new: &Path) -> Result<(), UpdateError> {
 }
 
 /// Reopen `bundle` once this process has exited (a detached `/bin/sh`).
-/// `open -n` launches exactly that bundle, even if another copy of Blygger
+/// `open -n` launches exactly that bundle, even if another copy of Burrow
 /// (same identifier, another path) is running.
 pub fn relaunch_after_exit(bundle: &Path) -> io::Result<()> {
     relaunch_command(std::process::id(), bundle, &["/usr/bin/open", "-n"])

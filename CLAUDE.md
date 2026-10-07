@@ -1,6 +1,6 @@
-# Blygger Desktop
+# Burrow
 
-A native (Rust + GPUI), Notational-Velocity-fast, local-first studio for Blygger blogs
+Burrow is a blygger client: a native (Rust + GPUI), Notational-Velocity-fast, local-first studio for Blygger blogs
 ("blygs", https://blygger.org). Read `docs/SPEC.md` first. The agreed UX lives in the
 clickable mocks under `docs/prototype/`.
 
@@ -17,5 +17,8 @@ Rules
 - Never publish to, or write to, a real blyg during development. Use mocks or `wrangler dev`.
 - Never print or log tokens.
 - Never send synthetic keystrokes to the OS, or `pkill` by name, when testing the UI. Kill only PIDs you started, and capture only the app's own windows.
+- The app was renamed from Blygger to Burrow in display only (see "Naming" in `docs/SPEC.md`).
+  Never rename the bundle ID, Keychain service/accounts, data dir or db names, config path,
+  `BLYGGER_*` env vars, the `blygger` binary, key contexts or action namespaces, or crates.
 - `cargo fmt && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace` must pass before any commit.
 - Personal and orchestration notes go in `CLAUDE.local.md` and `docs/private/` (both gitignored).

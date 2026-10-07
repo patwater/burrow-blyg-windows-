@@ -17,6 +17,10 @@ pub struct AppState {
     /// The first-run onboarding was finished or skipped (Settings › Help
     /// can show it again).
     pub onboarded: bool,
+    /// The app version last launched, once onboarded: a newer one opens the
+    /// tutorial on what changed (`onboarding::whats_new`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub seen_version: Option<String>,
     /// The main window's last view mode (`write`, `split`, `studio`,
     /// `focus`): the full editor's ⌘1/⌘2/⌘3/⌘E, remembered per viewer.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -25,6 +29,23 @@ pub struct AppState {
     /// relaunch doesn't ask GitHub again within a day (`auto-update`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_update_check: Option<u64>,
+    /// --- browser --- Hosts where the browser pane's shield is off
+    /// (content blocking skipped), sorted.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub browser_unblocked_hosts: Vec<String>,
+    /// The reading screen's last mode (`stream` or `reader`, ⌥⌘1 / ⌥⌘2).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reading_mode: Option<String>,
+    // --- reader folders ---
+    /// The Reader's sources pane was hidden (⌥⌘S).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub reader_sources_hidden: bool,
+    /// The sources pane's width in points, when the user dragged it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reader_sources_width: Option<u32>,
+    /// --- notes --- The scratch note the notes drawer writes to (a local id).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub notes_note: Option<String>,
 }
 
 impl AppState {

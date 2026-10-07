@@ -1,0 +1,19 @@
+{
+  "name": "tk_impyrt_inline",
+  "kind": "fragment",
+  "md": "Pasted: [TK]impyrt=some *pasted* text, a = b[/TK] end.",
+  "html": "<p>Pasted: <span class=\"blyg-tk-gen\">some <em>pasted</em> text, a = b</span> end.</p>\n",
+  "tk": {
+    "scopes": [
+      {
+        "instruction": "impyrt",
+        "generated": true,
+        "block": false,
+        "source_ids": []
+      }
+    ],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

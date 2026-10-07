@@ -30,21 +30,25 @@ pub const CHANGELOG_TTL_MS: i64 = 2 * 60 * 1000;
 impl LiveBackend {
     /// Open (or create) `<data_dir>/blygger.db` and start syncing with the
     /// blyg at `base_url`.
-    pub fn open(data_dir: &Path, base_url: &str, token: &str) -> Result<LiveBackend> {
-        Self::open_with(data_dir, base_url, token, SyncOptions::default())
+    pub fn open(
+        data_dir: &Path,
+        base_url: &str,
+        cred: impl Into<crate::api::auth::Credential>,
+    ) -> Result<LiveBackend> {
+        Self::open_with(data_dir, base_url, cred, SyncOptions::default())
     }
 
     pub fn open_with(
         data_dir: &Path,
         base_url: &str,
-        token: &str,
+        cred: impl Into<crate::api::auth::Credential>,
         opts: SyncOptions,
     ) -> Result<LiveBackend> {
         let store = Store::open(&data_dir.join(DB_FILE))?;
         let scratch = crate::scratch_media::dir(data_dir);
         Ok(Self::from_parts(
             store,
-            Api::new(base_url, token),
+            Api::new(base_url, cred),
             opts,
             Some(scratch),
         ))
@@ -70,12 +74,21 @@ impl LiveBackend {
         }
     }
 
+    /// One stored reading row as pulled, tombstones included (`reading()`
+    /// hides and collapses some).
+    pub fn reading_row(&self, sub: &str, remote_id: &str) -> Option<ReadingItem> {
+        self.engine
+            .store
+            .reading_row(sub, remote_id)
+            .map(|(r, _)| r)
+    }
+
     /// Pull from the server without pushing first (`sync_now` pushes, then pulls).
     pub fn pull_now(&self) -> Result<()> {
         self.engine.pull()
     }
 
-    /// Whether the server has `GET /api/reading` (false until the first pull proves otherwise).
+    /// Whether the server has `GET /api/reading/imported` (false until the first pull proves otherwise).
     pub fn reading_available(&self) -> bool {
         !self.engine.reading_unavailable()
     }
@@ -94,7 +107,7 @@ impl LiveBackend {
         self.engine.store.provenance(id)
     }
 
-    /// `GET /api/hoppers` (patch 3); empty when the server doesn't have it yet.
+    /// `GET /api/hoppers` with counts; empty when the server doesn't have it.
     pub fn hoppers(&self) -> Result<Vec<Hopper>> {
         Ok(self
             .engine
@@ -266,7 +279,7 @@ impl LiveBackend {
 
     fn permalink_for(&self, kind: Kind, sid: &str) -> String {
         let p = if kind == Kind::Thread { "t" } else { "f" };
-        format!("{}/{p}/{sid}", self.e().api.base_url())
+        format!("{}/{p}/{sid}", self.e().api.public_base())
     }
 }
 
@@ -623,6 +636,27 @@ impl Backend for LiveBackend {
         Ok(())
     }
 
+    fn set_read(&self, rows: &[(String, String)], read: bool) -> Result<usize> {
+        // Local and instant. Reads queue for a server that syncs read state;
+        // unreads only for one that can clear it (else they stay here).
+        let sync = self.e().read_sync_on();
+        let n = if read {
+            let marked = self.e().store.mark_many_read(rows, sync)?;
+            marked.map_or(0, |m| m.len())
+        } else {
+            let queue = self.e().read_clear_on();
+            let cleared = self.e().store.mark_many_unread(rows, queue)?;
+            cleared.map_or(0, |m| m.len())
+        };
+        if n > 0 {
+            self.e().emit(CoreEvent::ReadingChanged);
+            if sync {
+                self.wake();
+            }
+        }
+        Ok(n)
+    }
+
     // --- scratch notes ---
 
     fn create_scratch(&self, kind: Kind, content_md: &str) -> Result<LocalId> {
@@ -809,39 +843,44 @@ impl Backend for LiveBackend {
 
     fn fork(&self, of: &RemoteRef) -> Result<LocalId> {
         let _net = self.e().net_lock();
-        let sid = self.e().track(self.e().api.fork(of))?;
-        let w = match self.e().api.get_item(&sid) {
-            Ok(w) => w,
-            // The fork exists server-side; the next pull fills in the content.
-            Err(_) => WireItem {
-                id: sid.clone(),
-                kind: "fragment".into(),
-                authored_kind: None,
-                status: "draft".into(),
-                version: 0,
-                dirty: true,
-                created: crate::util::now_iso(),
-                updated: crate::util::now_iso(),
-                content_md: String::new(),
-                stub_of: None,
-                forked_from: serde_json::to_value(of).ok(),
-                permalink: None,
-                show_responses: false,
-                versions: None,
-            },
-        };
+        // `POST /api/items {mode: "fork"}` answers with the new draft.
+        let w = self.e().track(self.e().api.fork(of))?;
         let id = self.e().store.insert_from_server(&w)?;
         self.e().emit(CoreEvent::ItemsChanged);
         Ok(id)
     }
 
-    fn set_show_responses(&self, id: &LocalId, show: bool) -> Result<()> {
+    fn set_responses(&self, id: &LocalId, mode: ResponsesMode) -> Result<bool> {
         let sid = self.server_id(id)?;
-        self.e()
-            .track(self.e().api.set_show_responses(&sid, show))?;
-        self.e().store.set_show_responses(id, show)?;
+        let (showing, got) = self.e().track(self.e().api.set_responses(&sid, mode))?;
+        self.e().store.set_responses(id, showing, got)?;
         self.e().emit(CoreEvent::ItemsChanged);
-        Ok(())
+        Ok(showing)
+    }
+
+    fn set_highlight(&self, id: &LocalId, mode: HighlightMode) -> Result<bool> {
+        let sid = self.server_id(id)?;
+        let (on, got) = self.e().track(self.e().api.set_highlight(&sid, mode))?;
+        self.e().store.set_highlight(id, on, got)?;
+        self.e().emit(CoreEvent::ItemsChanged);
+        Ok(on)
+    }
+
+    fn pick_search(&self, q: &crate::pick::PickQuery) -> Vec<crate::pick::Pickable> {
+        self.e().store.pick_search(q).unwrap_or_default()
+    }
+
+    fn picker_typing(&self) -> PickerTyping {
+        self.e().api.picker_typing().unwrap_or_default()
+    }
+
+    fn fetch_own_media(&self, url: &str) -> Result<(Vec<u8>, Option<String>)> {
+        let api = &self.e().api;
+        if api.is_own_media(url) {
+            api.fetch_own_media(url, crate::backend::MEDIA_MAX_BYTES)
+        } else {
+            PublicClient::new().get_bytes(url, crate::backend::MEDIA_MAX_BYTES)
+        }
     }
 
     fn sync_now(&self) -> Result<()> {
@@ -870,6 +909,7 @@ impl Backend for LiveBackend {
                     title: title.unwrap_or(url).to_string(),
                     status: "active".into(),
                     in_blogroll: false,
+                    title_follows_source: title.is_none(),
                 };
                 let mut all = self.e().store.subscriptions();
                 all.push(s.clone());
@@ -896,8 +936,11 @@ impl Backend for LiveBackend {
         in_blogroll: Option<bool>,
         title: Option<&str>,
     ) -> Result<()> {
-        self.e()
-            .track(self.e().api.update_subscription(sub_id, in_blogroll, title))?;
+        self.e().track(
+            self.e()
+                .api
+                .update_subscription(sub_id, in_blogroll, title.map(Some)),
+        )?;
         self.e().store.edit_subscription(sub_id, |s| {
             if let Some(b) = in_blogroll {
                 s.in_blogroll = b;
@@ -909,6 +952,60 @@ impl Backend for LiveBackend {
         })?;
         self.e().emit(CoreEvent::ReadingChanged);
         Ok(())
+    }
+
+    fn rename_subscription(&self, sub_id: &str, title: Option<&str>) -> Result<()> {
+        let title = title.map(str::trim);
+        if title == Some("") {
+            return Err(CoreError::Rejected {
+                status: 400,
+                message: "a name can't be empty".into(),
+                details: vec![],
+            });
+        }
+        self.e()
+            .track(self.e().api.update_subscription(sub_id, None, Some(title)))?;
+        // The server's copy names it now (the source's own name comes back
+        // with `title: null`); a failed refresh keeps the local edit.
+        match self.e().api.list_subscriptions() {
+            Ok(subs) => {
+                self.e().store.replace_subscriptions(&subs)?;
+            }
+            Err(_) => self.e().store.edit_subscription(sub_id, |s| {
+                if let Some(t) = title {
+                    s.title = t.to_string();
+                }
+                s.title_follows_source = title.is_none();
+                true
+            })?,
+        }
+        self.e().emit(CoreEvent::ReadingChanged);
+        Ok(())
+    }
+
+    fn poll_subscriptions(&self) -> Result<u32> {
+        let n = self.e().track(self.e().api.poll_subscriptions())?;
+        self.send(Msg::Pull);
+        Ok(n)
+    }
+
+    fn check_subscription(&self, sub_id: &str) -> Result<bool> {
+        let kind = self
+            .e()
+            .store
+            .subscriptions()
+            .into_iter()
+            .find(|s| s.id == sub_id)
+            .map(|s| s.kind);
+        // Resync is for blyg subscriptions (409 on a feed): a feed is polled
+        // with the rest.
+        let changed = if kind == Some(SubscriptionKind::Rss) {
+            self.e().track(self.e().api.poll_subscriptions())? > 0
+        } else {
+            self.e().track(self.e().api.resync_subscription(sub_id))?
+        };
+        self.send(Msg::Pull);
+        Ok(changed)
     }
 
     fn pause_subscription(&self, sub_id: &str, paused: bool) -> Result<()> {
@@ -1052,5 +1149,98 @@ impl Backend for LiveBackend {
         let key = crate::profile::clean_url(url)?;
         let (p, _) = self.e().store.cached_profile(&key)?;
         Some(self.finish_profile(p))
+    }
+
+    // --- about ---
+
+    fn read_state_sync(&self) -> bool {
+        self.e().read_sync_on()
+    }
+
+    fn server_outdated(&self) -> bool {
+        self.e().server_outdated()
+    }
+
+    fn server_extensions(&self) -> Option<bool> {
+        self.e().server_extensions()
+    }
+
+    fn cached_profiles(&self) -> Vec<crate::profile::Profile> {
+        self.e().store.cached_profiles()
+    }
+
+    // --- responses ---
+
+    fn responses(&self, origin: &str, id: &str) -> Vec<Response> {
+        let mut out = self.e().store.responses_to(origin, id);
+        if let Some(base) = self.base_url() {
+            out.extend(crate::model::own_responses(
+                &self.items(),
+                &base,
+                origin,
+                id,
+            ));
+        }
+        out
+    }
+
+    // --- reader folders --- local only: the store, nothing queued.
+
+    fn folders(&self) -> Vec<Folder> {
+        self.e().store.folders()
+    }
+
+    fn subscription_folders(&self) -> std::collections::HashMap<String, String> {
+        self.e().store.subscription_folders()
+    }
+
+    fn create_folder(&self, name: &str) -> Result<Folder> {
+        self.e().store.create_folder(name)
+    }
+
+    fn rename_folder(&self, id: &str, name: &str) -> Result<()> {
+        self.e().store.rename_folder(id, name)
+    }
+
+    fn delete_folder(&self, id: &str) -> Result<()> {
+        self.e().store.delete_folder(id)
+    }
+
+    fn move_folder(&self, id: &str, index: usize) -> Result<()> {
+        self.e().store.move_folder(id, index)
+    }
+
+    fn set_subscription_folder(&self, sub_id: &str, folder: Option<&str>) -> Result<()> {
+        self.e().store.set_subscription_folder(sub_id, folder)
+    }
+
+    // --- quote targets ---
+
+    fn public_item(&self, origin: &str, id: &str) -> Result<crate::backend::PublicItem> {
+        // `PublicClient` holds no token: nothing but a public GET leaves.
+        let doc = self.public.item_doc(origin, id)?;
+        let versions = doc.versions_at(origin);
+        let _ = self.e().store.put_changelog(origin, id, &versions);
+        Ok(crate::backend::PublicItem {
+            item: doc.reading_item(origin, id),
+            versions,
+        })
+    }
+
+    fn public_pinned(&self, origin: &str, id: &str, version: u32) -> Result<PinnedVersion> {
+        if let Some(p) = self.e().store.cached_pin(origin, id, version) {
+            return Ok(p);
+        }
+        // §8.4: no request for a version the changelog doesn't mark pinned.
+        let log = match self.e().store.cached_changelog(origin, id) {
+            Some((v, _)) if v.iter().any(|r| r.version == version) => v,
+            _ => self.public.item_doc(origin, id)?.versions_at(origin),
+        };
+        if !log.iter().any(|v| v.version == version && v.pinned) {
+            return Err(not_pinned(version));
+        }
+        let p = self.public.pinned(origin, id, version)?;
+        self.e().store.put_pin(&p)?;
+        Ok(p)
     }
 }

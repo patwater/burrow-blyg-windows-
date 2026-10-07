@@ -13,6 +13,8 @@ macro_rules! repo {
         "aneeshsathe/blygger-desktop"
     };
 }
+/// `owner/name`, for the About window's links.
+pub const REPO: &str = repo!();
 pub const LATEST_URL: &str = concat!("https://api.github.com/repos/", repo!(), "/releases/latest");
 
 /// How often to check while running (and between launches).
@@ -47,7 +49,8 @@ pub struct Offer {
     pub version: Version,
     /// The release page ("What's new").
     pub page_url: String,
-    /// `Blygger-<ver>-macos-universal.zip`, `SHA256SUMS`, `SHA256SUMS.sig`;
+    /// `Burrow-<ver>-macos-universal.zip` (or the old
+    /// `Blygger-<ver>-macos-universal.zip`), `SHA256SUMS`, `SHA256SUMS.sig`;
     /// `None` when the release can't be installed from the app (a release
     /// from before signing, or a missing asset): then it's notify-only.
     pub assets: Option<Assets>,
@@ -77,7 +80,16 @@ pub fn parse_tag(tag: &str) -> Option<Version> {
     Version::parse(tag.trim().strip_prefix('v').unwrap_or(tag.trim())).ok()
 }
 
+/// The app zip's name for a release. From 0.7.0 the app is Burrow.
 pub fn zip_name(v: &Version) -> String {
+    format!("Burrow-{v}-macos-universal.zip")
+}
+
+/// The app zip's name before the app was renamed Burrow (0.6.0 and
+/// earlier). Releases keep publishing it for a while so those versions can
+/// still update (see .github/workflows/release.yml); a release that has
+/// only this name is accepted too.
+pub fn legacy_zip_name(v: &Version) -> String {
     format!("Blygger-{v}-macos-universal.zip")
 }
 
@@ -95,9 +107,12 @@ pub fn evaluate(release: &ApiRelease, current: &Version) -> CheckOutcome {
         };
     }
     let find = |name: &str| release.assets.iter().find(|a| a.name == name);
-    let zip_name = zip_name(&version);
-    let assets = match (find(&zip_name), find("SHA256SUMS"), find("SHA256SUMS.sig")) {
-        (Some(zip), Some(sums), Some(sig)) => Some(Assets {
+    // Burrow's name first; the old Blygger name only if that's all there is.
+    let zip = [zip_name(&version), legacy_zip_name(&version)]
+        .into_iter()
+        .find_map(|name| find(&name).map(|a| (name, a)));
+    let assets = match (zip, find("SHA256SUMS"), find("SHA256SUMS.sig")) {
+        (Some((zip_name, zip)), Some(sums), Some(sig)) => Some(Assets {
             zip_name,
             zip_url: zip.browser_download_url.clone(),
             zip_size: zip.size,
@@ -158,10 +173,22 @@ mod tests {
         }
     }
 
+    /// A release from before the rename (0.6.0 and earlier).
     const FULL: &[&str] = &[
         "Blygger-0.3.0-macos-universal.dmg",
         "Blygger-0.3.0-macos-universal.zip",
         "Blygger-macos-universal.zip",
+        "SHA256SUMS",
+        "SHA256SUMS.sig",
+    ];
+
+    /// A release during the transition: Burrow's assets plus the old zip
+    /// name for 0.6.0 clients.
+    const TRANSITION: &[&str] = &[
+        "Blygger-0.7.0-macos-universal.zip",
+        "Burrow-0.7.0-macos-universal.dmg",
+        "Burrow-0.7.0-macos-universal.zip",
+        "Burrow-macos-universal.zip",
         "SHA256SUMS",
         "SHA256SUMS.sig",
     ];
@@ -226,6 +253,45 @@ mod tests {
             o.page_url,
             format!("https://github.com/{REPO}/releases/tag/v0.3.0")
         );
+    }
+
+    #[test]
+    fn burrow_zip_is_preferred_over_the_old_name() {
+        let cur = Version::parse("0.6.0").unwrap();
+        let CheckOutcome::Available(o) = evaluate(&release("v0.7.0", TRANSITION), &cur) else {
+            panic!()
+        };
+        let a = o.assets.unwrap();
+        assert_eq!(a.zip_name, "Burrow-0.7.0-macos-universal.zip");
+        assert!(a.zip_url.ends_with("/Burrow-0.7.0-macos-universal.zip"));
+        // Only Burrow's name: fine.
+        let burrow_only: Vec<&str> = TRANSITION[1..].to_vec();
+        let CheckOutcome::Available(o) = evaluate(&release("v0.7.0", &burrow_only), &cur) else {
+            panic!()
+        };
+        assert_eq!(
+            o.assets.unwrap().zip_name,
+            "Burrow-0.7.0-macos-universal.zip"
+        );
+        // Only the old name (a release from before the rename): still fine.
+        let old_only = [
+            "Blygger-0.7.0-macos-universal.zip",
+            "SHA256SUMS",
+            "SHA256SUMS.sig",
+        ];
+        let CheckOutcome::Available(o) = evaluate(&release("v0.7.0", &old_only), &cur) else {
+            panic!()
+        };
+        assert_eq!(
+            o.assets.unwrap().zip_name,
+            "Blygger-0.7.0-macos-universal.zip"
+        );
+        // The version-less copies are never the update.
+        let versionless = ["Burrow-macos-universal.zip", "SHA256SUMS", "SHA256SUMS.sig"];
+        let CheckOutcome::Available(o) = evaluate(&release("v0.7.0", &versionless), &cur) else {
+            panic!()
+        };
+        assert_eq!(o.assets, None);
     }
 
     #[test]

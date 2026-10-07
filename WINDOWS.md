@@ -40,7 +40,7 @@ cargo build --release -p blyg-app              # target\release\blygger.exe
 
 ## Publishing a Windows release
 
-Every push runs the *Windows* workflow, which checks formatting, lints, tests, builds, and leaves the zip on the run's page under **Artifacts**. To publish a build, open **Releases → Draft a new release**, create a new tag on `main` named like `windows-v0.3.0-win3` (one new tag per build, never a reused one), and publish. The workflow attaches the zip and `SHA256SUMS` to the release about ten minutes later. Avoid tags that start with a plain `v`, because those run upstream's macOS release workflow.
+Every push runs the *Windows* workflow, which checks formatting, lints, tests, builds, and leaves the zip on the run's page under **Artifacts**. To publish a build, open **Releases → Draft a new release**, create a new tag on `main` named like `windows-v0.9.0-win1` (one new tag per build, never a reused one), and publish. The workflow attaches the zip and `SHA256SUMS` to the release about ten minutes later. Avoid tags that start with a plain `v`, which upstream uses for its macOS releases. Upstream's release workflow (`release.yml`) only runs in upstream's own repository.
 
 ## How the port works
 

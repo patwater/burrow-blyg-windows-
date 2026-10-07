@@ -5,8 +5,10 @@
 //! switched to the tutorial's FakeBackend (so quick capture and the status
 //! bar follow), and the real backend's events are held back. Finishing
 //! puts the real backend back, replays any held conflict or error, and
-//! restores the query, selection and view mode. ⌘G / ⇧⌘G get a canned
-//! provider meanwhile, so no AI is ever called.
+//! restores the query, selection and view mode, the reading mode (Stream or
+//! Reader), the notes drawer's note and the browser pane's page. ⌘G / ⇧⌘G
+//! get a canned provider meanwhile, so no AI is ever called, and the browser
+//! step shows a blank sample page, so no web page is loaded.
 
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -18,6 +20,8 @@ use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
 use super::steps::{self, Key, Region, STEPS, Setup};
+use crate::app::reading::View;
+use crate::app::reading::stream_vm::{self, ReadMode};
 use crate::app::scratch::MakeDraft;
 use crate::app::studio::{ViewMode, ViewSplit, ViewStudio, ViewWrite};
 use crate::app::{
@@ -25,6 +29,7 @@ use crate::app::{
 };
 use crate::connection::{Connection, Mode, SwitchBackend};
 use crate::fake::FakeBackend;
+use crate::theme::Rule; // --- themes --- dividers
 
 /// What the tutorial set aside, to put back when it ends.
 struct Parked {
@@ -40,6 +45,10 @@ struct Parked {
     query: String,
     current: Option<LocalId>,
     editing: bool,
+    /// Stream or Reader (the tour switches it; it's remembered in state.json).
+    read_mode: ReadMode,
+    /// The notes drawer's note (the tour's drawer writes to the sample data).
+    notes: Option<crate::app::notes::NotesPark>,
 }
 
 pub struct Tutorial {
@@ -50,6 +59,16 @@ pub struct Tutorial {
     generation: usize,
     /// The post and its text when a "type something" step began.
     typed_from: Option<(Option<LocalId>, String)>,
+    /// What `tutorial_observed` saw when the step began: only a change
+    /// after that counts.
+    seen: Vec<Key>,
+    /// Frames asked for while the step's region waits for its layout.
+    retries: u8,
+    /// Stay on the step after its key (`BLYGGER_DEMO=tut-<id>+` snapshots).
+    hold: bool,
+    /// After an update: what changed, shown before the first step until
+    /// Take the tour, Start at what's new, or Skip.
+    pub news: Vec<&'static super::whats_new::Release>,
     parked: Parked,
 }
 
@@ -75,6 +94,10 @@ impl MainView {
         self.ai_escape(window, cx);
         self.reading.sheet = None;
         self.leave_reading();
+        let read_mode = self.reading.mode;
+        let notes = self.notes_tour_park(cx);
+        self.browser_tour_park(cx);
+        self.close_profile(window, cx);
 
         let fake = (self.onboarding.make_fake)();
         let events = Arc::new(Mutex::new(Vec::new()));
@@ -120,6 +143,8 @@ impl MainView {
             query: self.list.query().to_string(),
             current: self.current.as_ref().map(|c| c.local_id.clone()),
             editing: self.mode == EditMode::Edit,
+            read_mode,
+            notes: Some(notes),
         };
         self.base_url = self.backend.base_url();
         self.reading = crate::app::reading::State::new(&*self.backend, cx);
@@ -129,9 +154,44 @@ impl MainView {
             done: false,
             generation: 0,
             typed_from: None,
+            seen: Vec::new(),
+            retries: 0,
+            hold: false,
+            news: Vec::new(),
             parked,
         });
         self.tutorial_enter(0, window, cx);
+    }
+
+    /// After an update: the tutorial, opening on what changed.
+    pub(in crate::app) fn start_whats_new(
+        &mut self,
+        news: Vec<&'static super::whats_new::Release>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.start_tutorial(window, cx);
+        if let Some(t) = self.onboarding.tutorial.as_mut() {
+            t.news = news;
+        }
+        // The card has the keyboard: ⏎ what's new, esc skips.
+        window.focus(&self.onboarding.focus, cx);
+        cx.notify();
+    }
+
+    /// Leave the what's-new card for the tour, at its start or at the
+    /// first new step.
+    fn whats_new_go(&mut self, at_new: bool, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(t) = self.onboarding.tutorial.as_mut() else {
+            return;
+        };
+        let first = t.news.iter().rev().find_map(|r| r.first_step);
+        t.news.clear();
+        let i = first
+            .filter(|_| at_new)
+            .and_then(|id| STEPS.iter().position(|s| s.id == id))
+            .unwrap_or(0);
+        self.tutorial_enter(i, window, cx);
     }
 
     /// Back to the real backend, as the user left it.
@@ -139,11 +199,19 @@ impl MainView {
         let Some(t) = self.onboarding.tutorial.take() else {
             return;
         };
-        let p = t.parked;
+        let mut p = t.parked;
         self.ai_escape(window, cx);
         self.sheet = None;
         self.reading.sheet = None;
         self.leave_reading();
+        self.close_profile(window, cx);
+        if let Some(notes) = p.notes.take() {
+            self.notes_tour_restore(notes, cx);
+        }
+        self.browser_tour_end(cx);
+        // The reading mode as it was (the new reading state loads it).
+        let data_dir = cx.try_global::<Connection>().map(|c| c.data_dir.clone());
+        stream_vm::save_mode(data_dir.as_deref(), p.read_mode);
         if cx.has_global::<crate::ai::AiGlobal>() {
             cx.global_mut::<crate::ai::AiGlobal>().test_provider = p.provider;
         }
@@ -199,8 +267,13 @@ impl MainView {
         t.done = false;
         t.generation += 1;
         t.typed_from = None;
+        t.retries = 0;
         let step = &STEPS[i];
         self.tutorial_setup(step.setup, window, cx);
+        let seen = self.tutorial_observed(cx);
+        if let Some(t) = self.onboarding.tutorial.as_mut() {
+            t.seen = seen;
+        }
         if step.accepts(Key::Typed) {
             let text = self.editor.read(cx).value().to_string();
             let id = self.current.as_ref().map(|c| c.local_id.clone());
@@ -212,6 +285,15 @@ impl MainView {
     }
 
     pub(super) fn tutorial_next(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self
+            .onboarding
+            .tutorial
+            .as_ref()
+            .is_some_and(|t| !t.news.is_empty())
+        {
+            // ⌥⌘→: the primary choice, what's new (else the whole tour).
+            return self.whats_new_go(true, window, cx);
+        }
         let Some(step) = self.onboarding.tutorial.as_ref().map(|t| t.step) else {
             return;
         };
@@ -231,18 +313,22 @@ impl MainView {
     }
 
     /// The user did `key`. If the step waits for it, show ✓ and move on
-    /// after the step's pause (once things have settled, if it asks).
+    /// after the step's pause (once things have settled, if it asks), or,
+    /// for a step that `stay`s, leave the moving on to Next.
     pub(super) fn tutorial_key(&mut self, key: Key, window: &mut Window, cx: &mut Context<Self>) {
         let Some(t) = self.onboarding.tutorial.as_mut() else {
             return;
         };
         let step = &STEPS[t.step];
-        if t.done || !step.accepts(key) {
+        if t.done || !step.accepts(key) || !t.news.is_empty() {
             return;
         }
         t.done = true;
         let (generation, at, pause, settle) = (t.generation, t.step, step.pause_ms, step.settle);
         cx.notify();
+        if step.stay {
+            return; // ✓, and Next when they're ready
+        }
         cx.spawn_in(window, async move |this, cx| {
             cx.background_executor()
                 .timer(Duration::from_millis(pause))
@@ -253,7 +339,9 @@ impl MainView {
                         Some(t) if t.generation == generation => {}
                         _ => return true, // ended, or the user moved on
                     }
-                    if settle && v.tutorial_busy() {
+                    if (settle && v.tutorial_busy())
+                        || v.onboarding.tutorial.as_ref().is_some_and(|t| t.hold)
+                    {
                         return false;
                     }
                     if at + 1 >= STEPS.len() {
@@ -303,6 +391,52 @@ impl MainView {
         }
     }
 
+    /// Keys that are states rather than actions (a pane that opened, a
+    /// popup that showed): what's true now.
+    fn tutorial_observed(&self, cx: &App) -> Vec<Key> {
+        let reading = self.reading.view == View::Reading;
+        let reader = reading && self.reading.mode == ReadMode::Reader;
+        let opened = self.reading.opened.as_ref().filter(|_| reading);
+        let assist = self.assist.read(cx);
+        [
+            (Key::ReadMore, opened.is_some() && !reader),
+            (
+                Key::OpenOriginal,
+                opened.is_some_and(|o| o.item.remote_id == steps::QUOTED),
+            ),
+            (Key::OpenProfile, self.profile_sheet_open()),
+            (Key::ReaderMode, reader),
+            (Key::Notes, self.notes.open),
+            (Key::CloseBrowser, !self.browser.open),
+            (Key::Mention, assist.mention_open()),
+            (Key::SpellMenu, assist.menu_open()),
+            (Key::Lineage, self.lineage_open()),
+            (Key::LineageRing, self.lineage_ring_open()),
+        ]
+        .into_iter()
+        .filter_map(|(k, on)| on.then_some(k))
+        .collect()
+    }
+
+    /// Per frame: a state key the step waits for that has come true since
+    /// the step began.
+    pub(super) fn tutorial_watch_observed(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let now = self.tutorial_observed(cx);
+        let Some(t) = self.onboarding.tutorial.as_mut().filter(|t| !t.done) else {
+            return;
+        };
+        let step = &STEPS[t.step];
+        let hit = now
+            .iter()
+            .copied()
+            .find(|k| step.accepts(*k) && !t.seen.contains(k));
+        // Something that went away and comes back counts again.
+        t.seen.retain(|k| now.contains(k));
+        if let Some(k) = hit {
+            self.tutorial_key(k, window, cx);
+        }
+    }
+
     /// Hook: every action a step can wait for, seen on its way down (the
     /// capture phase), so the app still does what the key does.
     pub(super) fn tutorial_listeners(
@@ -338,7 +472,6 @@ impl MainView {
         let d = on!(d, crate::ai::AiGenerate, Key::AiGenerate);
         let d = on!(d, crate::ai::AiShorten, Key::AiShorten);
         let d = on!(d, crate::app::reading::ShowVersions, Key::ShowVersions);
-        let d = on!(d, crate::app::reading::ShowReading, Key::ShowReading);
         on!(d, crate::app::reading::QuotePicker, Key::QuotePicker)
     }
 
@@ -352,6 +485,37 @@ impl MainView {
         }
         self.reading.sheet = None;
         self.leave_reading();
+        self.reading.opened = None;
+        if self.notes.drawn() {
+            self.notes_tour_hide(cx);
+        }
+        self.browser_tour_hide(cx);
+        if self.profile_sheet_open() {
+            self.close_profile(window, cx);
+        }
+    }
+
+    /// Reading, in `mode`, nothing open, the search cleared.
+    fn tutorial_reading(&mut self, mode: ReadMode, window: &mut Window, cx: &mut Context<Self>) {
+        self.tutorial_tidy(window, cx);
+        if !self.reading.query.is_empty() {
+            self.set_reading_query("", window, cx);
+        }
+        self.reading.sel = None;
+        // --- reader folders --- All, as a fresh Reader starts.
+        self.reading.source = Default::default();
+        self.reading.sticky.clear();
+        self.set_read_mode(mode, window, cx);
+        self.reading.opened = None;
+    }
+
+    /// The sample reading post `remote_id`'s key.
+    fn tutorial_reading_key(&self, remote_id: &str) -> Option<(String, String)> {
+        self.reading
+            .rows
+            .iter()
+            .find(|r| r.remote_id == remote_id)
+            .map(crate::app::reading::vm::key)
     }
 
     fn tutorial_open(&mut self, id: &str, window: &mut Window, cx: &mut Context<Self>) {
@@ -472,6 +636,91 @@ impl MainView {
                 self.tutorial_tidy(window, cx);
                 self.tutorial_open(steps::THREAD, window, cx);
             }
+            Setup::Mentions(text) => {
+                self.tutorial_tidy(window, cx);
+                self.studio_set_view(ViewMode::Write, cx);
+                self.tutorial_open(steps::DRAFT, window, cx);
+                let old = self.editor.read(cx).value().to_string();
+                let base = match old.find(text) {
+                    Some(i) => old[..i].trim_end().to_string(),
+                    None => old.trim_end().to_string(),
+                };
+                let new = format!("{base}\n\n{text}");
+                let end = new.len();
+                self.splice_editor(&old, &new, Some(end), window, cx);
+            }
+            Setup::Stream => {
+                self.tutorial_reading(ReadMode::Stream, window, cx);
+                self.stream_move(1, window, cx);
+            }
+            Setup::StreamQuote => {
+                self.tutorial_reading(ReadMode::Stream, window, cx);
+                let ix = self
+                    .reading
+                    .shown_rows()
+                    .position(|r| r.remote_id == steps::QUOTING);
+                match ix {
+                    Some(ix) => self.stream_select(ix, window, cx),
+                    None => self.stream_move(1, window, cx),
+                }
+            }
+            Setup::Lineage => {
+                self.tutorial_setup(Setup::StreamQuote, window, cx);
+                let at = self
+                    .reading
+                    .rows
+                    .iter()
+                    .find(|r| r.remote_id == steps::QUOTING)
+                    .map(|r| r.origin.clone());
+                if let Some(origin) = at {
+                    self.open_lineage(origin, steps::QUOTING.into(), window, cx);
+                }
+            }
+            Setup::Reader => {
+                self.tutorial_reading(ReadMode::Reader, window, cx);
+                if let Some(key) = self.tutorial_reading_key(steps::QUOTED) {
+                    self.open_reading(key, window, cx);
+                }
+            }
+            Setup::Browser => {
+                self.tutorial_setup(Setup::Reader, window, cx);
+                self.browser_tour_open(window, cx);
+            }
+        }
+    }
+
+    /// `BLYGGER_DEMO=tut-<id>+`: what the step's key does, the way a click
+    /// or a key would (screenshots of the step after its key).
+    pub(super) fn tutorial_demo_act(
+        &mut self,
+        id: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(t) = self.onboarding.tutorial.as_mut() {
+            t.hold = true;
+        }
+        match id {
+            "stream" => self.stream_open_selected(window, cx),
+            "original" => {
+                let origin = self
+                    .reading
+                    .rows
+                    .iter()
+                    .find(|r| r.remote_id == steps::QUOTED)
+                    .map(|r| r.origin.clone());
+                if let Some(origin) = origin {
+                    self.open_original(origin, steps::QUOTED.into(), Some(1), window, cx);
+                }
+            }
+            "reader" => self.set_read_mode(ReadMode::Reader, window, cx),
+            "notes" => self.open_notes(window, cx),
+            "browser" => self.close_browser(window, cx),
+            "mentions" => self.demo_type("@", window, cx),
+            "quotes" => self.open_quote_picker(window, cx),
+            "lineage" => self.toggle_lineage(window, cx),
+            "ring" => self.lineage_open_ring(cx),
+            _ => {}
         }
     }
 
@@ -479,7 +728,7 @@ impl MainView {
 
     /// Where a region is on screen: (x, y, w, h), from the same layout rules
     /// `render` uses.
-    fn tutorial_region(&self, region: Region, window: &Window) -> Option<(f32, f32, f32, f32)> {
+    pub(super) fn tutorial_region(&self, region: Region, window: &Window) -> Option<Rect> {
         let vp = window.viewport_size();
         let (w, h) = (f32::from(vp.width), f32::from(vp.height));
         let top = TITLEBAR_H;
@@ -522,27 +771,137 @@ impl MainView {
             Region::List => list?,
             Region::Editor => editor,
             Region::Counter => (0., h - STATUS_H, 230., STATUS_H),
-            Region::ViewSwitcher => ((w - 318.).max(0.), 0., 312., top),
             Region::Sheet => ((w - 468.) / 2., top, 468., 132.),
+            Region::Stream
+            | Region::StreamPost
+            | Region::Reader
+            | Region::ReaderPost
+            | Region::BrowserChrome => return self.tutorial_reading_region(region, w, h),
         })
+    }
+
+    /// The reading screen's regions (the same layout rules as
+    /// `render_reading_screen`, `render_stream_body` and the three panes).
+    fn tutorial_reading_region(&self, region: Region, w: f32, h: f32) -> Option<Rect> {
+        if region == Region::BrowserChrome {
+            return self.browser_rects(w, h).map(|[_, chrome]| chrome);
+        }
+        if self.reading.view != View::Reading || !self.reading.available {
+            return None;
+        }
+        // Below the screen header, above the status bar.
+        let top = TITLEBAR_H + OMNI_H;
+        let body_h = (h - STATUS_H - top).max(0.);
+        let stream = self.reading.mode == ReadMode::Stream;
+        // The Stream | Reader toggle, at the header's right end.
+        let toggle = (
+            (w - 14. - TOGGLE_W - 4.).max(0.),
+            TITLEBAR_H + 4.,
+            TOGGLE_W + 8.,
+            OMNI_H - 8.,
+        );
+        let sources_w = if self.reading.sources_open {
+            self.reading.sources_w
+        } else {
+            0.
+        };
+        match region {
+            Region::Stream if stream => {
+                let pane = self
+                    .reading
+                    .opened
+                    .as_ref()
+                    .map_or(0., |_| stream_pane_w(w));
+                Some((0., top, w - pane, body_h))
+            }
+            Region::StreamPost if stream => {
+                let list = &self.reading.stream.list;
+                let ix = self
+                    .reading
+                    .sel
+                    .as_ref()
+                    .and_then(|k| self.reading.shown_pos(k))?;
+                let b = list.bounds_for_item(ix)?;
+                let vp = list.viewport_bounds();
+                let y0 = f32::from(b.top().max(vp.top()));
+                let y1 = f32::from(b.bottom().min(vp.bottom()));
+                (y1 - y0 > 8.).then(|| (f32::from(b.left()), y0, f32::from(b.size.width), y1 - y0))
+            }
+            Region::Reader if stream || !self.reading.sources_open => Some(toggle),
+            Region::Reader => Some((0., top, sources_w, body_h)),
+            Region::ReaderPost if !stream => {
+                let list_w = w * if self.reading.sources_open { 0.3 } else { 0.38 };
+                let x = (sources_w + list_w + 1.).round();
+                Some((x, top, (w - x).max(0.), body_h))
+            }
+            _ => None,
+        }
+    }
+
+    /// What covers the panes right now: the browser pane, the notes drawer
+    /// and the stream's side pane (a ring around a pane under one of them
+    /// would draw over it).
+    fn tutorial_overlays(&self, region: Region, w: f32, h: f32) -> Vec<Rect> {
+        let mut v = Vec::new();
+        if region != Region::BrowserChrome
+            && let Some([pane, _]) = self.browser_rects(w, h)
+        {
+            v.push(pane);
+        }
+        if self.notes.drawn() {
+            let nw = crate::app::notes::WIDTH;
+            v.push(((w - nw).max(0.), TITLEBAR_H, nw, h - TITLEBAR_H));
+        }
+        if self.reading.view == View::Reading
+            && self.reading.mode == ReadMode::Stream
+            && self.reading.opened.is_some()
+        {
+            let pw = stream_pane_w(w);
+            v.push((
+                w - pw,
+                TITLEBAR_H + OMNI_H,
+                pw,
+                h - STATUS_H - TITLEBAR_H - OMNI_H,
+            ));
+        }
+        v
     }
 
     /// Where the step's ring goes, if anywhere. A sheet or picker the step
     /// opened sits on top of the panes: a ring around a pane would draw over
-    /// it (only a Sheet step rings the sheet).
+    /// it (only a Sheet step rings the sheet). So do the browser pane, the
+    /// notes drawer and the stream's side pane wherever they cover the
+    /// region (only the browser step rings the browser pane).
     pub(super) fn tutorial_ring(
         &self,
         region: Region,
         window: &Window,
+        cx: &App,
     ) -> Option<(f32, f32, f32, f32)> {
+        let assist = self.assist.read(cx);
         let covered = self.sheet.is_some()
             || self.reading.sheet.is_some()
             || self.ai.has_overlay()
-            || self.profile_sheet_open();
+            || self.profile_sheet_open()
+            // The editor's @-mention popup and spelling menu.
+            || assist.mention_open()
+            || assist.menu_open();
         if covered && region != Region::Sheet {
             return None;
         }
-        self.tutorial_region(region, window)
+        let rect = self.tutorial_region(region, window)?;
+        // The browser pane, the notes drawer and the stream's side pane
+        // sit over the panes too (only the browser step rings its pane).
+        let vp = window.viewport_size();
+        let (w, h) = (f32::from(vp.width), f32::from(vp.height));
+        if self
+            .tutorial_overlays(region, w, h)
+            .iter()
+            .any(|o| overlaps(rect, *o))
+        {
+            return None;
+        }
+        Some(rect)
     }
 
     pub(super) fn render_tutorial(
@@ -551,6 +910,9 @@ impl MainView {
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
         let t = self.onboarding.tutorial.as_ref()?;
+        if !t.news.is_empty() {
+            return Some(self.render_whats_new(cx));
+        }
         let p = self.palette;
         let step = t.current();
         let (index, done) = (t.step, t.done);
@@ -586,7 +948,7 @@ impl MainView {
                 .rounded(px(5.))
                 .border_1()
                 .border_b_2()
-                .border_color(p.line)
+                .border_color(p.edge())
                 .text_color(p.ink)
                 .font_weight(FontWeight::MEDIUM)
                 .text_size(px(12.))
@@ -602,7 +964,7 @@ impl MainView {
                 .py(px(3.))
                 .rounded_full()
                 .border_1()
-                .border_color(p.line)
+                .border_color(p.edge())
                 .cursor_pointer()
                 .hover(|s| s.border_color(p.accent).text_color(p.ink))
                 .child(label)
@@ -613,9 +975,17 @@ impl MainView {
                 .flex()
                 .items_center()
                 .gap(px(6.))
-                .text_color(p.green)
+                .text_color(p.green_text())
                 .font_weight(FontWeight::MEDIUM)
                 .child("✓ That's it")
+                .when(step.stay, |d| {
+                    d.child(
+                        div()
+                            .text_color(p.muted)
+                            .font_weight(FontWeight::NORMAL)
+                            .child("Look around, then Next ›"),
+                    )
+                })
                 .into_any_element()
         } else if step.keys.is_empty() {
             div().into_any_element()
@@ -625,7 +995,12 @@ impl MainView {
                 .items_center()
                 .gap(px(7.))
                 .text_color(p.muted)
-                .child("Press")
+                // "Press ⌘T", but "Your turn: click" for what isn't a key.
+                .child(if matches!(step.key_label, "type" | "click") {
+                    "Your turn:"
+                } else {
+                    "Press"
+                })
                 .child(kbd(crate::keymap::hint(step.key_label).to_string()))
                 .into_any_element()
         };
@@ -634,21 +1009,19 @@ impl MainView {
             .id("tutorial-card")
             .occlude()
             .absolute()
-            .left(px(14.))
+            // Clear of the lineage sheet's responses row.
+            .map(|d| {
+                if self.lineage_open() {
+                    d.right(px(14.))
+                } else {
+                    d.left(px(14.))
+                }
+            })
             .bottom(px(STATUS_H + 14.))
             .w(px(380.))
             .max_w(relative(0.9))
-            .bg(p.bg)
-            .border_1()
-            .border_color(p.line)
-            .rounded(px(12.))
-            .shadow(vec![BoxShadow {
-                color: p.shadow,
-                offset: point(px(0.), px(14.)),
-                blur_radius: px(36.),
-                spread_radius: px(-8.),
-                inset: false,
-            }])
+            // --- themes --- the theme's card.
+            .map(|d| crate::theme_ext::card(d, &self.theme))
             .px(px(16.))
             .py(px(13.))
             .font_family(SharedString::from(self.prefs.ui().family))
@@ -705,8 +1078,7 @@ impl MainView {
                 div()
                     .mt(px(12.))
                     .pt(px(9.))
-                    .border_t_1()
-                    .border_color(p.line)
+                    .rule_t(&p)
                     .flex()
                     .flex_col()
                     .gap(px(8.))
@@ -739,7 +1111,9 @@ impl MainView {
                                         crate::keymap::hint("Next ›  ⌥⌘→").into()
                                     },
                                 )
-                                .when(last, |d| d.border_color(p.accent).text_color(p.accent))
+                                .when(last || (done && step.stay), |d| {
+                                    d.border_color(p.accent).text_color(p.accent_text())
+                                })
                                 .on_click(
                                     cx.listener(|this, _, window, cx| {
                                         this.tutorial_next(window, cx)
@@ -749,11 +1123,23 @@ impl MainView {
                     ),
             );
 
-        let rect = self.tutorial_ring(step.region, window);
-        let toolbar = (buttons && step.button.is_some()).then(|| {
-            let w = f32::from(window.viewport_size().width);
-            (90., 0., (w - 420.).max(60.), TITLEBAR_H)
-        });
+        let rect = self.tutorial_ring(step.region, window, cx);
+        // The stream's post has bounds only once the list has laid it out:
+        // ask for a few more frames.
+        if rect.is_none()
+            && step.region == Region::StreamPost
+            && let Some(t) = self.onboarding.tutorial.as_mut()
+            && t.retries < 30
+        {
+            t.retries += 1;
+            window.request_animation_frame();
+        }
+        // The matching toolbar button, a little larger than the button.
+        let toolbar = step
+            .button
+            .filter(|_| buttons)
+            .and_then(|b| self.toolbar_button_rect(b, window, cx))
+            .map(|(x, y, w, h)| (x - 4., y - 4., w + 8., h + 8.));
         Some(
             div()
                 .absolute()
@@ -764,6 +1150,138 @@ impl MainView {
                 .into_any_element(),
         )
     }
+}
+
+impl MainView {
+    /// The what's-new card, centred: what changed, then the choices.
+    fn render_whats_new(&self, cx: &mut Context<Self>) -> AnyElement {
+        let p = self.palette;
+        let Some(t) = self.onboarding.tutorial.as_ref() else {
+            return div().into_any_element();
+        };
+        let version = t.news.first().map_or("", |r| r.version);
+        let has_new_step = t.news.iter().any(|r| r.first_step.is_some());
+        let button = |id: &'static str, label: &'static str, strong: bool| {
+            div()
+                .id(id)
+                .px(px(11.))
+                .py(px(5.))
+                .rounded_full()
+                .border_1()
+                .border_color(if strong { p.accent } else { p.edge() })
+                .text_color(if strong { p.accent_text() } else { p.ink })
+                .cursor_pointer()
+                .hover(|s| s.border_color(p.accent))
+                .child(label)
+        };
+        let card = div()
+            .id("whats-new")
+            .track_focus(&self.onboarding.focus)
+            .on_key_down(cx.listener(|this, ev: &KeyDownEvent, window, cx| {
+                match ev.keystroke.key.as_str() {
+                    "escape" => this.finish_tutorial(window, cx),
+                    "enter" => this.whats_new_go(true, window, cx),
+                    _ => return,
+                }
+                cx.stop_propagation();
+            }))
+            .occlude()
+            .w(px(480.))
+            .max_w(relative(0.92))
+            .map(|d| crate::theme_ext::card(d, &self.theme))
+            .px(px(20.))
+            .py(px(16.))
+            .font_family(SharedString::from(self.prefs.ui().family))
+            .text_size(px(13.))
+            .child(
+                div()
+                    .text_size(px(10.5))
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .text_color(p.muted)
+                    .child("UPDATED"),
+            )
+            .child(
+                div()
+                    .mt(px(4.))
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .text_size(px(17.))
+                    .child(format!("What's new in Burrow {version}")),
+            )
+            .child(
+                div()
+                    .mt(px(8.))
+                    .flex()
+                    .flex_col()
+                    .gap(px(6.))
+                    .line_height(relative(1.45))
+                    .text_color(p.ink.opacity(0.85))
+                    .children(t.news.iter().flat_map(|r| r.items.iter()).map(|line| {
+                        div()
+                            .flex()
+                            .gap(px(8.))
+                            .child(div().flex_none().text_color(p.accent).child("•"))
+                            .child(div().flex_1().min_w_0().child(*line))
+                    })),
+            )
+            .child(
+                div()
+                    .mt(px(14.))
+                    .pt(px(10.))
+                    .rule_t(&p)
+                    .flex()
+                    .flex_wrap()
+                    .items_center()
+                    .gap(px(8.))
+                    .text_size(px(12.))
+                    .child(
+                        button("whats-new-skip", "Skip tutorial  esc", false).on_click(
+                            cx.listener(|this, _, window, cx| this.finish_tutorial(window, cx)),
+                        ),
+                    )
+                    .child(div().flex_1())
+                    .child(
+                        button("whats-new-tour", "Take the whole tour", false).on_click(
+                            cx.listener(|this, _, window, cx| this.whats_new_go(false, window, cx)),
+                        ),
+                    )
+                    .when(has_new_step, |d| {
+                        d.child(
+                            button("whats-new-start", "Show me what's new  ⏎", true).on_click(
+                                cx.listener(|this, _, window, cx| {
+                                    this.whats_new_go(true, window, cx)
+                                }),
+                            ),
+                        )
+                    }),
+            );
+        div()
+            .absolute()
+            .inset_0()
+            .flex()
+            .items_center()
+            .justify_center()
+            .bg(p.shadow.opacity(0.25))
+            .child(card)
+            .into_any_element()
+    }
+}
+
+/// (x, y, w, h) in window pixels.
+type Rect = (f32, f32, f32, f32);
+
+/// The Stream | Reader toggle's width (two segments, 11.5 px Inter).
+const TOGGLE_W: f32 = 124.;
+
+/// The stream's side pane: 54% of the window (`render_stream_body`).
+fn stream_pane_w(w: f32) -> f32 {
+    w * 0.54
+}
+
+/// The two rects share more than an edge.
+fn overlaps(a: Rect, b: Rect) -> bool {
+    let (ax1, ay1) = (a.0 + a.2, a.1 + a.3);
+    let (bx1, by1) = (b.0 + b.2, b.1 + b.3);
+    ax1.min(bx1) - a.0.max(b.0) > 1. && ay1.min(by1) - a.1.max(b.1) > 1.
 }
 
 // ================================================================ canned AI
@@ -792,6 +1310,7 @@ impl Provider for CannedAi {
         };
         on_delta(text);
         Ok(GenResult {
+            content_md: None,
             text: text.to_string(),
             model: "tutorial-demo".into(),
         })

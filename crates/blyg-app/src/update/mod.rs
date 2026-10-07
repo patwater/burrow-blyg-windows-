@@ -151,7 +151,7 @@ impl Phase {
             Phase::Idle | Phase::Checking { .. } => None,
             Phase::Downloading { shown: false, .. } => None,
             Phase::Downloading { offer, shown: true } => Some(Notice {
-                text: format!("Downloading Blygger {}…", offer.version),
+                text: format!("Downloading Burrow {}…", offer.version),
                 action: None,
                 link: None,
             }),
@@ -159,7 +159,7 @@ impl Phase {
                 offer,
                 blocked: None,
             } => Some(Notice {
-                text: format!("Blygger {} is available", offer.version),
+                text: format!("Burrow {} is available", offer.version),
                 action: Some(("Download", NoticeAction::Download)),
                 link: Some(("What's new", offer.page_url.clone())),
             }),
@@ -167,15 +167,53 @@ impl Phase {
                 offer,
                 blocked: Some(why),
             } => Some(Notice {
-                text: format!("Blygger {} is available · {why}", offer.version),
+                text: format!("Burrow {} is available · {why}", offer.version),
                 action: None,
                 link: Some(("Release page", offer.page_url.clone())),
             }),
             Phase::Ready { offer, .. } => Some(Notice {
-                text: format!("Blygger {} is ready", offer.version),
+                text: format!("Burrow {} is ready", offer.version),
                 action: Some(("Restart to update", NoticeAction::Restart)),
                 link: Some(("What's new", offer.page_url.clone())),
             }),
+        }
+    }
+}
+
+/// What the update prompt asks.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Ask {
+    pub version: Version,
+    pub text: String,
+    pub detail: &'static str,
+    /// The first button; the other is "Later".
+    pub yes: &'static str,
+    /// Ready to install (restart), rather than available (download).
+    pub ready: bool,
+}
+
+impl Phase {
+    /// The prompt for this phase, if it asks anything.
+    pub fn ask(&self) -> Option<Ask> {
+        match self {
+            Phase::Ready { offer, .. } => Some(Ask {
+                version: offer.version.clone(),
+                text: format!("Burrow {} is ready to install", offer.version),
+                detail: "Restart now to finish updating. Your posts and drafts are saved.",
+                yes: "Restart Now",
+                ready: true,
+            }),
+            Phase::Available {
+                offer,
+                blocked: None,
+            } => Some(Ask {
+                version: offer.version.clone(),
+                text: format!("Burrow {} is available", offer.version),
+                detail: "Download it now? You'll be asked to restart once it's ready.",
+                yes: "Download and Install",
+                ready: false,
+            }),
+            _ => None,
         }
     }
 }
@@ -213,6 +251,9 @@ pub struct Updater {
     data_dir: PathBuf,
     /// Unix seconds when the next automatic check is due.
     next_due: u64,
+    /// The release we last asked about (one prompt per release a session;
+    /// the status bar notice stays after "Later").
+    prompted: Option<(Version, bool)>,
 }
 
 impl Global for Updater {}
@@ -275,6 +316,7 @@ pub fn init(data_dir: PathBuf, cx: &mut App) {
         target,
         data_dir,
         next_due: check::first_due(now_secs(), last),
+        prompted: None,
     });
     cx.on_app_quit(|cx| {
         install_on_quit(cx);
@@ -322,7 +364,7 @@ fn set_phase(phase: Phase, cx: &mut App) {
     cx.refresh_windows();
 }
 
-/// Blygger › Check for Updates…: always checks (whatever `auto-update`
+/// Burrow › Check for Updates…: always checks (whatever `auto-update`
 /// says) and always answers.
 pub fn check_now(cx: &mut App) {
     if let Some(why) = disabled_reason() {
@@ -335,14 +377,11 @@ pub fn check_now(cx: &mut App) {
         Phase::Checking { .. } => toast("Already checking for updates…", cx),
         Phase::Downloading { offer, .. } => {
             // An automatic download becomes visible once asked about.
-            let msg = format!("Downloading Blygger {}…", offer.version);
+            let msg = format!("Downloading Burrow {}…", offer.version);
             set_phase(Phase::Downloading { offer, shown: true }, cx);
             toast(msg, cx);
         }
-        Phase::Ready { offer, .. } => toast(
-            format!("Blygger {} is ready · Restart to update", offer.version),
-            cx,
-        ),
+        Phase::Ready { .. } => prompt(true, cx),
         Phase::Idle | Phase::Available { .. } => start_check(true, cx),
     }
 }
@@ -392,12 +431,15 @@ fn on_checked(result: Result<CheckOutcome, UpdateError>, manual: bool, cx: &mut 
             let blocked = blocked_reason(&u.target, &offer);
             let version = offer.version.clone();
             let install = blocked.is_none() && (manual || mode == AutoUpdate::Install);
+            let offer_download = blocked.is_none() && !install;
             set_phase(Phase::Available { offer, blocked }, cx);
             if install {
                 start_download(manual, cx);
+            } else if offer_download {
+                prompt(false, cx);
             }
             if manual {
-                toast(format!("Blygger {version} is available"), cx);
+                toast(format!("Burrow {version} is available"), cx);
             }
         }
     }
@@ -480,8 +522,55 @@ fn on_downloaded(offer: Offer, result: Result<Staged, UpdateError>, cx: &mut App
         }
     };
     set_phase(phase, cx);
+    prompt(false, cx);
     #[cfg(debug_assertions)]
     smoke_hook(cx);
+}
+
+/// Ask in a sheet on the main window: "Restart Now" when an update is
+/// ready, "Download and Install" when one is available (`notify` mode).
+/// Once per release unless `again` (the menu's Check for Updates…); "Later"
+/// leaves the status bar notice.
+fn prompt(again: bool, cx: &mut App) {
+    let Some(u) = cx.try_global::<Updater>() else {
+        return;
+    };
+    let Some(ask) = u.phase.ask() else {
+        return;
+    };
+    let key = (ask.version.clone(), ask.ready);
+    if !again && u.prompted.as_ref() == Some(&key) {
+        return;
+    }
+    let Some(h) = crate::capture::main_window(cx) else {
+        return;
+    };
+    cx.global_mut::<Updater>().prompted = Some(key);
+    let _ = h.update(cx, |_, window, cx| {
+        let answer = window.prompt(
+            gpui_kit::PromptLevel::Info,
+            &ask.text,
+            Some(ask.detail),
+            &[ask.yes, "Later"],
+            cx,
+        );
+        let ready = ask.ready;
+        cx.spawn(async move |_, cx| {
+            if answer.await == Ok(0) {
+                // Deferred: restarting quits the app.
+                cx.update(|cx| {
+                    cx.defer(move |cx| {
+                        if ready {
+                            restart_to_update(cx)
+                        } else {
+                            download_now(cx)
+                        }
+                    })
+                });
+            }
+        })
+        .detach();
+    });
 }
 
 /// Debug builds only: `BLYGGER_UPDATE_SMOKE=restart|quit` acts on a ready
@@ -543,7 +632,45 @@ fn install_on_quit(cx: &mut App) {
     }
 }
 
+/// --- about --- The updater's state in words, for the About window.
+pub fn status_text(cx: &App) -> String {
+    if let Some(why) = disabled_reason() {
+        return format!("checks are off ({why})");
+    }
+    let Some(u) = cx.try_global::<Updater>() else {
+        return "not running".into();
+    };
+    match &u.phase {
+        Phase::Idle => "no update waiting".into(),
+        Phase::Checking { .. } => "checking…".into(),
+        Phase::Available { offer, .. } => format!("Burrow {} is available", offer.version),
+        Phase::Downloading { offer, .. } => format!("downloading Burrow {}…", offer.version),
+        Phase::Ready { offer, .. } => {
+            format!(
+                "Burrow {} is downloaded and ready (restart to update)",
+                offer.version
+            )
+        }
+    }
+}
+
 /// The status bar notice, if any (no global in tests and dev builds).
 pub fn notice(cx: &App) -> Option<Notice> {
-    cx.try_global::<Updater>().and_then(|u| u.phase.notice())
+    cx.try_global::<Updater>()
+        .and_then(|u| u.phase.notice())
+        .or_else(|| cx.try_global::<DemoNotice>().map(|d| d.0.clone()))
+}
+
+/// `BLYGGER_DEMO=update` (fake mode, screenshots): a ready update's notice.
+struct DemoNotice(Notice);
+
+impl Global for DemoNotice {}
+
+pub fn demo_notice(cx: &mut App) {
+    cx.set_global(DemoNotice(Notice {
+        text: "Burrow 9.9.0 is ready".into(),
+        action: Some(("Restart to update", NoticeAction::Restart)),
+        link: Some(("What's new", "https://blyg.example.com/".into())),
+    }));
+    cx.refresh_windows();
 }

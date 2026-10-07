@@ -28,6 +28,28 @@ its `create`, which maps the server id. Different items don't block each other.
 `net` (a mutex in `Engine`) serialises every item-touching network sequence:
 worker flush, pull, publish and delete.
 
+## Pull cadence and change revisions (studio 0.32+)
+
+Each pull first reads `GET /api/changes` (`{epoch, domains}`), before any data
+(R3 of upstream's polling design). Items depend on `items`+`settings`,
+subscriptions on `subscriptions`, the reading list on `reading`,
+`subscriptions`, `signals` and `hoppers`. A collection is fetched only when one
+of its domains moved; after its fetch succeeds, the revisions captured before it
+are stored in `meta` (`changes_seen:<collection>`, a JSON map; `changes_epoch`).
+A failed, partial or deferred fetch records nothing, so it's simply redone. A new
+epoch forgets every stored revision. With read-state sync on (extension 5, a table
+the counters don't watch) the reading list is always read. Everything is read whole
+every 10 min as a safety net. With `/api/changes` the worker pulls every
+`pull_interval / 4` (15 s); a 404 keeps the old full pull every `pull_interval`.
+
+## Work budgets (studio 0.28+)
+
+A 429 maps to `CoreError::RateLimited { retry_after }` (`Retry-After`, default
+60 s). It is transient: the op stays queued, the worker waits exactly that long,
+and one `Error` event says "The blyg asked Burrow to slow down; retrying in Ns".
+Autosave `save` ops for one item run at least `SAVE_GAP` (3 s) apart unless
+forced, so typing stays around 20 writes a minute at most.
+
 ## Conflicts (deviation from the spec's `updated` rule)
 
 The spec says to flag a conflict when the server's `updated` > `base_updated`
@@ -75,15 +97,19 @@ span. Core therefore:
 - carries it along on every plain `save` (`tk::remap`: scopes are matched by
   instruction, in order; a scope whose output was rewritten entirely by hand
   loses it; malformed mid-typing text keeps the old keying until it parses);
-- pushes with the combined `PUT /api/items/:id/tk-provenance {content_md,
-  scopes}` whenever the scope structure changed since `base_content` or the
-  tracked provenance changed, else a plain PUT. Provenance the server holds but
-  this client never saw (another client, the Worker's own `/generate`) is
-  fetched with `GET …/tk-provenance` and remapped first;
-- after a `create`/`recreate` (POST can't carry provenance) queues a combined
-  push; a 404 from the endpoint means no extension (plain PUT, and
-  `LiveBackend::provenance_available()` turns false); a 400 retries without
-  sources, then saves the text alone and emits an `Error` event;
+- pushes text and provenance together, `PATCH /api/items/:id {content_md,
+  provenance}` (studio 0.28+; `POST /api/items` carries it on create too),
+  whenever the scope structure changed since `base_content` or the tracked
+  provenance changed, else a plain PATCH. Missing source versions are filled
+  from the store (upstream requires them). Provenance the server holds but this
+  client never saw (another client, the Worker's own `/generate`) comes from
+  the precheck's `Item.provenance` and is remapped first;
+- falls back to extension 4 (`PUT/GET …/tk-provenance`) only when the server
+  refuses the `provenance` key with a strict 400 (pre-0.28, learned per
+  session); a 404 or 403 there means not recordable (plain PATCH, and
+  `LiveBackend::provenance_available()` turns false until a provenance push
+  lands); a 400 retries without sources, then clears it, saves the text and
+  emits an `Error` event;
 - forgets tracked provenance when the server's text replaces ours (pull,
   take-server, restore: the Worker clears its cache on restore).
 
@@ -92,16 +118,29 @@ span. Core therefore:
 `api::verify_connection(url, token)` is the Connect sheet's check:
 `GET /api/items` with the token. It maps a transport failure to
 `ConnectError::Unreachable`, 401 to `WrongToken`, 404 to `MissingExtensions`
-(a blyg without docs/SERVER.md's extensions) and anything else to `Other`.
+(a server older than blygger-studio 0.9) and anything else to `Other`.
 
 ## End-to-end tests
 
 `crates/blyg-core/tests/e2e.rs` runs against a real Worker under
 `wrangler dev --local` (all `#[ignore]`d, so CI doesn't need one):
-`BLYG_WORKER_DIR=<worker dir> scripts/e2e-local.sh`. The script derives a
-local-only wrangler config (no routes, no Workers AI binding), random dev
-secrets and scratch D1/R2 state, starts two instances (the second is a blyg to
-subscribe to), and stops only what it started.
+
+```sh
+cd <worker dir> && npm install && npm run build   # studio 0.10+ builds its SPA
+BLYG_WORKER_DIR=<worker dir> scripts/e2e-local.sh
+```
+
+The Worker must be blygger-studio 0.9 or later with docs/SERVER.md's
+extensions. The script derives a local-only wrangler config (no routes, no
+Workers AI binding, so nothing billed), random dev secrets including a
+throwaway `BLYG_OWNER_TOKEN`, and scratch D1/R2 state. It starts two instances
+(the second is a blyg to subscribe to) and stops only what it started. The
+suite never calls `POST /api/items/:id/generate`. It covers bearer-token
+connect, reads, autosave, publish, withdraw, pin and restore, kind changes,
+uploads and their dedupe and removal, a 409 conflict from a direct API edit,
+offline queueing, subscriptions and reading, read-state sync between two
+clients, and AI provenance disclosure. Raw replies are checked against
+`openapi.json`. Last green: 22/22 against the fork on studio 0.10 (2026-10-02).
 
 ## Reading list
 

@@ -60,7 +60,12 @@ fn data_line_through_quotes_and_tk_blocks() {
         "{h}"
     );
     assert!(h.contains("<blockquote class=\"blyg-transclusion unresolved\" data-line=\"8\"><p>⚠ unresolvable: unknown item</p></blockquote>"));
-    assert!(h.contains("<figure class=\"blyg-yt\" data-ytid=\"Qa1b2C3d4E5\" data-line=\"10\">"));
+    // The thread preview is sanitized, as the public thread page is: the
+    // facade keeps its class and poster link, not `data-ytid`.
+    assert!(
+        h.contains("<figure class=\"blyg-yt\" data-line=\"10\">"),
+        "{h}"
+    );
     assert!(h.contains("<p data-line=\"12\">End</p>"));
     assert_eq!(
         out.line_map,
@@ -252,9 +257,9 @@ fn fuzz_no_panics() {
         "\t",
         "é",
         "😀",
-        "\u{1}",
-        "\u{2}",
-        "\u{3}",
+        "\u{E000}",
+        "\u{E001}",
+        "\u{E002}",
         "http://",
         "https://",
         "www.",
@@ -308,9 +313,9 @@ fn fuzz_no_panics() {
             let a = render_preview(&md, kind, &store, &with);
             let b = render_preview(&md, kind, &store, &without);
             assert_eq!(strip_lines(&a.html), b.html, "{md:?}");
-            // No TK marker ever ships (the sentinels are U+0001–0003).
+            // No TK marker ever ships (the sentinels are U+E000–E002).
             assert!(
-                !a.html.contains(['\u{1}', '\u{2}', '\u{3}']),
+                !a.html.contains(['\u{E000}', '\u{E001}', '\u{E002}']),
                 "marker leaked: {md:?}"
             );
         }

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build Blygger.app and package it as a zip and a dmg in dist/.
+# Build Burrow.app and package it as a zip and a dmg in dist/.
 #
 #   scripts/bundle.sh                 # universal (arm64 + x86_64), the default
 #   scripts/bundle.sh --arch arm64    # or x86_64: one architecture only
@@ -7,11 +7,14 @@
 # Signing is delegated to scripts/sign.sh: Developer ID + notarization when the
 # APPLE_* secrets are set, ad-hoc otherwise (see that script).
 # Outputs:
-#   dist/Blygger.app
-#   dist/Blygger-<version>-macos-<universal|arm64|x86_64>.zip
-#   dist/Blygger-<version>-macos-<universal|arm64|x86_64>.dmg
-#   dist/Blygger-macos-<arch>.{zip,dmg}   (version-less copies for releases/latest/download)
-#   dist/SHA256SUMS
+#   dist/Burrow.app
+#   dist/Burrow-<version>-macos-<universal|arm64|x86_64>.zip
+#   dist/Burrow-<version>-macos-<universal|arm64|x86_64>.dmg
+#   dist/Burrow-macos-<arch>.{zip,dmg}    (version-less copies for releases/latest/download)
+#   dist/Blygger-<version>-macos-<arch>.zip, dist/Blygger-macos-<arch>.zip
+#                                         (the same app under its old name, for
+#                                          0.6.0 and earlier; see below)
+#   dist/SHA256SUMS                       (covers every file above but the .app)
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -24,7 +27,7 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --arch) ARCH="$2"; shift 2 ;;
     --arch=*) ARCH="${1#--arch=}"; shift ;;
-    -h|--help) sed -n '2,14p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,17p' "$0"; exit 0 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
 done
@@ -51,6 +54,9 @@ done
 
 # ---- build ------------------------------------------------------------------
 export MACOSX_DEPLOYMENT_TARGET="$MACOS_MIN"
+# One build time for every slice of a universal binary (the About window
+# shows it; crates/blyg-app/build.rs reads SOURCE_DATE_EPOCH when set).
+export SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-$(date +%s)}"
 BINS=()
 for t in "${TARGETS[@]}"; do
   echo "==> cargo build --release --target $t"
@@ -85,8 +91,8 @@ sed -e "s/@APP_NAME@/$APP_NAME/g" \
 plutil -lint "$APP/Contents/Info.plist" >/dev/null
 printf 'APPL????' > "$APP/Contents/PkgInfo"
 
-[ -f packaging/Blygger.icns ] || scripts/make-icon.sh
-cp packaging/Blygger.icns "$APP/Contents/Resources/$APP_NAME.icns"
+[ -f packaging/Burrow.icns ] || scripts/make-icon.sh
+cp packaging/Burrow.icns "$APP/Contents/Resources/$APP_NAME.icns"
 
 # Fonts are compiled into the binary (include_bytes! in crates/blyg-app/src/fonts.rs),
 # so only their licenses ship as files.
@@ -130,7 +136,38 @@ LATEST="$APP_NAME-macos-$ARCH"
 cp "$ZIP" "$DIST/$LATEST.zip"
 cp "$DMG" "$DIST/$LATEST.dmg"
 
-(cd "$DIST" && shasum -a 256 "$STEM.zip" "$STEM.dmg" "$LATEST.zip" "$LATEST.dmg" > SHA256SUMS)
+# ---- the old name, for updater continuity ------------------------------------
+# The app was called Blygger up to 0.6.0. Those versions' updater only
+# downloads an asset named exactly Blygger-<version>-macos-universal.zip and
+# only looks for Blygger.app inside it (crates/blyg-app/src/update/check.rs
+# and install.rs as of 0.6.0). So every release also ships the same signed
+# bundle, byte for byte, under the old folder name. That passes 0.6.0's
+# checks unchanged: they read CFBundleIdentifier (still org.blygger.desktop),
+# CFBundleShortVersionString and CFBundleExecutable (still blygger) from
+# Info.plist, and run `codesign --verify --strict`. The .app folder's name
+# isn't part of the code signature (or of a stapled notarization ticket), so
+# the renamed copy verifies. 0.6.0 then swaps it onto its own path, so such
+# an install keeps its on-disk name, Blygger.app, while showing Burrow inside.
+# The version-less Blygger-macos-<arch>.zip keeps old copies of
+# scripts/install.sh, and old download links, working too.
+# Drop both once 0.6.0 and earlier are rare (the new updater accepts
+# Burrow-… or Blygger-… zips holding Burrow.app or Blygger.app).
+LEGACY_STEM="$LEGACY_APP_NAME-$VERSION-macos-$ARCH"
+LEGACY_LATEST="$LEGACY_APP_NAME-macos-$ARCH"
+LEGACY_STAGE="$(mktemp -d)"
+trap 'rm -rf "$STAGE" "$LEGACY_STAGE"' EXIT
+ditto "$APP" "$LEGACY_STAGE/$LEGACY_APP_NAME.app"
+codesign --verify --strict "$LEGACY_STAGE/$LEGACY_APP_NAME.app"
+rm -f "$DIST/$LEGACY_STEM.zip" "$DIST/$LEGACY_LATEST.zip"
+echo "==> $DIST/$LEGACY_STEM.zip"
+ditto -c -k --sequesterRsrc --keepParent "$LEGACY_STAGE/$LEGACY_APP_NAME.app" "$DIST/$LEGACY_STEM.zip"
+cp "$DIST/$LEGACY_STEM.zip" "$DIST/$LEGACY_LATEST.zip"
+
+# SHA256SUMS lists every published asset (the release workflow signs it), so
+# both the new updater and 0.6.0's can check whichever zip they download.
+(cd "$DIST" && shasum -a 256 "$STEM.zip" "$STEM.dmg" "$LATEST.zip" "$LATEST.dmg" \
+  "$LEGACY_STEM.zip" "$LEGACY_LATEST.zip" > SHA256SUMS)
 echo "==> done"
-ls -lh "$ZIP" "$DMG" "$DIST/$LATEST.zip" "$DIST/$LATEST.dmg"
+ls -lh "$ZIP" "$DMG" "$DIST/$LATEST.zip" "$DIST/$LATEST.dmg" \
+  "$DIST/$LEGACY_STEM.zip" "$DIST/$LEGACY_LATEST.zip"
 cat "$DIST/SHA256SUMS"

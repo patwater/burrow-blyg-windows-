@@ -1,0 +1,22 @@
+{
+  "name": "tr_partial_nested_text",
+  "kind": "thread",
+  "md": "![[01j9zq3k4m5n6p7q8r9s0t1v3x]]\n> An older quoted fragment.",
+  "html": "<blockquote class=\"blyg-transclusion blyg-partial\" data-blyg-id=\"01j9zq3k4m5n6p7q8r9s0t1v3x\" data-blyg-version=\"2\">\n<p>An older quoted fragment.</p>\n\n<p class=\"provenance\"><a href=\"/blyg/t/01j9zq3k4m5n6p7q8r9s0t1v3x/\">thread ↗</a> · excerpt of v2</p></blockquote>",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [
+    {
+      "id": "01j9zq3k4m5n6p7q8r9s0t1v3x",
+      "version": 2,
+      "selector": {
+        "exact": "An older quoted fragment.",
+        "prefix": "A thread about notebooks.\n",
+        "suffix": "\nClosing thought."
+      }
+    }
+  ],
+  "errors": []
+}

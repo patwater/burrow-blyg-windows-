@@ -12,6 +12,14 @@ use super::MainView;
 impl MainView {
     pub fn run_demo(&mut self, scenario: &str, window: &mut Window, cx: &mut Context<Self>) {
         let scenario = scenario.to_string();
+        // --- themes --- `BLYGGER_SNAPSHOT` (a `blygger_snap` build): a fixed
+        // window size, and a frame saved after the last step whatever the
+        // scenario (the theme audit renders offscreen, so a locked screen or
+        // a window macOS won't show doesn't matter).
+        let snapshot = std::env::var_os("BLYGGER_SNAPSHOT").is_some();
+        if snapshot {
+            window.resize(size(px(1100.), px(720.)));
+        }
         cx.spawn_in(window, async move |this, cx| {
             let exec = cx.background_executor().clone();
             let step = |ms: u64| exec.timer(Duration::from_millis(ms));
@@ -21,11 +29,17 @@ impl MainView {
             let _ = this.update_in(cx, |v, window, cx| v.demo_step(&scenario, 1, window, cx));
             step(1200).await;
             let _ = this.update_in(cx, |v, window, cx| v.demo_step(&scenario, 2, window, cx));
+            if snapshot && !scenario.starts_with("about") && !scenario.ends_with("capture") {
+                step(600).await;
+                let _ = this.update_in(cx, |_, window, cx| {
+                    super::reading::demo::snapshot_later(window, cx)
+                });
+            }
         })
         .detach();
     }
 
-    fn demo_type(&mut self, text: &str, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn demo_type(&mut self, text: &str, window: &mut Window, cx: &mut Context<Self>) {
         self.editor
             .update(cx, |s, cx| s.insert(text.to_string(), window, cx));
         self.after_edit(cx);
@@ -97,6 +111,25 @@ impl MainView {
             }
             ("offline", 1) => self.demo_type(" Written on a plane.", window, cx),
             ("settings", 0) => self.open_settings(&super::OpenSettings, window, cx),
+            // --- themes --- chrome surfaces, for the theme audit's captures.
+            // A toast with a second line (shown late, so it's up at capture).
+            ("toast", 0) => self.demo_open("01J9QK3", window, cx),
+            ("toast", 2) => self.show_toast(
+                "Published v2",
+                Some("blyg.example.com/2026/09/harbour-log".into()),
+                cx,
+            ),
+            // The list's empty state for a query with no match.
+            ("empty", 0) => self.set_query_text("zqxj", window, cx),
+            ("connect", 0) => self.open_connect(window, cx),
+            ("disconnect", 0) => self.on_disconnect(&super::Disconnect, window, cx),
+            // The status bar's update notice (no updater runs in fake mode).
+            ("update", 0) => {
+                self.demo_open("01J9QK3", window, cx);
+                crate::update::demo_notice(cx);
+            }
+            // --- about --- (the window, then its snapshot)
+            ("about", n) => crate::about::demo(n, cx),
             ("capture", 0) => crate::capture::toggle(cx),
             ("capture", 1) => crate::capture::demo_fill(
                 "The best interface for writing is the one that is already open.",
@@ -176,8 +209,14 @@ impl MainView {
             (s, n) if s.starts_with("ob-") || s.starts_with("tut-") => {
                 self.onboarding_demo(s, n, window, cx)
             }
+            // --- composer --- (cm-mention, cm-spell, cm-spell-menu; composer/demo.rs)
+            (s, n) if s.starts_with("cm-") => self.composer_demo(s, n, window, cx),
             // --- buttons --- (tb-main, tb-long, tb-capture; toolbar.rs)
             (s, n) if s.starts_with("tb-") => self.toolbar_demo(s, n, window, cx),
+            // --- browser --- (br-block, br-slide, br-full; browser/view.rs)
+            (s, n) if s.starts_with("br-") => self.browser_demo(s, n, window, cx),
+            // --- notes --- (notes-open, notes-after-add, notes-over-browser, notes-posts)
+            (s, n) if s.starts_with("notes-") => self.notes_demo(s, n, window, cx),
             _ => {}
         }
     }

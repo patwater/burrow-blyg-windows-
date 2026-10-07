@@ -4,7 +4,16 @@
 //! with `scripts/e2e-local.sh`, which starts the Worker(s) and sets:
 //!
 //! - `BLYG_E2E_URL`   the Worker under test (e.g. `http://127.0.0.1:18787`)
-//! - `BLYG_E2E_TOKEN` its `BLYG_OWNER_TOKEN`
+//! - `BLYG_E2E_TOKEN` its `BLYG_OWNER_TOKEN`, or on studio 0.28+ a manual
+//!   token minted with all four owner scopes
+//! - `BLYG_E2E_TOKEN_B` the same for `BLYG_E2E_URL_B` (studio 0.28+ only;
+//!   without it, `b` takes `a`'s credential)
+//! - `BLYG_E2E_OWNER_PASSWORD` its studio password, always: the browser
+//!   sign-in tests act as the owner in a browser with it
+//! - `BLYG_E2E_PASSWORD` its studio password; when set, everything signs in
+//!   with it instead of the token
+//! - `BLYG_E2E_STOCK` set for a stock blygger-studio (no docs/SERVER.md
+//!   extensions): the tests of fork-only features say so and skip
 //! - `BLYG_E2E_URL_B` a second, independent Worker (the subscription source)
 //! - `BLYG_E2E_CTL`   `scripts/e2e-wrangler.sh`, to stop/start instance `a`
 //!   mid-test (the offline case)
@@ -16,6 +25,11 @@ use std::path::Path;
 use std::process::Command;
 use std::time::{Duration, Instant};
 
+#[allow(dead_code)]
+#[path = "common/contract.rs"]
+mod contract;
+
+use blyg_core::api::auth::{self, Credential};
 use blyg_core::api::{Api, ConnectError, verify_connection};
 use blyg_core::*;
 use serde_json::{Value, json};
@@ -24,7 +38,12 @@ use serde_json::{Value, json};
 
 struct E2e {
     url: String,
-    token: String,
+    /// How everything signs in: the token, or the password when given.
+    cred: Credential,
+    /// That credential's secret (to check it never leaks).
+    secret: String,
+    /// A stock blygger-studio: no fork extensions.
+    stock: bool,
 }
 
 fn e2e() -> E2e {
@@ -36,8 +55,29 @@ fn e2e() -> E2e {
         url.starts_with("http://127.0.0.1") || url.starts_with("http://localhost"),
         "e2e tests only ever run against a local Worker, not {url}"
     );
-    let token = std::env::var("BLYG_E2E_TOKEN").expect("BLYG_E2E_TOKEN not set");
-    E2e { url, token }
+    let (cred, secret) = match std::env::var("BLYG_E2E_PASSWORD") {
+        Ok(p) => (Credential::Password(p.clone()), p),
+        Err(_) => {
+            let t = std::env::var("BLYG_E2E_TOKEN").expect("BLYG_E2E_TOKEN not set");
+            (Credential::Token(t.clone()), t)
+        }
+    };
+    let stock = std::env::var_os("BLYG_E2E_STOCK").is_some();
+    E2e {
+        url,
+        cred,
+        secret,
+        stock,
+    }
+}
+
+/// On a stock server, a test of a fork-only feature says so and skips.
+fn needs_extensions(what: &str) -> bool {
+    if e2e().stock {
+        eprintln!("skipped on a stock server: {what} needs the docs/SERVER.md extensions");
+        return false;
+    }
+    true
 }
 
 fn url_b() -> String {
@@ -49,6 +89,13 @@ fn url_b() -> String {
     url
 }
 
+/// The credential for `url_b()`: its own minted token, else `a`'s.
+fn cred_b() -> Credential {
+    std::env::var("BLYG_E2E_TOKEN_B")
+        .map(Credential::Token)
+        .unwrap_or_else(|_| e2e().cred)
+}
+
 fn opts(worker: bool) -> SyncOptions {
     SyncOptions {
         debounce: Duration::from_millis(150),
@@ -57,16 +104,17 @@ fn opts(worker: bool) -> SyncOptions {
         backoff_max: Duration::from_millis(800),
         start_worker: worker,
         reading_pages: 4,
+        lineage_fetches: 20,
     }
 }
 
-fn backend_at(dir: &Path, url: &str, token: &str, worker: bool) -> LiveBackend {
-    LiveBackend::open_with(dir, url, token, opts(worker)).expect("open LiveBackend")
+fn backend_at(dir: &Path, url: &str, cred: Credential, worker: bool) -> LiveBackend {
+    LiveBackend::open_with(dir, url, cred, opts(worker)).expect("open LiveBackend")
 }
 
 fn manual(dir: &Path) -> LiveBackend {
     let e = e2e();
-    backend_at(dir, &e.url, &e.token, false)
+    backend_at(dir, &e.url, e.cred.clone(), false)
 }
 
 fn agent() -> ureq::Agent {
@@ -90,12 +138,22 @@ fn public_json(url: &str) -> Value {
     serde_json::from_str(&body).unwrap_or_else(|e| panic!("{url}: {e}: {body}"))
 }
 
-/// Owner call made directly (as the web studio or another device would).
+/// Owner call made directly (as the web studio or another device would),
+/// with the token or a studio session. `/api` is host-rooted.
 fn owner(method: &str, base: &str, path: &str, body: Option<Value>) -> (u16, Value) {
     let e = e2e();
-    let req = agent()
-        .request(method, &format!("{base}{path}"))
-        .set("authorization", &format!("Bearer {}", e.token));
+    let req = agent().request(method, &format!("{base}{path}"));
+    let req = match &e.cred {
+        Credential::Token(t) => req.set("authorization", &format!("Bearer {t}")),
+        Credential::OAuth(s) => req.set(
+            "authorization",
+            &format!("Bearer {}", s.access_token().expect("access token")),
+        ),
+        Credential::Password(p) => {
+            let s = auth::login(base, p).expect("studio sign-in");
+            req.set("cookie", &format!("{}={s}", auth::SESSION_COOKIE))
+        }
+    };
     let res = match body {
         Some(b) => req.send_json(b),
         None => req.call(),
@@ -108,11 +166,22 @@ fn owner(method: &str, base: &str, path: &str, body: Option<Value>) -> (u16, Val
     (status, serde_json::from_str(&text).unwrap_or(Value::Null))
 }
 
+/// `GET path` as the owner must answer 200 with a body that matches
+/// upstream's OpenAPI contract.
+fn conforms(method: &str, base: &str, path: &str) -> Value {
+    let (st, v) = owner(method, base, path, None);
+    let (p, _) = path.split_once('?').unwrap_or((path, ""));
+    let segs: Vec<&str> = p.trim_start_matches('/').split('/').collect();
+    if let Err(e) = contract::contract().check_response(method, &segs, st, &v) {
+        panic!("{method} {path} broke the contract: {e}\n{v}");
+    }
+    assert_eq!(st, 200, "{method} {path}: {v}");
+    v
+}
+
 fn server_item(sid: &str) -> Value {
     let e = e2e();
-    let (s, v) = owner("GET", &e.url, &format!("/api/items/{sid}"), None);
-    assert_eq!(s, 200, "{v}");
-    v
+    conforms("GET", &e.url, &format!("/api/items/{sid}"))
 }
 
 fn wait_until(what: &str, timeout: Duration, mut f: impl FnMut() -> bool) {
@@ -163,23 +232,35 @@ fn ctl(args: &[&str]) {
 #[ignore = "needs a local Worker: scripts/e2e-local.sh"]
 fn connect_and_verify() {
     let e = e2e();
-    assert!(verify_connection(&e.url, &e.token).is_ok());
-    assert_eq!(
-        verify_connection(&e.url, "definitely-not-the-token"),
-        Err(ConnectError::WrongToken)
-    );
-    // Same Worker, but a path where /api/items doesn't exist: 404 → the
-    // "lacks the owner-API extensions" message.
-    assert_eq!(
-        verify_connection(&format!("{}/not-a-blyg", e.url), &e.token),
-        Err(ConnectError::MissingExtensions)
-    );
+    assert!(verify_connection(&e.url, e.cred.clone()).is_ok());
+    match &e.cred {
+        Credential::Token(_) => {
+            assert_eq!(
+                verify_connection(&e.url, "definitely-not-the-token"),
+                Err(ConnectError::WrongToken)
+            );
+            // /api is host-rooted: under a path, the same Worker's API answers.
+            assert!(verify_connection(&format!("{}/not-a-blyg", e.url), e.cred.clone()).is_ok());
+        }
+        Credential::Password(_) => {
+            assert_eq!(
+                verify_connection(&e.url, Credential::Password("definitely not it".into())),
+                Err(ConnectError::WrongPassword)
+            );
+            // No studio under that path (this Worker is mounted at the root).
+            assert_eq!(
+                verify_connection(&format!("{}/not-a-blyg", e.url), e.cred.clone()),
+                Err(ConnectError::NoStudio)
+            );
+        }
+        Credential::OAuth(_) => unreachable!("the suite signs in with a token or password"),
+    }
     // Nothing listening.
     let closed = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let port = closed.local_addr().unwrap().port();
     drop(closed);
     assert_eq!(
-        verify_connection(&format!("http://127.0.0.1:{port}"), &e.token),
+        verify_connection(&format!("http://127.0.0.1:{port}"), e.cred.clone()),
         Err(ConnectError::Unreachable)
     );
     assert!(
@@ -194,7 +275,7 @@ fn connect_and_verify() {
 fn draft_autosaves_to_the_server() {
     let dir = tempfile::tempdir().unwrap();
     let e = e2e();
-    let b = backend_at(dir.path(), &e.url, &e.token, true);
+    let b = backend_at(dir.path(), &e.url, e.cred.clone(), true);
     let t = tag("autosave");
     let id = b.create_draft(Kind::Fragment, &t).unwrap();
     let text = format!("{t}\n\nsecond paragraph, typed later");
@@ -301,7 +382,7 @@ fn set_kind_before_first_publish() {
     let sa = sid_of(&b, &a);
     assert_eq!(server_item(&sa)["authored_kind"], "thread");
 
-    // Server-side draft: recreated as the new kind, old draft retired.
+    // Server-side draft: PATCHed to the new kind under the same id.
     let t2 = tag("kind-remote");
     let c = b.create_draft(Kind::Fragment, &t2).unwrap();
     b.sync_now().unwrap();
@@ -309,14 +390,9 @@ fn set_kind_before_first_publish() {
     b.set_kind(&c, Kind::Thread).unwrap();
     b.sync_now().unwrap();
     let new = sid_of(&b, &c);
-    assert_ne!(old, new, "recreated under a new id");
+    assert_eq!(old, new, "the kind changes in place");
     assert_eq!(server_item(&new)["authored_kind"], "thread");
     assert_eq!(server_item(&new)["content_md"], t2);
-    assert_eq!(
-        owner("GET", &e.url, &format!("/api/items/{old}"), None).0,
-        404,
-        "the old draft is gone"
-    );
     // Publishing it gives a thread permalink.
     let out = b.publish(&c, None).unwrap();
     assert_eq!(out.permalink, format!("{}/t/{new}", e.url));
@@ -477,7 +553,17 @@ fn image_upload_is_served() {
     assert_eq!(m.mime, "image/png");
     assert!(b.item(&id).unwrap().server_id.is_some());
     let base = b.base_url().unwrap();
-    let res = agent().get(&format!("{base}/{}", m.url)).call().unwrap();
+    let url = format!("{base}/{}", m.url);
+    // Studio 0.28: media no public version uses yet is private. Anonymous
+    // readers get a 404; the owner's credential reads it.
+    assert_eq!(public_get(&url).0, 404, "a draft's upload is private");
+    let (bytes, mime) = b.fetch_own_media(&url).unwrap();
+    assert_eq!(bytes, PNG);
+    assert_eq!(mime.as_deref(), Some("image/png"));
+    // Published (the attachment shows on the page): anyone can read it.
+    b.sync_now().unwrap();
+    b.publish(&id, None).unwrap();
+    let res = agent().get(&url).call().unwrap();
     assert_eq!(res.status(), 200);
     assert_eq!(res.header("content-type"), Some("image/png"));
     let mut bytes = Vec::new();
@@ -556,13 +642,16 @@ fn count_imgs(html: &str, media_url: &str) -> usize {
 #[test]
 #[ignore = "needs a local Worker: scripts/e2e-local.sh"]
 fn attachments_are_deduplicated_and_removable() {
+    if !needs_extensions("removing uploads and the duplicate guard") {
+        return;
+    }
     // Worker patch 8: POST /api/media returns the existing row (duplicate:
     // true) for identical bytes on the same item; DELETE /api/media/:id
     // removes it; the avatar can't be removed.
     let dir = tempfile::tempdir().unwrap();
     let e = e2e();
     let b = manual(dir.path());
-    let api = Api::new(&e.url, &e.token);
+    let api = Api::new(&e.url, e.cred.clone());
     let (id, sid) = published(&b, Kind::Fragment, &tag("attach"), None);
 
     let first = api
@@ -672,8 +761,10 @@ fn pasted_images_render_once_inline() {
         "inline image {src} resolves from {page_url}"
     );
 
-    // For the record, what the app avoids: a relative `media/…` breaks on
-    // the page, and attached *and* inline shows the image twice.
+    // For the record: before studio 0.11 a relative `media/…` broke on the
+    // page (it resolved against /f/<id>/); 0.11 publishes it absolute against
+    // the blyg's origin. Since 0.20 an attachment the text already shows is
+    // not appended again ("images belong to the text they are in").
     let rel = b
         .create_draft(Kind::Fragment, &format!("{t} relative"))
         .unwrap();
@@ -689,11 +780,13 @@ fn pasted_images_render_once_inline() {
         .find(|s| s.contains(&m.url))
         .unwrap()
         .to_string();
-    let rel_base =
-        url::Url::parse(&format!("{}/", rel_out.permalink.trim_end_matches('/'))).unwrap();
-    assert_eq!(public_get(rel_base.join(&rel_src).unwrap().as_str()).0, 404);
+    assert!(
+        rel_src.starts_with("http://") || rel_src.starts_with("https://"),
+        "studio 0.11 publishes absolute image URLs: {rel_src}"
+    );
+    assert_eq!(public_get(&rel_src).0, 200, "{rel_src}");
     let sid = sid_of(&b, &id);
-    let api = Api::new(&e.url, &e.token);
+    let api = Api::new(&e.url, e.cred.clone());
     let att = api
         .upload_media(PNG, "image/png", Some(&sid), None)
         .unwrap();
@@ -701,7 +794,7 @@ fn pasted_images_render_once_inline() {
     b.sync_now().unwrap();
     b.publish(&id, None).unwrap();
     let (_, page) = public_get(&out.permalink);
-    assert_eq!(count_imgs(&page, &att.url), 2);
+    assert_eq!(count_imgs(&page, &att.url), 1, "attached and inline: once");
 }
 
 #[test]
@@ -730,7 +823,12 @@ fn tk_output_with_dollar_patterns_publishes_verbatim() {
             || html.contains("It costs $&amp; and $1, or $$ and $` $' in total."),
         "{html}"
     );
-    assert_eq!(html.matches("blyg-tk-gen").count(), 1, "{html}");
+    // Disclosure of app-generated text needs studio 0.28's provenance field
+    // or the provenance extension; an older stock server publishes it
+    // undisclosed (the app warns first).
+    let recordable = !e.stock || server_item(&sid).get("provenance").is_some();
+    let wrapped = if recordable { 1 } else { 0 };
+    assert_eq!(html.matches("blyg-tk-gen").count(), wrapped, "{html}");
     assert!(
         !html.contains("[TK]") && !html.contains("\u{e000}"),
         "{html}"
@@ -756,7 +854,7 @@ fn conflict_from_a_direct_api_edit() {
     b.save(&id, &format!("{t} edited on this Mac")).unwrap();
     // …while the web studio edits the same draft.
     let (s, _) = owner(
-        "PUT",
+        "PATCH",
         &e.url,
         &format!("/api/items/{sid}"),
         Some(json!({"content_md": format!("{t} edited in the studio")})),
@@ -798,7 +896,7 @@ fn conflict_from_a_direct_api_edit() {
     // Keep mine on a second round.
     b.save(&id, &format!("{t} mine again")).unwrap();
     owner(
-        "PUT",
+        "PATCH",
         &e.url,
         &format!("/api/items/{sid}"),
         Some(json!({"content_md": format!("{t} studio again")})),
@@ -818,7 +916,7 @@ fn read_extension_shapes() {
     let e = e2e();
     let b = manual(dir.path());
     b.sync_now().unwrap();
-    assert!(b.reading_available(), "GET /api/reading exists");
+    assert!(b.reading_available(), "GET /api/reading/imported exists");
     let _ = b.reading();
     assert!(b.mentions().is_ok());
     let s = b.settings().unwrap();
@@ -838,28 +936,48 @@ fn read_extension_shapes() {
     .unwrap();
     assert!(b.hoppers().is_ok());
 
-    // Raw shapes, so a server change shows up here first.
-    let (st, v) = owner("GET", &e.url, "/api/reading?limit=2", None);
+    // Raw shapes against upstream's contract, so a server change shows up
+    // here first.
+    for path in [
+        "/api/items?offset=0&limit=5",
+        "/api/subscriptions?offset=0&limit=5",
+        "/api/mentions?direction=inbound&offset=0&limit=5",
+        "/api/settings",
+        "/api/hoppers?offset=0&limit=5",
+    ] {
+        conforms("GET", &e.url, path);
+    }
+    if e.stock {
+        // No fork rows: upstream's own reading resource instead.
+        conforms("GET", &e.url, "/api/reading?offset=0&limit=5");
+        return;
+    }
+    // Extension 3: the app's reading rows, keyset-paged.
+    let (st, v) = owner("GET", &e.url, "/api/reading/imported?limit=2", None);
     assert_eq!(st, 200);
     assert!(v["items"].is_array() && v.get("next").is_some(), "{v}");
-    let (_, v) = owner("GET", &e.url, "/api/mentions", None);
-    assert!(v["mentions"].is_array());
-    let (_, v) = owner("GET", &e.url, "/api/settings", None);
-    for k in [
-        "site_title",
-        "author_name",
-        "author_bio",
-        "site_url",
-        "theme",
-        "avatar_media_id",
-        "author_links",
-    ] {
-        assert!(v.get(k).is_some(), "settings.{k} missing: {v}");
+    assert_eq!(v["read_state"], true, "{v}");
+    if let Some(row) = v["items"].get(0) {
+        for k in [
+            "subscription_id",
+            "remote_id",
+            "subscription_title",
+            "origin",
+            "kind",
+            "state",
+            "version",
+            "observed_at",
+            "content_md",
+            "content_html",
+            "thumb",
+            "hoppers",
+            "read_version",
+            "pinned_version_retained",
+        ] {
+            assert!(row.get(k).is_some(), "reading row lacks {k}: {row}");
+        }
     }
-    assert!(v.get("ai_style_prompt").is_none(), "no private settings");
-    let (_, v) = owner("GET", &e.url, "/api/hoppers", None);
-    assert!(v["hoppers"].is_array());
-    let (st, _) = owner("GET", &e.url, "/api/reading?before=%%%", None);
+    let (st, _) = owner("GET", &e.url, "/api/reading/imported?before=%%%", None);
     assert_eq!(st, 400, "a bad cursor is refused");
 }
 
@@ -870,13 +988,158 @@ fn show_responses_round_trips() {
     let b = manual(dir.path());
     let (id, sid) = published(&b, Kind::Fragment, &tag("responses"), None);
     assert!(!b.item(&id).unwrap().show_responses);
-    b.set_show_responses(&id, true).unwrap();
+    b.set_responses(&id, ResponsesMode::Show).unwrap();
     assert!(b.item(&id).unwrap().show_responses);
-    assert_eq!(server_item(&sid)["show_responses"], true);
+    assert_eq!(server_item(&sid)["responses"], "show");
     b.sync_now().unwrap();
     assert!(b.item(&id).unwrap().show_responses, "a pull keeps it");
-    b.set_show_responses(&id, false).unwrap();
-    assert_eq!(server_item(&sid)["show_responses"], false);
+    b.set_responses(&id, ResponsesMode::Hide).unwrap();
+    assert_eq!(server_item(&sid)["responses"], "hide");
+}
+
+/// The blyg's settings, restored when the test ends (tests share a Worker).
+struct RestoreSettings<'a>(&'a LiveBackend, Settings);
+
+impl Drop for RestoreSettings<'_> {
+    fn drop(&mut self) {
+        let _ = self.0.save_settings(&self.1);
+    }
+}
+
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn highlight_and_picker_settings_round_trip() {
+    let dir = tempfile::tempdir().unwrap();
+    let b = manual(dir.path());
+    let before = b.settings().unwrap();
+    assert_eq!(
+        before.highlight_generated_default,
+        Some(false),
+        "off by default"
+    );
+    assert_eq!(before.picker_typing, Some(PickerTyping::Auto));
+    assert_eq!(b.picker_typing(), PickerTyping::Auto);
+    let _restore = RestoreSettings(&b, before.clone());
+
+    b.save_settings(&Settings {
+        highlight_generated_default: Some(true),
+        picker_typing: Some(PickerTyping::Panel),
+        ..before.clone()
+    })
+    .unwrap();
+    let s = b.settings().unwrap();
+    assert_eq!(s.highlight_generated_default, Some(true));
+    assert_eq!(s.picker_typing, Some(PickerTyping::Panel));
+    assert_eq!(b.picker_typing(), PickerTyping::Panel, "remembered locally");
+    let (_, raw) = owner("GET", &e2e().url, "/api/settings", None);
+    assert_eq!(raw["highlight_generated_default"], true);
+    assert_eq!(raw["picker_typing"], "panel");
+    // The other fields came through untouched.
+    assert_eq!(s.site_title, before.site_title);
+    assert_eq!(s.show_responses_default, before.show_responses_default);
+}
+
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn highlight_round_trips_and_marks_the_public_page() {
+    let dir = tempfile::tempdir().unwrap();
+    let e = e2e();
+    let b = manual(dir.path());
+    let before = b.settings().unwrap();
+    let _restore = RestoreSettings(&b, before.clone());
+    let (id, sid) = published(&b, Kind::Fragment, &tag("highlight"), None);
+    let it = b.item(&id).unwrap();
+    assert_eq!(it.highlight_mode, Some(HighlightMode::Default));
+    assert!(!it.highlight, "the blyg's default is off");
+    let page = || public_get(&b.item(&id).unwrap().permalink.unwrap()).1;
+    let article = |html: &str| {
+        html.split("<article class=\"")
+            .nth(1)
+            .and_then(|r| r.split('"').next())
+            .unwrap_or_default()
+            .to_string()
+    };
+    assert_eq!(article(&page()), "fragment", "no class of its own");
+
+    assert!(b.set_highlight(&id, HighlightMode::Show).unwrap());
+    assert_eq!(server_item(&sid)["highlight"], "show");
+    assert_eq!(article(&page()), "fragment gen-on");
+    let it = b.item(&id).unwrap();
+    assert!(it.highlight);
+    assert_eq!(it.highlight_mode, Some(HighlightMode::Show));
+    b.sync_now().unwrap();
+    assert!(b.item(&id).unwrap().highlight, "a pull keeps it");
+
+    assert!(!b.set_highlight(&id, HighlightMode::Hide).unwrap());
+    assert_eq!(server_item(&sid)["highlight"], "hide");
+    assert_eq!(article(&page()), "fragment gen-off");
+
+    // Back to default, with the blyg's default on: it highlights, through
+    // style.css (`article:not(.gen-off)`), not a class of its own.
+    b.save_settings(&Settings {
+        highlight_generated_default: Some(true),
+        ..before.clone()
+    })
+    .unwrap();
+    assert!(b.set_highlight(&id, HighlightMode::Default).unwrap());
+    assert_eq!(server_item(&sid)["highlight"], "default");
+    assert_eq!(article(&page()), "fragment");
+    let (st, css) = public_get(&format!("{}/style.css", e.url));
+    assert_eq!(st, 200);
+    assert!(
+        css.contains("article:not(.gen-off) .blyg-tk-gen"),
+        "default rule"
+    );
+    b.sync_now().unwrap();
+    let it = b.item(&id).unwrap();
+    assert!(it.highlight && it.highlight_mode == Some(HighlightMode::Default));
+}
+
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn draft_media_is_read_with_the_owners_credential_only() {
+    let dir = tempfile::tempdir().unwrap();
+    let e = e2e();
+    let b = manual(dir.path());
+    let t = tag("private-media");
+    // A pasted image: uploaded loose, then placed in the text.
+    let m = b
+        .upload_media(other_png(), "image/png", None, None)
+        .unwrap();
+    let url = format!("{}/{}", b.base_url().unwrap(), m.url);
+    assert_eq!(public_get(&url).0, 404, "unused upload: private");
+    let (bytes, _) = b.fetch_own_media(&url).unwrap();
+    assert_eq!(bytes, other_png());
+    // Without a credential the same read fails: the bytes really came
+    // through the owner's credential.
+    let anon = blyg_core::api::public::PublicClient::new().get_bytes(&url, 1 << 20);
+    assert!(
+        matches!(anon, Err(CoreError::NotFound)),
+        "{:?}",
+        anon.map(|_| ())
+    );
+
+    // The credential never leaves the blyg's own origin: blyg `b`'s private
+    // upload, asked for through `a`, is read anonymously, so it 404s.
+    let api_b = Api::new(&url_b(), cred_b());
+    let mb = api_b.upload_media(PNG, "image/png", None, None).unwrap();
+    let url_on_b = format!("{}/{}", url_b(), mb.url);
+    assert!(!Api::new(&e.url, e.cred.clone()).is_own_media(&url_on_b));
+    assert!(matches!(
+        b.fetch_own_media(&url_on_b),
+        Err(CoreError::NotFound)
+    ));
+    assert!(
+        api_b.fetch_own_media(&url_on_b, 1 << 20).is_ok(),
+        "b's owner can"
+    );
+
+    // Published inline: public, and served the same bytes.
+    let id = b.create_draft(Kind::Fragment, &t).unwrap();
+    b.save(&id, &format!("{t}\n\n![]({url})")).unwrap();
+    b.sync_now().unwrap();
+    b.publish(&id, None).unwrap();
+    assert_eq!(public_get(&url).0, 200, "used by a public version");
 }
 
 #[test]
@@ -884,7 +1147,7 @@ fn show_responses_round_trips() {
 fn offline_queues_then_flushes_after_restart() {
     let dir = tempfile::tempdir().unwrap();
     let e = e2e();
-    let b = backend_at(dir.path(), &e.url, &e.token, true);
+    let b = backend_at(dir.path(), &e.url, e.cred.clone(), true);
     let t = tag("offline");
     let id = b.create_draft(Kind::Fragment, &t).unwrap();
     wait_until("the first push", Duration::from_secs(10), || {
@@ -936,10 +1199,10 @@ fn owner_token_is_never_sent_to_the_public_surface() {
     // The public client used for other origins holds no token; make sure the
     // owner Api and the public surface agree about the permalink host.
     let e = e2e();
-    let api = Api::new(&e.url, &e.token);
+    let api = Api::new(&e.url, e.cred.clone());
     assert_eq!(api.base_url(), e.url);
     assert!(format!("{api:?}").contains("<redacted>"));
-    assert!(!format!("{api:?}").contains(&e.token));
+    assert!(!format!("{api:?}").contains(&e.secret));
 }
 
 #[test]
@@ -947,7 +1210,7 @@ fn owner_token_is_never_sent_to_the_public_surface() {
 fn publish_right_after_typing_and_republish_after_withdraw() {
     let dir = tempfile::tempdir().unwrap();
     let e = e2e();
-    let b = backend_at(dir.path(), &e.url, &e.token, true);
+    let b = backend_at(dir.path(), &e.url, e.cred.clone(), true);
     let events = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
     {
         let ev = events.clone();
@@ -1005,8 +1268,14 @@ fn prov(model: &str, sources: &[&str]) -> Option<ScopeProvenance> {
     })
 }
 
+/// The provenance the server holds for an item: the item's own
+/// `provenance` (studio 0.28+), else extension 4's endpoint.
 fn server_provenance(sid: &str) -> Value {
     let e = e2e();
+    let item = server_item(sid);
+    if let Some(p) = item.get("provenance") {
+        return p.clone();
+    }
     let (s, v) = owner(
         "GET",
         &e.url,
@@ -1017,9 +1286,27 @@ fn server_provenance(sid: &str) -> Value {
     v["scopes"].clone()
 }
 
+/// Client-recorded provenance needs studio 0.28's item `provenance` field
+/// or the fork's extension 4; on an older stock server the test skips.
+fn provenance_recordable() -> bool {
+    let e = e2e();
+    let (s, v) = owner("GET", &e.url, "/api/items?offset=0&limit=1", None);
+    assert_eq!(s, 200, "{v}");
+    // An empty list says nothing: the contract decides (`/api/changes`
+    // came with 0.32, after the field).
+    let has_field = v["items"]
+        .get(0)
+        .is_some_and(|i| i.get("provenance").is_some())
+        || owner("GET", &e.url, "/api/changes", None).0 == 200;
+    has_field || needs_extensions("client-recorded AI provenance (before studio 0.28)")
+}
+
 #[test]
 #[ignore = "needs a local Worker: scripts/e2e-local.sh"]
 fn client_recorded_provenance_is_disclosed() {
+    if !provenance_recordable() {
+        return;
+    }
     let dir = tempfile::tempdir().unwrap();
     let e = e2e();
     let b = manual(dir.path());
@@ -1088,6 +1375,9 @@ fn client_recorded_provenance_is_disclosed() {
 #[test]
 #[ignore = "needs a local Worker: scripts/e2e-local.sh"]
 fn server_held_provenance_follows_its_scope() {
+    if !provenance_recordable() {
+        return;
+    }
     // Provenance the app never saw (recorded by another client or the
     // Worker's own generate) still follows its scope when the app edits.
     let dir = tempfile::tempdir().unwrap();
@@ -1098,13 +1388,23 @@ fn server_held_provenance_follows_its_scope() {
     let id = b.create_draft(Kind::Fragment, &text).unwrap();
     b.sync_now().unwrap();
     let sid = sid_of(&b, &id);
+    // Recorded by another client: studio 0.28's field, else extension 4.
     let (s, v) = owner(
-        "PUT",
+        "PATCH",
         &e.url,
-        &format!("/api/items/{sid}/tk-provenance"),
-        Some(json!({"scopes": [{"index": 0, "model": "elsewhere-model"}]})),
+        &format!("/api/items/{sid}"),
+        Some(json!({"provenance": [{"model": "elsewhere-model", "sources": []}]})),
     );
-    assert_eq!(s, 200, "{v}");
+    if s != 200 {
+        let (s, v) = owner(
+            "PUT",
+            &e.url,
+            &format!("/api/items/{sid}/tk-provenance"),
+            Some(json!({"scopes": [{"index": 0, "model": "elsewhere-model"}]})),
+        );
+        assert_eq!(s, 200, "{v}");
+    }
+    let _ = v;
     b.sync_now().unwrap();
     b.save(&id, &format!("[TK]opening[=]By hand.[/TK]\n\n{text}"))
         .unwrap();
@@ -1127,6 +1427,15 @@ fn reading_item(b: &LiveBackend, rid: &str) -> Option<ReadingItem> {
     b.reading().into_iter().find(|r| r.remote_id == rid)
 }
 
+/// Pull until these posts are held: a new subscription's backfill runs
+/// after the server answers, so the first pull can race it.
+fn sync_until_held(b: &LiveBackend, rids: &[&str]) {
+    wait_until("the backfill", Duration::from_secs(20), || {
+        b.sync_now().unwrap();
+        rids.iter().all(|r| reading_item(b, r).is_some())
+    });
+}
+
 /// Poll the subscription the way the server does on its own: the cron
 /// handler first. A subscription polled less than ~30 min ago isn't due, so
 /// fall back to the explicit resync the web studio offers. Returns whether
@@ -1139,7 +1448,7 @@ fn poll(subscriber: &LiveBackend, sub_id: &str, rid: &str, want_version: u32) ->
     if reading_item(subscriber, rid).is_some_and(|r| r.version >= want_version) {
         return true;
     }
-    let api = Api::new(&e.url, &e.token);
+    let api = Api::new(&e.url, e.cred.clone());
     api.resync_subscription(sub_id).unwrap();
     subscriber.sync_now().unwrap();
     assert!(
@@ -1152,11 +1461,11 @@ fn poll(subscriber: &LiveBackend, sub_id: &str, rid: &str, want_version: u32) ->
 #[test]
 #[ignore = "needs a local Worker: scripts/e2e-local.sh"]
 fn subscriptions_reading_and_pinned_versions() {
-    let e = e2e();
+    e2e();
     let src_url = url_b();
     let (d1, d2) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
     let me = manual(d1.path());
-    let source = backend_at(d2.path(), &src_url, &e.token, false);
+    let source = backend_at(d2.path(), &src_url, cred_b(), false);
     let t = tag("sub");
 
     let (sid, rid) = published(&source, Kind::Fragment, &format!("{t} v1"), Some("first"));
@@ -1171,7 +1480,7 @@ fn subscriptions_reading_and_pinned_versions() {
     let sub = me.subscribe(&src_url, Some("A neighbour")).unwrap();
     assert_eq!(sub.kind, SubscriptionKind::Blyg);
     assert!(me.subscriptions().iter().any(|s| s.id == sub.id));
-    me.sync_now().unwrap();
+    sync_until_held(&me, &[&rid]);
     let r = reading_item(&me, &rid).expect("the post is in the reading list");
     assert_eq!(r.subscription_title, "A neighbour");
     assert_eq!(r.version, 1);
@@ -1262,11 +1571,11 @@ fn reading_items_carry_the_published_html() {
     // What the Reading screen shows is the HTML the author's blyg published:
     // the transclusion snapshot is baked in, and image URLs are as the author
     // wrote them (so a relative `media/…` needs the author's origin as base).
-    let e = e2e();
+    e2e();
     let src_url = url_b();
     let (d1, d2) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
     let me = manual(d1.path());
-    let source = backend_at(d2.path(), &src_url, &e.token, false);
+    let source = backend_at(d2.path(), &src_url, cred_b(), false);
     let t = tag("html");
 
     let (_, quoted) = published(&source, Kind::Fragment, &format!("{t} quoted words"), None);
@@ -1288,7 +1597,7 @@ fn reading_items_carry_the_published_html() {
     source.pin(&tid, 1).unwrap();
 
     let sub = me.subscribe(&src_url, Some("html")).unwrap();
-    me.sync_now().unwrap();
+    sync_until_held(&me, &[&rid]);
     let r = reading_item(&me, &rid).expect("the thread is in the reading list");
     eprintln!("reading content_html = {}", r.content_html);
     let html = &r.content_html;
@@ -1300,9 +1609,13 @@ fn reading_items_carry_the_published_html() {
     );
     assert!(html.contains("quoted words"), "{html}");
     assert!(!html.contains("![["), "{html}");
-    assert!(html.contains(&format!("src=\"{}\"", m.url)), "{html}");
-    assert!(
-        html.contains(&format!("src=\"{src_url}/{}\"", m.url)),
+    // Studio 0.11 publishes image URLs absolute against the source blyg,
+    // the relative `media/…` included.
+    assert!(!html.contains(&format!("src=\"{}\"", m.url)), "{html}");
+    assert_eq!(
+        html.matches(&format!("src=\"{src_url}/{}\"", m.url))
+            .count(),
+        2,
         "{html}"
     );
 
@@ -1326,10 +1639,13 @@ fn reading_items_carry_the_published_html() {
 #[test]
 #[ignore = "needs a local Worker: scripts/e2e-local.sh"]
 fn read_state_syncs_between_two_macs() {
+    if !needs_extensions("read-state sync") {
+        return;
+    }
     // Extension 5: a post read on one Mac reads as read on another Mac
     // signed in to the same blyg, and the server never lowers it.
     let e = e2e();
-    let api = Api::new(&e.url, &e.token);
+    let api = Api::new(&e.url, e.cred.clone());
     if !api.reading(1, None).unwrap().is_some_and(|p| p.read_sync()) {
         eprintln!("SKIP: this Worker doesn't advertise read_state (extension 5)");
         return;
@@ -1342,7 +1658,7 @@ fn read_state_syncs_between_two_macs() {
     );
     let mac1 = manual(d1.path());
     let mac2 = manual(d2.path());
-    let source = backend_at(d3.path(), &src_url, &e.token, false);
+    let source = backend_at(d3.path(), &src_url, cred_b(), false);
     let t = tag("read");
     let (sid, rid) = published(&source, Kind::Fragment, &format!("{t} v1"), None);
     let sub = mac1.subscribe(&src_url, Some("Read sync")).unwrap();
@@ -1364,7 +1680,7 @@ fn read_state_syncs_between_two_macs() {
     poll(&mac2, &sub.id, &rid, 2);
     mac2.mark_read(&sub.id, &rid).unwrap();
     mac2.sync_now().unwrap();
-    api.put_read(&sub.id, &rid, 1).unwrap();
+    api.put_read(&sub.id, &rid, 1, None).unwrap();
     mac1.sync_now().unwrap();
     assert_eq!(reading_item(&mac1, &rid).unwrap().read_version, Some(2));
     let page = api.reading(500, None).unwrap().unwrap();
@@ -1380,4 +1696,1088 @@ fn read_state_syncs_between_two_macs() {
     mac1.unsubscribe(&sub.id).unwrap();
     let page = api.reading(500, None).unwrap().unwrap();
     assert!(!page.items.iter().any(|i| i.remote_id == rid));
+}
+
+// ------------------------------------------------- change revisions (0.32)
+
+/// A pass-through TCP proxy in front of the Worker that logs every request
+/// line (`METHOD /path`) the app sends through it.
+struct Proxy {
+    url: String,
+    log: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
+}
+
+impl Proxy {
+    fn start(target: &str) -> Proxy {
+        use std::io::{Read, Write};
+        let upstream = target
+            .trim_start_matches("http://")
+            .trim_end_matches('/')
+            .to_string();
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let here = listener.local_addr().unwrap().to_string();
+        let url = format!("http://{here}");
+        let log = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let l2 = log.clone();
+        std::thread::spawn(move || {
+            for client in listener.incoming() {
+                let Ok(mut client) = client else { return };
+                let Ok(mut server) = std::net::TcpStream::connect(&upstream) else {
+                    continue;
+                };
+                let (mut c2, mut s2) = (client.try_clone().unwrap(), server.try_clone().unwrap());
+                std::thread::spawn(move || {
+                    let _ = std::io::copy(&mut s2, &mut c2);
+                    let _ = c2.shutdown(std::net::Shutdown::Both);
+                });
+                let log = l2.clone();
+                // Tokens are bound to the blyg's origin: the Worker must see
+                // its own host, not the proxy's.
+                let (from_host, to_host) =
+                    (here.clone().into_bytes(), upstream.clone().into_bytes());
+                std::thread::spawn(move || {
+                    const MARK: &str = " HTTP/1.1\r\n";
+                    let mut carry = String::new();
+                    let mut buf = [0u8; 16 * 1024];
+                    loop {
+                        let n = match client.read(&mut buf) {
+                            Ok(0) | Err(_) => break,
+                            Ok(n) => n,
+                        };
+                        let mut out = Vec::with_capacity(n);
+                        let mut i = 0;
+                        while i < n {
+                            if buf[i..n].starts_with(&from_host) {
+                                out.extend_from_slice(&to_host);
+                                i += from_host.len();
+                            } else {
+                                out.push(buf[i]);
+                                i += 1;
+                            }
+                        }
+                        if server.write_all(&out).is_err() {
+                            break;
+                        }
+                        let old = carry.len();
+                        carry.push_str(&String::from_utf8_lossy(&buf[..n]));
+                        let mut from = 0;
+                        while let Some(i) = carry[from..].find(MARK) {
+                            let end = from + i + MARK.len();
+                            if end > old {
+                                let start = carry[..from + i].rfind("\r\n").map_or(0, |p| p + 2);
+                                // The previous request's body (no CRLF of
+                                // its own) can run straight into this line.
+                                let line = &carry[start..from + i];
+                                let at =
+                                    ["GET /", "POST /", "PUT /", "PATCH /", "DELETE /", "HEAD /"]
+                                        .iter()
+                                        .filter_map(|m| line.rfind(m))
+                                        .max();
+                                if let Some(at) = at {
+                                    log.lock().unwrap().push(line[at..].to_string());
+                                }
+                            }
+                            from = end;
+                        }
+                        if carry.len() > 8192 {
+                            let mut cut = carry.len() - 4096;
+                            while !carry.is_char_boundary(cut) {
+                                cut += 1;
+                            }
+                            carry.drain(..cut);
+                        }
+                    }
+                    let _ = server.shutdown(std::net::Shutdown::Both);
+                });
+            }
+        });
+        Proxy { url, log }
+    }
+
+    /// The requests logged since the last call, without query strings.
+    fn take(&self) -> Vec<String> {
+        std::mem::take(&mut *self.log.lock().unwrap())
+            .into_iter()
+            .map(|r| r.split('?').next().unwrap_or_default().to_string())
+            .collect()
+    }
+}
+
+/// `GET /api/changes` is there (studio 0.32+); else the test says so.
+fn has_changes() -> bool {
+    let e = e2e();
+    if owner("GET", &e.url, "/api/changes", None).0 == 200 {
+        return true;
+    }
+    eprintln!("skipped: this server has no GET /api/changes (older than studio 0.32)");
+    false
+}
+
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn an_unchanged_pull_reads_only_the_change_counters() {
+    if !has_changes() {
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let e = e2e();
+    let proxy = Proxy::start(&e.url);
+    let b = backend_at(dir.path(), &proxy.url, e.cred.clone(), false);
+    let t = tag("changes");
+    let id = b.create_draft(Kind::Fragment, &t).unwrap();
+    b.sync_now().unwrap();
+    let first = proxy.take();
+    assert!(first.contains(&"GET /api/changes".to_string()), "{first:?}");
+    assert!(first.contains(&"GET /api/items".to_string()), "{first:?}");
+
+    // Nothing changed since: one small read, no collection.
+    b.pull_now().unwrap();
+    assert_eq!(proxy.take(), vec!["GET /api/changes"], "an unchanged pull");
+    b.sync_now().unwrap();
+    assert_eq!(proxy.take(), vec!["GET /api/changes"], "an unchanged sync");
+
+    // An edit made elsewhere (the web studio, another Mac) moves `items`
+    // only: the items are read again, the reading list isn't.
+    let sid = sid_of(&b, &id);
+    let theirs = format!("{t} edited in the studio");
+    let (s, v) = owner(
+        "PATCH",
+        &e.url,
+        &format!("/api/items/{sid}"),
+        Some(json!({ "content_md": theirs })),
+    );
+    assert_eq!(s, 200, "{v}");
+    b.pull_now().unwrap();
+    let seen = proxy.take();
+    assert_eq!(seen.first().map(String::as_str), Some("GET /api/changes"));
+    assert!(seen.contains(&"GET /api/items".to_string()), "{seen:?}");
+    assert!(
+        !seen
+            .iter()
+            .any(|r| r.contains("/api/reading") || r.contains("/api/subscriptions")),
+        "{seen:?}"
+    );
+    assert_eq!(b.item(&id).unwrap().content_md, theirs, "picked up");
+
+    // A settings change re-reads the items with the settings (they resolve
+    // against them).
+    let (s, v) = owner(
+        "PATCH",
+        &e.url,
+        "/api/settings",
+        Some(json!({ "show_responses_default": false })),
+    );
+    assert_eq!(s, 200, "{v}");
+    b.pull_now().unwrap();
+    let seen = proxy.take();
+    assert!(seen.contains(&"GET /api/settings".to_string()), "{seen:?}");
+    b.pull_now().unwrap();
+    assert_eq!(proxy.take(), vec!["GET /api/changes"], "settled again");
+}
+
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn a_subscription_change_is_picked_up_by_revision() {
+    if !has_changes() {
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let e = e2e();
+    let proxy = Proxy::start(&e.url);
+    let b = backend_at(dir.path(), &proxy.url, e.cred.clone(), false);
+    b.sync_now().unwrap();
+    b.pull_now().unwrap();
+    proxy.take();
+    // Subscribed elsewhere: `subscriptions` moves, so the list (and the
+    // reading list, which depends on it) is read again; the items aren't.
+    let api = Api::new(&e.url, e.cred.clone());
+    let sub = api.subscribe(&url_b(), Some("Revision test")).unwrap();
+    b.pull_now().unwrap();
+    let seen = proxy.take();
+    assert!(
+        seen.contains(&"GET /api/subscriptions".to_string()),
+        "{seen:?}"
+    );
+    assert!(!seen.contains(&"GET /api/items".to_string()), "{seen:?}");
+    assert!(b.subscriptions().iter().any(|s| s.id == sub));
+    api.delete_subscription(&sub).unwrap();
+    b.pull_now().unwrap();
+    assert!(!b.subscriptions().iter().any(|s| s.id == sub));
+}
+
+// ------------------------------------------------------ TK generate (0.27)
+
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn generate_returns_the_spliced_body() {
+    let dir = tempfile::tempdir().unwrap();
+    let e = e2e();
+    let b = manual(dir.path());
+    let t = tag("generate");
+    let id = b
+        .create_draft(Kind::Fragment, &format!("{t}\n\n[TK]say hello[/TK]"))
+        .unwrap();
+    b.sync_now().unwrap();
+    let sid = sid_of(&b, &id);
+    let api = Api::new(&e.url, e.cred.clone());
+    match api.generate(&sid, 0) {
+        Ok(g) => {
+            let body = g.content_md.expect("studio 0.27+ returns content_md");
+            assert!(body.contains(&g.text), "{body}");
+            assert_eq!(server_item(&sid)["content_md"], body);
+        }
+        // The local Worker has no Workers AI binding (nothing billed).
+        Err(err) => eprintln!("skipped: no AI on this local Worker ({err})"),
+    }
+}
+
+// ------------------------------------------------- work budgets (0.28)
+
+/// An instance the test starts with its own dev vars; stopped on drop.
+struct Instance {
+    name: &'static str,
+    url: String,
+}
+
+impl Drop for Instance {
+    fn drop(&mut self) {
+        let _ = Command::new(std::env::var("BLYG_E2E_CTL").unwrap())
+            .args(["stop", self.name])
+            .status();
+    }
+}
+
+fn ctl_out(args: &[&str]) -> String {
+    let ctl = std::env::var("BLYG_E2E_CTL").expect("BLYG_E2E_CTL not set");
+    let out = Command::new(ctl).args(args).output().expect("run e2e ctl");
+    assert!(out.status.success(), "ctl {args:?} failed");
+    String::from_utf8(out.stdout).unwrap().trim().to_string()
+}
+
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn a_429_keeps_the_change_and_lands_after_retry_after() {
+    e2e();
+    let port = ctl_out(&["free-port"]);
+    // Three writes a minute for this token; reads stay unlimited.
+    ctl(&[
+        "start",
+        "budget",
+        &port,
+        "API_WRITE_LIMIT=3",
+        "API_DELEGATED_WRITE_LIMIT=3",
+    ]);
+    let inst = Instance {
+        name: "budget",
+        url: format!("http://127.0.0.1:{port}"),
+    };
+    let token = ctl_out(&["mint-token", &port]);
+    if token.is_empty() {
+        eprintln!("skipped: no work budgets before studio 0.28");
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let b = backend_at(
+        dir.path(),
+        &inst.url,
+        Credential::Token(token.clone()),
+        true,
+    );
+    let events = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    {
+        let ev = events.clone();
+        b.set_event_sink(Box::new(move |e| ev.lock().unwrap().push(e)));
+    }
+    let t = tag("budget");
+    let id = b.create_draft(Kind::Fragment, &t).unwrap();
+    // Type until the blyg says slow down (the budget window is a clock
+    // minute, so how many writes that takes varies).
+    let mut text = t.clone();
+    let mut limited = None;
+    for i in 0..12 {
+        text = format!("{t} edit {i}");
+        b.save(&id, &text).unwrap();
+        match b.sync_now() {
+            Ok(()) => {}
+            Err(CoreError::RateLimited { retry_after }) => {
+                limited = Some(retry_after);
+                break;
+            }
+            Err(err) => panic!("unexpected: {err}"),
+        }
+    }
+    let retry_after = limited.expect("the budget ran out");
+    assert!((1..=60).contains(&retry_after), "{retry_after}");
+    // Not dropped: still queued, still here.
+    let item = b.item(&id).unwrap();
+    assert!(item.pending_sync, "the change stays queued");
+    assert_eq!(item.content_md, text);
+    assert!(
+        events
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|e| matches!(e, CoreEvent::Error(m) if m.contains("slow down"))),
+        "the status says why"
+    );
+    // The worker waits out Retry-After, then the change lands.
+    let get = |sid: &str| -> Value {
+        agent()
+            .get(&format!("{}/api/items/{sid}", inst.url))
+            .set("authorization", &format!("Bearer {token}"))
+            .call()
+            .unwrap()
+            .into_json()
+            .unwrap()
+    };
+    let sid = sid_of(&b, &id);
+    assert_ne!(get(&sid)["content_md"], text.as_str(), "not yet");
+    let t0 = Instant::now();
+    wait_until(
+        "the change to land after Retry-After",
+        Duration::from_secs(retry_after + 30),
+        || !b.item(&id).unwrap().pending_sync,
+    );
+    eprintln!("landed {:?} after the 429", t0.elapsed());
+    assert_eq!(get(&sid)["content_md"], text.as_str());
+}
+
+// ------------------------------------------- browser sign-in (studio 0.28+)
+
+/// The scratch studio's owner password (always exported by
+/// scripts/e2e-local.sh, whatever the suite signs in with).
+fn owner_password() -> Option<String> {
+    std::env::var("BLYG_E2E_OWNER_PASSWORD").ok()
+}
+
+/// A cookie jar of `name=value` pairs, as a browser keeps them.
+#[derive(Default)]
+struct Jar(Vec<(String, String)>);
+
+impl Jar {
+    fn take(&mut self, r: &ureq::Response) {
+        for c in r.all("set-cookie") {
+            let Some((n, v)) = c.split(';').next().and_then(|p| p.split_once('=')) else {
+                continue;
+            };
+            self.0.retain(|(k, _)| k != n.trim());
+            self.0.push((n.trim().to_string(), v.trim().to_string()));
+        }
+    }
+    fn header(&self) -> String {
+        self.0
+            .iter()
+            .map(|(k, v)| format!("{k}={v}"))
+            .collect::<Vec<_>>()
+            .join("; ")
+    }
+}
+
+fn no_redirects() -> ureq::Agent {
+    ureq::AgentBuilder::new()
+        .timeout(Duration::from_secs(20))
+        .redirects(0)
+        .build()
+}
+
+/// What the owner does in the browser: sign in to the studio, open the
+/// authorize page, and allow every permission it offers. Returns where the
+/// studio sends the browser next (the loopback callback).
+fn owner_allows(base: &str, authorize_url: &str, password: &str) -> String {
+    let session = auth::login(base, password).expect("studio sign-in");
+    let mut jar = Jar(vec![(auth::SESSION_COOKIE.to_string(), session)]);
+    let page = no_redirects()
+        .get(authorize_url)
+        .set("cookie", &jar.header())
+        .call()
+        .expect("the consent page");
+    jar.take(&page);
+    let html = page.into_string().unwrap();
+    assert!(html.contains("Allow Burrow?"), "{html}");
+    let field = |name: &str| -> Vec<String> {
+        html.split(&format!("name=\"{name}\" value=\""))
+            .skip(1)
+            .filter_map(|s| s.split_once('"').map(|(v, _)| v.to_string()))
+            .collect()
+    };
+    let handle = field("handle").pop().expect("a consent handle");
+    let scopes = field("scope");
+    assert_eq!(
+        scopes,
+        blyg_core::api::oauth::OWNER_SCOPES,
+        "all four offered"
+    );
+    let mut form: Vec<(&str, &str)> = vec![("handle", &handle), ("decision", "allow")];
+    form.extend(scopes.iter().map(|s| ("scope", s.as_str())));
+    let action = html
+        .split("<form method=\"post\" action=\"")
+        .nth(1)
+        .and_then(|s| s.split_once('"'))
+        .map(|(a, _)| a.to_string())
+        .expect("the consent form");
+    let r = match no_redirects()
+        .post(&action)
+        .set("cookie", &jar.header())
+        .set("origin", base)
+        .send_form(&form)
+    {
+        Ok(r) => r,
+        Err(ureq::Error::Status(c, r)) => panic!("consent → {c}: {}", r.into_string().unwrap()),
+        Err(e) => panic!("consent: {e}"),
+    };
+    assert_eq!(r.status(), 302);
+    r.header("location").expect("a redirect").to_string()
+}
+
+/// The browser following the studio's redirect to the loopback listener.
+fn browser_follows(location: String) -> std::thread::JoinHandle<(u16, String)> {
+    std::thread::spawn(move || match no_redirects().get(&location).call() {
+        Ok(r) => (r.status(), r.into_string().unwrap_or_default()),
+        Err(ureq::Error::Status(c, r)) => (c, r.into_string().unwrap_or_default()),
+        Err(e) => panic!("callback: {e}"),
+    })
+}
+
+fn url_query(url: &str, key: &str) -> String {
+    url::Url::parse(url)
+        .unwrap()
+        .query_pairs()
+        .find(|(k, _)| k == key)
+        .map(|(_, v)| v.into_owned())
+        .unwrap_or_default()
+}
+
+/// A browser sign-in on a studio 0.28+, or `None` (skipped) on an older one.
+fn signed_in_with_browser(
+    store: &dyn config::TokenStore,
+) -> Option<blyg_core::api::oauth::OAuthGrant> {
+    use blyg_core::api::oauth::BrowserSignIn;
+    let e = e2e();
+    let Some(password) = owner_password() else {
+        eprintln!("skipped: BLYG_E2E_OWNER_PASSWORD not set (run scripts/e2e-local.sh)");
+        return None;
+    };
+    let Some(sign_in) = BrowserSignIn::start(&e.url, store).expect("discovery") else {
+        eprintln!("skipped: this studio has no browser sign-in (older than 0.28)");
+        return None;
+    };
+    let location = owner_allows(&e.url, &sign_in.authorize_url, &password);
+    let redirect = url_query(&sign_in.authorize_url, "redirect_uri");
+    assert!(location.starts_with(&redirect), "{location}");
+    let browser = browser_follows(location);
+    let grant = sign_in
+        .finish(
+            &std::sync::atomic::AtomicBool::new(false),
+            Duration::from_secs(30),
+        )
+        .expect("the code exchange");
+    let (status, page) = browser.join().unwrap();
+    assert_eq!(status, 200, "{page}");
+    assert!(page.contains("signed in"), "{page}");
+    Some(grant)
+}
+
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn browser_sign_in_renews_and_revokes() {
+    use blyg_core::api::oauth::{self, OAuthSession, client_key, grant_key};
+    use std::sync::Arc;
+    let e = e2e();
+    let mem = Arc::new(config::MemoryTokenStore::default());
+    let store: Arc<dyn config::TokenStore> = mem.clone();
+    let Some(grant) = signed_in_with_browser(store.as_ref()) else {
+        return;
+    };
+    let now = oauth::now_secs();
+    for s in oauth::OWNER_SCOPES {
+        assert!(grant.scope.split(' ').any(|x| x == s), "{}", grant.scope);
+    }
+    assert!(
+        grant.refresh.is_some(),
+        "offline_access gives a refresh token"
+    );
+    assert!(grant.expires > now + 3000 && grant.expires <= now + 3600 + 5);
+    assert!(
+        grant.deadline > now + 29 * 86400 && grant.deadline <= now + 30 * 86400 + 5,
+        "the grant ends within 30 days"
+    );
+    assert!(grant.resource.ends_with("/api"), "{}", grant.resource);
+    let debug = format!("{grant:?}");
+    assert!(!debug.contains(&grant.access), "Debug redacts the token");
+
+    // The registered client is kept, and a second sign-in reuses it.
+    let client: oauth::Client =
+        serde_json::from_str(&store.get(&client_key(&e.url)).unwrap().unwrap()).unwrap();
+    assert_eq!(client.client_id, grant.client_id);
+    let again = oauth::BrowserSignIn::start(&e.url, store.as_ref())
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        url_query(&again.authorize_url, "client_id"),
+        grant.client_id
+    );
+    drop(again);
+
+    // Saved, it wins over a token and connects.
+    store.set(&e.url, "an-older-token").unwrap();
+    config::save_credential(
+        store.as_ref(),
+        &e.url,
+        &Credential::OAuth(OAuthSession::new(grant.clone())),
+    )
+    .unwrap();
+    assert!(
+        store.get(&e.url).unwrap().is_none(),
+        "one credential at a time"
+    );
+    let cred = config::load_credential(&store, &e.url).unwrap().unwrap();
+    assert!(matches!(cred, Credential::OAuth(_)));
+    verify_connection(&e.url, cred).expect("the API takes the access token");
+    let kept =
+        |s: &Arc<dyn config::TokenStore>| config::load_grant(s.as_ref(), &e.url).unwrap().unwrap();
+    assert_eq!(kept(&store), grant, "nothing renewed yet");
+    let put = |g: &oauth::OAuthGrant| {
+        store
+            .set(&grant_key(&e.url), &serde_json::to_string(g).unwrap())
+            .unwrap()
+    };
+
+    // Shortly before it expires, it's renewed first (and the rotation saved).
+    let mut due = grant.clone();
+    due.expires = oauth::now_secs() + 10;
+    put(&due);
+    let cred = config::load_credential(&store, &e.url).unwrap().unwrap();
+    verify_connection(&e.url, cred).expect("renewed before the call");
+    let renewed = kept(&store);
+    assert_ne!(renewed.access, grant.access);
+    assert_ne!(renewed.refresh, grant.refresh, "the refresh token rotates");
+    assert!(renewed.expires > oauth::now_secs() + 3000);
+    assert_eq!(
+        renewed.deadline, grant.deadline,
+        "renewal never extends the grant"
+    );
+
+    // A 401 (the server no longer takes the access token) renews and retries.
+    let mut rejected = renewed.clone();
+    rejected.access = "not-an-access-token".into();
+    put(&rejected);
+    let cred = config::load_credential(&store, &e.url).unwrap().unwrap();
+    verify_connection(&e.url, cred).expect("renewed after the 401");
+    let after_401 = kept(&store);
+    assert_ne!(after_401.access, rejected.access);
+    assert_ne!(after_401.refresh, renewed.refresh);
+    assert!(!after_401.invalid);
+
+    // Two Apis on one kept grant renew once between them: the second picks
+    // up the first's rotation instead of replaying the old refresh token
+    // (which would make the studio revoke the whole grant).
+    let mut due = after_401.clone();
+    due.expires = oauth::now_secs() + 10;
+    put(&due);
+    let a = config::load_credential(&store, &e.url).unwrap().unwrap();
+    let b = config::load_credential(&store, &e.url).unwrap().unwrap();
+    verify_connection(&e.url, a).expect("first");
+    verify_connection(&e.url, b).expect("second, on the first's renewal");
+    let shared = kept(&store);
+    assert!(!shared.invalid);
+    assert_ne!(shared.refresh, after_401.refresh);
+    let mut due = shared.clone();
+    due.expires = oauth::now_secs() + 10;
+    put(&due);
+    verify_connection(
+        &e.url,
+        config::load_credential(&store, &e.url).unwrap().unwrap(),
+    )
+    .expect("the grant survived: it renews again");
+    let shared = kept(&store);
+
+    // Signing out revokes it: it can't be renewed any more, and the next
+    // renewal marks it ended instead of retrying.
+    oauth::revoke(&shared).expect("revoke");
+    assert!(matches!(
+        oauth::refresh(&shared),
+        Err(CoreError::Unauthorized)
+    ));
+    let mut due = shared.clone();
+    due.expires = oauth::now_secs() + 10;
+    put(&due);
+    let cred = config::load_credential(&store, &e.url).unwrap().unwrap();
+    assert!(verify_connection(&e.url, cred.clone()).is_err());
+    let ended = kept(&store);
+    assert!(ended.invalid && ended.ended(), "sign in again");
+    let Credential::OAuth(s) = cred else {
+        unreachable!()
+    };
+    assert!(
+        matches!(s.access_token(), Err(CoreError::Unauthorized)),
+        "no retry loop"
+    );
+
+    // A grant past its 30-day deadline ends without asking the server.
+    let mut old = grant.clone();
+    old.deadline = oauth::now_secs() - 1;
+    assert!(matches!(
+        OAuthSession::new(old).access_token(),
+        Err(CoreError::Unauthorized)
+    ));
+
+    config::delete_credential(store.as_ref(), &e.url).unwrap();
+    assert!(store.get(&grant_key(&e.url)).unwrap().is_none());
+    assert!(
+        store.get(&client_key(&e.url)).unwrap().is_some(),
+        "the client id stays, to be reused"
+    );
+}
+
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn a_token_without_a_scope_says_which() {
+    let e = e2e();
+    let Some(password) = owner_password() else {
+        eprintln!("skipped: BLYG_E2E_OWNER_PASSWORD not set (run scripts/e2e-local.sh)");
+        return;
+    };
+    // A read-only manual token, minted as Studio → More → Client access does.
+    let session = auth::login(&e.url, &password).expect("studio sign-in");
+    let minted = match agent()
+        .post(&format!("{}/api/authorizations", e.url))
+        .set("cookie", &format!("{}={session}", auth::SESSION_COOKIE))
+        .send_json(json!({"name": "burrow-e2e-read", "scope": ["owner:read"], "resource": "api"}))
+    {
+        Ok(r) => r.into_json::<Value>().unwrap(),
+        Err(ureq::Error::Status(404, _)) => {
+            eprintln!("skipped: this studio has no manual tokens (older than 0.28)");
+            return;
+        }
+        Err(e) => panic!("minting a token: {e}"),
+    };
+    let token = minted["access_token"]
+        .as_str()
+        .expect("a token")
+        .to_string();
+    let api = Api::new(&e.url, Credential::Token(token.clone()));
+    assert!(api.count_items().is_ok(), "reading is allowed");
+    match api.create_item("a draft", Kind::Fragment, None, None) {
+        Err(CoreError::Rejected {
+            status: 403,
+            message,
+            ..
+        }) => {
+            assert!(message.contains("owner:draft"), "{message}");
+            assert!(message.contains("Client access"), "{message}");
+            assert!(!message.contains(&token), "never the token");
+        }
+        other => panic!("expected a 403 naming the scope, got {other:?}"),
+    }
+    // The app's outbox keeps a change the token can't send, and sends it
+    // once a credential with the scope arrives.
+    let dir = tempfile::tempdir().unwrap();
+    let text = tag("waits-for-scope");
+    let id = {
+        let b = backend_at(dir.path(), &e.url, Credential::Token(token.clone()), false);
+        let id = b.create_draft(Kind::Fragment, &text).unwrap();
+        assert!(
+            matches!(b.sync_now(), Err(CoreError::Rejected { status: 403, .. })),
+            "the push is refused for the token's scope"
+        );
+        let item = b.item(&id).unwrap();
+        assert!(
+            item.server_id.is_none() && item.pending_sync,
+            "the draft still waits"
+        );
+        id
+    };
+    let b = backend_at(dir.path(), &e.url, e.cred.clone(), false);
+    b.sync_now().unwrap();
+    let sid = sid_of(&b, &id);
+    assert_eq!(server_item(&sid)["content_md"], text);
+}
+
+// ------------------------------------------------- studio 0.30–0.33 reading
+
+/// The source blyg's own name for itself, as a subscribe preview gives it.
+fn source_name(me: &LiveBackend, src_url: &str) -> String {
+    me.preview_subscription(src_url).unwrap().title
+}
+
+/// Unsubscribes when dropped, so a failing test doesn't leave the next
+/// one "already subscribed".
+struct Unsub<'a>(&'a LiveBackend, String);
+
+impl Drop for Unsub<'_> {
+    fn drop(&mut self) {
+        let _ = self.0.unsubscribe(&self.1);
+    }
+}
+
+/// The baked quotes in a published page (`blockquote.blyg-transclusion`).
+fn baked_quotes(page: &str) -> Vec<String> {
+    page.split("<blockquote class=\"blyg-transclusion")
+        .skip(1)
+        .map(|q| q.split("</blockquote>").next().unwrap_or("").to_string())
+        .collect()
+}
+
+fn sub_of(b: &LiveBackend, id: &str) -> Subscription {
+    b.subscriptions()
+        .into_iter()
+        .find(|s| s.id == id)
+        .expect("the subscription is held")
+}
+
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn subscription_rename_and_revert_to_source() {
+    // Studio 0.30: a name of your own stops the source renaming it;
+    // `title: null` hands the name back, refreshed while polling.
+    e2e();
+    let src_url = url_b();
+    let d = tempfile::tempdir().unwrap();
+    let me = manual(d.path());
+    let own = source_name(&me, &src_url);
+    let sub = me.subscribe(&src_url, None).unwrap();
+    let _unsub = Unsub(&me, sub.id.clone());
+    me.sync_now().unwrap();
+    let s = sub_of(&me, &sub.id);
+    assert!(
+        s.title_follows_source,
+        "subscribed under its own name: {s:?}"
+    );
+    assert_eq!(s.title, own);
+
+    me.rename_subscription(&sub.id, Some("  My neighbour "))
+        .unwrap();
+    let s = sub_of(&me, &sub.id);
+    assert_eq!(s.title, "My neighbour");
+    assert!(!s.title_follows_source);
+    // The server holds it: a fresh pull says the same.
+    me.sync_now().unwrap();
+    let s = sub_of(&me, &sub.id);
+    assert_eq!(
+        (s.title.as_str(), s.title_follows_source),
+        ("My neighbour", false)
+    );
+    let (st, v) = owner(
+        "GET",
+        &e2e().url,
+        "/api/subscriptions?offset=0&limit=100",
+        None,
+    );
+    assert_eq!(st, 200);
+    let row = v["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["id"] == sub.id.as_str())
+        .unwrap()
+        .clone();
+    assert_eq!(row["title"], "My neighbour");
+    assert_eq!(row["title_follows_source"], false);
+    assert!(matches!(
+        me.rename_subscription(&sub.id, Some("   ")),
+        Err(CoreError::Rejected { status: 400, .. })
+    ));
+
+    // Back to the source's name: it follows the source again, and a poll
+    // brings the name back.
+    me.rename_subscription(&sub.id, None).unwrap();
+    assert!(sub_of(&me, &sub.id).title_follows_source);
+    // The next poll re-reads the source's manifest (Check all feeds now).
+    me.poll_subscriptions().unwrap();
+    wait_until("the source's name", Duration::from_secs(20), || {
+        me.sync_now().unwrap();
+        sub_of(&me, &sub.id).title == own
+    });
+    me.unsubscribe(&sub.id).unwrap();
+}
+
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn check_all_feeds_and_check_one_now() {
+    // Studio 0.30: POST /subscriptions/poll polls every feed in the
+    // background ("Check all feeds now"); /resync reconciles one blyg at once.
+    e2e();
+    let src_url = url_b();
+    let (d1, d2) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let me = manual(d1.path());
+    let source = backend_at(d2.path(), &src_url, cred_b(), false);
+    let t = tag("poll");
+    let (sid, rid) = published(&source, Kind::Fragment, &format!("{t} v1"), None);
+    let sub = me.subscribe(&src_url, Some("Polled")).unwrap();
+    let _unsub = Unsub(&me, sub.id.clone());
+    sync_until_held(&me, &[&rid]);
+    assert_eq!(reading_item(&me, &rid).unwrap().version, 1);
+
+    // Check all feeds now: the server polls every feed in the background
+    // and says how many. (What a poll finds is the source's business: a
+    // source answering 304 brings nothing new until its index is synced.)
+    let polled_at = || -> Value {
+        let (st, v) = owner(
+            "GET",
+            &e2e().url,
+            "/api/subscriptions?offset=0&limit=100",
+            None,
+        );
+        assert_eq!(st, 200);
+        v["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|r| r["id"] == sub.id.as_str())
+            .map(|r| r["last_poll_at"].clone())
+            .unwrap_or(Value::Null)
+    };
+    let before = polled_at();
+    std::thread::sleep(Duration::from_millis(1100));
+    let n = me.poll_subscriptions().unwrap();
+    assert!(n >= 1, "polling {n} subscriptions");
+    wait_until("the background poll", Duration::from_secs(20), || {
+        polled_at() != before
+    });
+
+    // Check now: the blyg's index is reconciled at once, so a new post and
+    // an edit both arrive with the pull that follows.
+    let (_, rid2) = published(&source, Kind::Fragment, &format!("{t} another"), None);
+    source.save(&sid, &format!("{t} v2")).unwrap();
+    source.publish(&sid, None).unwrap();
+    me.check_subscription(&sub.id).unwrap();
+    me.sync_now().unwrap();
+    let r = reading_item(&me, &rid).unwrap();
+    assert_eq!(r.version, 2);
+    assert_eq!(r.content_md, format!("{t} v2"));
+    assert!(reading_item(&me, &rid2).is_some(), "the new post too");
+
+    // A paused subscription isn't polled.
+    me.pause_subscription(&sub.id, true).unwrap();
+    let (st, v) = owner("POST", &e2e().url, "/api/subscriptions/poll", None);
+    assert_eq!(st, 200);
+    assert!(v["polling"].as_u64().unwrap() < u64::from(n), "{v}");
+    me.unsubscribe(&sub.id).unwrap();
+}
+
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn a_stub_made_in_the_app_publishes_with_the_right_quote() {
+    // Studio 0.31: Reply opens a stub quoting the whole post; a passage
+    // chosen in the stub editor goes under the directive as > lines, and
+    // publish bakes exactly that passage.
+    use blyg_render::stub_quote::{
+        StubQuoteForm, add_stub_quote, stub_body, stub_quote_form, with_stub_quote,
+    };
+    e2e();
+    let src_url = url_b();
+    let (d1, d2) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let me = manual(d1.path());
+    let source = backend_at(d2.path(), &src_url, cred_b(), false);
+    let t = tag("stub");
+    let first = format!("{t} opening words here.");
+    let second = "The passage worth answering, in the middle.";
+    let third = "A closing paragraph nobody quotes.";
+    let (_, rid) = published(
+        &source,
+        Kind::Thread,
+        &format!("{first}\n\n{second}\n\n{third}"),
+        None,
+    );
+    let sub = me.subscribe(&src_url, Some("Stubbed")).unwrap();
+    let _unsub = Unsub(&me, sub.id.clone());
+    sync_until_held(&me, &[&rid]);
+    let it = reading_item(&me, &rid).expect("the post is held");
+    let of = RemoteRef {
+        origin: it.origin.clone(),
+        id: rid.clone(),
+        version: it.version,
+    };
+
+    // Whole post, as Reply opens it (the server's own prefill since 0.31).
+    let body = stub_body(&rid);
+    assert_eq!(body, format!("![[{rid}]]\n\n"));
+    let whole = me
+        .create_stub(&of, &format!("{body}A reply below the quote."))
+        .unwrap();
+    me.sync_now().unwrap();
+    let out = me
+        .publish(&whole, None)
+        .expect("publish the whole-post stub");
+    let (st, page) = public_get(&out.permalink);
+    assert_eq!(st, 200);
+    let q = baked_quotes(&page);
+    assert_eq!(q.len(), 1, "{page}");
+    assert!(
+        q[0].contains("opening words here.") && q[0].contains(third),
+        "the whole post quoted: {}",
+        q[0]
+    );
+    let wire = server_item(&sid_of(&me, &whole));
+    assert_eq!(wire["stub_of"]["id"], rid.as_str(), "{wire}");
+
+    // A passage, chosen the way the stub editor does it (a selection of
+    // the post's text), then a second passage after the reply.
+    let text = with_stub_quote(
+        &format!("{body}My answer."),
+        &rid,
+        Some(&format!("  {second}\n")),
+    );
+    assert_eq!(stub_quote_form(&text, &rid), Some(StubQuoteForm::Passage));
+    assert_eq!(text, format!("![[{rid}]]\n> {second}\n\nMy answer."));
+    let text = add_stub_quote(&text, &rid, third, text.len());
+    let partial = me.create_stub(&of, &text).unwrap();
+    me.sync_now().unwrap();
+    let out = me
+        .publish(&partial, None)
+        .expect("publish the passage stub");
+    let (st, page) = public_get(&out.permalink);
+    assert_eq!(st, 200);
+    let q = baked_quotes(&page);
+    assert_eq!(q.len(), 2, "two passages: {page}");
+    assert!(
+        q[0].contains("blyg-partial") && q[0].contains(second),
+        "{}",
+        q[0]
+    );
+    assert!(q[1].contains(third) && !q[1].contains(second), "{}", q[1]);
+    assert!(
+        q.iter().all(|x| !x.contains("opening words here.")),
+        "only the passages"
+    );
+    let wire = server_item(&sid_of(&me, &partial));
+    assert_eq!(wire["stub_of"]["id"], rid.as_str());
+    me.unsubscribe(&sub.id).unwrap();
+}
+
+/// Upstream's reading page, raw: the server's read state of one row.
+fn server_read_version(rid: &str) -> Option<Value> {
+    let (st, v) = owner("GET", &e2e().url, "/api/reading?offset=0&limit=50", None);
+    assert_eq!(st, 200, "{v}");
+    v["items"].as_array().unwrap().iter().find_map(|e| {
+        (e["imported"]["remoteId"] == rid).then(|| e["imported"]["readVersion"].clone())
+    })
+}
+
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn read_and_unread_sync_through_upstreams_read_state() {
+    // Upstream's read state (studio PR 1: read; PR 2: unread, with a
+    // tombstone against stale reads). Without it, unread stays on this Mac.
+    let e = e2e();
+    let api = Api::new(&e.url, e.cred.clone());
+    let Some(page) = api.stock_reading(0).unwrap() else {
+        eprintln!("SKIP: no GET /api/reading");
+        return;
+    };
+    if !e.stock {
+        eprintln!("SKIP: the fork's reading rows are tested by read_state_syncs_between_two_macs");
+        return;
+    }
+    let src_url = url_b();
+    let (d1, d2, d3) = (
+        tempfile::tempdir().unwrap(),
+        tempfile::tempdir().unwrap(),
+        tempfile::tempdir().unwrap(),
+    );
+    let mac1 = manual(d1.path());
+    let mac2 = manual(d2.path());
+    let source = backend_at(d3.path(), &src_url, cred_b(), false);
+    let t = tag("unread");
+    let (_, a) = published(&source, Kind::Fragment, &format!("{t} A"), None);
+    let (_, b) = published(&source, Kind::Fragment, &format!("{t} B"), None);
+    let sub = mac1.subscribe(&src_url, Some("Unread sync")).unwrap();
+    let _unsub = Unsub(&mac1, sub.id.clone());
+    sync_until_held(&mac1, &[&a, &b]);
+    sync_until_held(&mac2, &[&a, &b]);
+    let both = vec![(sub.id.clone(), a.clone()), (sub.id.clone(), b.clone())];
+
+    if !page.read_sync() {
+        // No read state on the server (studio 0.32.1): all of it is local,
+        // and a pull never brings a read back.
+        eprintln!("this server keeps no read state: checking the local-only path");
+        assert_eq!(mac1.set_read(&both, true).unwrap(), 2);
+        assert_eq!(mac1.set_read(&both[..1], false).unwrap(), 1);
+        mac1.sync_now().unwrap();
+        mac1.sync_now().unwrap();
+        assert!(reading_item(&mac1, &a).unwrap().is_unread());
+        assert!(!reading_item(&mac1, &b).unwrap().is_unread());
+        assert!(
+            reading_item(&mac2, &b).unwrap().is_unread(),
+            "nothing synced"
+        );
+        mac1.unsubscribe(&sub.id).unwrap();
+        return;
+    }
+    assert!(mac1.read_state_sync(), "read_state advertised");
+    // A selection marked read on one Mac: one batch, read on the other.
+    assert_eq!(mac1.set_read(&both, true).unwrap(), 2);
+    mac1.sync_now().unwrap();
+    assert_eq!(server_read_version(&a), Some(json!(1)));
+    assert_eq!(server_read_version(&b), Some(json!(1)));
+    mac2.sync_now().unwrap();
+    assert!(!reading_item(&mac2, &a).unwrap().is_unread());
+    assert!(!reading_item(&mac2, &b).unwrap().is_unread());
+
+    if !page.read_clear() {
+        // PR 1 only: unread is this Mac's; the server's read doesn't come back.
+        eprintln!("read_state_clear not advertised: unread stays local");
+        mac2.set_read(&both[..1], false).unwrap();
+        mac2.sync_now().unwrap();
+        mac2.sync_now().unwrap();
+        assert!(reading_item(&mac2, &a).unwrap().is_unread());
+        assert_eq!(server_read_version(&a), Some(json!(1)));
+        mac1.sync_now().unwrap();
+        assert!(!reading_item(&mac1, &a).unwrap().is_unread());
+        mac1.unsubscribe(&sub.id).unwrap();
+        return;
+    }
+    // PR 2: unread on the second Mac clears it on the server, and the
+    // first Mac takes the clear (no read pushed back over it).
+    mac2.set_read(&both[..1], false).unwrap();
+    mac2.sync_now().unwrap();
+    assert_eq!(server_read_version(&a), Some(Value::Null));
+    mac1.sync_now().unwrap();
+    assert!(
+        reading_item(&mac1, &a).unwrap().is_unread(),
+        "cleared on the other Mac"
+    );
+    mac1.sync_now().unwrap();
+    assert_eq!(
+        server_read_version(&a),
+        Some(Value::Null),
+        "and it stays cleared"
+    );
+    assert!(!reading_item(&mac1, &b).unwrap().is_unread());
+
+    // A read made before a later unread elsewhere loses (read_at), even
+    // though it reaches the server after it.
+    mac1.set_read(&both[1..], false).unwrap();
+    mac1.sync_now().unwrap();
+    assert_eq!(server_read_version(&b), Some(Value::Null));
+    mac1.set_read(&both[1..], true).unwrap(); // queued, not sent yet
+    std::thread::sleep(Duration::from_millis(30));
+    // Another device clears it after that read happened.
+    let (st, v) = owner(
+        "DELETE",
+        &e.url,
+        &format!("/api/reading/{}/{b}/read", sub.id),
+        None,
+    );
+    assert_eq!((st, v["read_version"].clone()), (200, Value::Null), "{v}");
+    mac1.sync_now().unwrap(); // flushes the older read: refused
+    assert_eq!(
+        server_read_version(&b),
+        Some(Value::Null),
+        "the stale read was ignored"
+    );
+    assert!(
+        reading_item(&mac1, &b).unwrap().is_unread(),
+        "and taken back here"
+    );
+
+    // Read again after the clear: it counts, on both Macs.
+    mac1.set_read(&both, true).unwrap();
+    mac1.sync_now().unwrap();
+    assert_eq!(server_read_version(&a), Some(json!(1)));
+    assert_eq!(server_read_version(&b), Some(json!(1)));
+    mac2.sync_now().unwrap();
+    assert!(!reading_item(&mac2, &a).unwrap().is_unread());
+    assert!(!reading_item(&mac2, &b).unwrap().is_unread());
+    mac1.unsubscribe(&sub.id).unwrap();
 }

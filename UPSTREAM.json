@@ -1,6 +1,6 @@
 {
   "repo": "https://github.com/aneeshsathe/blygger-desktop.git",
-  "commit": "6151e4dbccc7d72c20d2511860088c1b29c82acf",
-  "version": "0.3.0",
-  "note": "The second commit of this repository is a verbatim copy of this upstream commit; everything after it is the Windows port, gated with cfg(target_os = \"windows\") so the macOS build is unchanged. `git diff <import commit> HEAD` shows the whole port."
+  "commit": "e440fe9b6507d5288fe804178115e13e77589ebd",
+  "version": "0.9.0",
+  "note": "The second commit of this repository is a verbatim copy of upstream 0.3.0 (6151e4d); upstream is merged in since (most recently 0.9.0, the commit above), and everything else is the Windows port, gated with cfg(target_os = \"windows\") so the macOS build is unchanged. `git diff upstream/main HEAD` (with upstream fetched) shows the whole port."
 }

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Sign (and, when possible, notarize + staple) Blygger.app or its dmg.
+# Sign (and, when possible, notarize + staple) Burrow.app or its dmg.
 #
-#   scripts/sign.sh app dist/Blygger.app
-#   scripts/sign.sh dmg dist/Blygger-0.1.0-macos-universal.dmg
+#   scripts/sign.sh app dist/Burrow.app
+#   scripts/sign.sh dmg dist/Burrow-0.1.0-macos-universal.dmg
 #
 # Behaviour depends on which environment variables are set:
 #

@@ -1,0 +1,17 @@
+{
+  "name": "tr_partial_empty",
+  "kind": "thread",
+  "md": "![[01j9zq3k4m5n6p7q8r9s0t1v2w]]\n> \nAfter.",
+  "html": "<blockquote class=\"blyg-transclusion unresolved\"><p>⚠ unresolvable: the attached blockquote is empty</p></blockquote>\n<p>After.</p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": [
+    {
+      "directive": "![[01j9zq3k4m5n6p7q8r9s0t1v2w]]",
+      "reason": "the attached blockquote is empty"
+    }
+  ]
+}

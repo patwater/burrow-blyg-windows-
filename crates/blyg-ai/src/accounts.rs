@@ -253,10 +253,12 @@ impl Accounts {
             },
             ProviderKind::LocalClaudeCode => cli(claude_code::BINARY),
             ProviderKind::LocalCodex => cli(codex::BINARY),
-            ProviderKind::BlygServer => set(self
-                .blyg_base_url()
-                .ok()
-                .is_some_and(|u| matches!(self.secret(&u), Ok(Some(_))))),
+            ProviderKind::BlygServer => set(self.blyg_base_url().ok().is_some_and(|u| {
+                matches!(
+                    blyg_core::config::load_credential(&self.store, &u),
+                    Ok(Some(_))
+                )
+            })),
         }
     }
 
@@ -526,10 +528,9 @@ impl Accounts {
             ),
             ProviderKind::BlygServer => {
                 let base = self.blyg_base_url()?;
-                let token = self
-                    .secret(&base)?
+                let cred = blyg_core::config::load_credential(&self.store, &base)?
                     .ok_or_else(|| AiError::NotConfigured("not connected to a blyg".into()))?;
-                Box::new(BlygServer::new(&base, token))
+                Box::new(BlygServer::new(&base, cred))
             }
         })
     }

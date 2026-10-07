@@ -248,7 +248,7 @@ fn stepping_the_pill_swaps_the_body(cx: &mut TestAppContext) {
     assert!(current.contains("Spend it carefully."), "{current}");
 
     // ‹ : pinned v3, from its public document.
-    cx.simulate_keystrokes("left");
+    cx.simulate_keystrokes("["); // --- reader folders --- (was ←)
     settle(cx);
     let pinned = last(&log, Which::Reader);
     assert!(
@@ -432,4 +432,37 @@ fn a_withdrawn_post_without_a_pin_shows_no_body(cx: &mut TestAppContext) {
     settle(cx);
     assert!(view.read_with(cx, |v, _| !v.studio.reader.active()));
     assert!(!log.borrow().visible(Which::Reader));
+}
+
+// --- themes --- the reader's text takes the writing font a theme suggests
+// (bundled fonts inlined, since the WebView can't see the app's), and its
+// quote boxes, selection and diff marks the theme's colours.
+#[test]
+fn the_reader_takes_the_themes_writing_font() {
+    use crate::prefs::{WRITING_FONTS, find};
+    let css = |name: &str| super::reader::text_font_css(find(WRITING_FONTS, name));
+    let et = css("ET Book");
+    assert!(et.contains("@font-face { font-family: \"ETBembo\"; font-style: normal"));
+    assert!(et.contains("font-style: italic"));
+    assert!(
+        et.contains("body { font-family: \"ETBembo\", Literata"),
+        "{et}"
+    );
+    let ss = css("Source Serif 4");
+    assert!(ss.contains("body { font-family: \"Source Serif 4\", Literata"));
+    // Literata is the stylesheet's own; macOS fonts go by name.
+    assert!(css("Literata").is_empty());
+    assert!(super::reader::text_font_css(None).is_empty());
+    let ny = css("New York");
+    assert!(!ny.contains("@font-face") && ny.contains("\"New York\", ui-serif"));
+    let reader = super::reader::reader_css(17.);
+    for rule in [
+        "var(--quote-bg",
+        "var(--selection",
+        "var(--ins",
+        "var(--del",
+        "var(--mark",
+    ] {
+        assert!(reader.contains(rule), "{rule}");
+    }
 }
